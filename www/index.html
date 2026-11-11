@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#EDF2EF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F2A2E" media="(prefers-color-scheme: dark)">
+<title>City Apps</title>
+<meta name="description" content="Five speedrun games. One run a day. Who is the fastest?">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <section class="screen" id="s-home"></section>
+  <section class="screen" id="s-game" hidden></section>
+  <section class="screen" id="s-profile" hidden></section>
+
+  <section class="screen play" id="s-play" hidden>
+    <header class="hud">
+      <button class="icon" data-act="quit" aria-label="Quit run">✕</button>
+      <div class="hud-name"><b id="pName"></b><span id="pMode"></span></div>
+      <div class="timer" id="timer" role="timer" aria-label="Run time">0:00.00</div>
+    </header>
+    <div class="segs" id="segs" aria-hidden="true"></div>
+    <div class="lvl" id="lvl"></div>
+    <div class="stage" id="stage">
+      <canvas id="cv" aria-label="Play area"></canvas>
+      <div class="flash" id="flash" aria-live="polite"></div>
+      <button class="ready" id="ready"></button>
+      <div class="result" id="result" hidden></div>
+    </div>
+  </section>
+</div>
+
+<div id="sheetwrap">
+  <div class="scrim" id="scrim"></div>
+  <section class="sheet" id="sheet" role="dialog" aria-modal="true"></section>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/store.js"></script>
+<script src="js/games/pivot.js"></script>
+<script src="js/games/count.js"></script>
+<script src="js/games/recall.js"></script>
+<script src="js/games/sort.js"></script>
+<script src="js/games/thread.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
