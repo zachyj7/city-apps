@@ -1,4 +1,4 @@
-# City Apps: from prototype to the stores
+# Clock Rate: from prototype to the stores
 
 Where things stand: the app in `www/` is a working prototype. All five games, the daily run rules, the retry, practice tokens, the gauntlet, leaderboards, profiles and comparison all work, but everything is saved on the one device. Other players are demo data, and ads and purchases are switched off (`testMode` and `demo` in `www/js/core.js`).
 
@@ -6,7 +6,7 @@ To make it real, four things have to be added: an online backend, the store wrap
 
 ## 1. Decisions to make first (You)
 
-1. **App name.** "City Apps" is the studio. The app itself needs a name that is free on both stores.
+1. **App name.** The app is Clock Rate, by City Apps. Check the name is free on both stores and that a matching domain is available.
 2. **Who publishes.** To show "City Apps" as the seller you need a registered business (an LLC is typical) and a free D-U-N-S number. Without one, both stores list your personal legal name.
 3. **Minimum age.** This is the big one. The app is aimed at students, which means some players will be under 13.
    - Under-13 players trigger COPPA in the US (and similar laws elsewhere): parental consent for accounts, no personalized ads, strict limits on collecting data.
@@ -50,7 +50,7 @@ The app already has the seams for this: `CA.net` (leaderboards and profiles) and
 
 The app is wrapped with Capacitor, which packages the same `www/` folder as a native app. `package.json` and `capacitor.config.json` are in place but not yet run.
 
-1. You: decide the app id (currently the placeholder `com.cityapps.daily`). It can't be changed after release.
+1. You: decide the app id (currently the placeholder `com.cityapps.clockrate`). It can't be changed after release.
 2. Build: `npm install`, then add the Android and iOS projects.
 3. You: install Android Studio (Windows is fine). For iOS, a Mac or a cloud build service.
 4. You: app icon, screenshots, store description, privacy policy URL, support URL, age rating questionnaire, and the data-safety forms on both stores.
@@ -68,7 +68,6 @@ The app is wrapped with Capacitor, which packages the same `www/` folder as a na
 
 - Playtest on real phones with real people. Every game's difficulty and every tier cut-off is untested by human hands.
 - Decide the daily reset time. Right now it's the phone's local midnight. For a fair global board, the server should own it.
-- Thread is easier with a mouse than a finger. Decide whether web and mobile share a board for that game.
 
 ## Suggested order
 

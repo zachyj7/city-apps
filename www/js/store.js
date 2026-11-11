@@ -67,7 +67,8 @@ const store = CA.store = {
 const TIERS = [['legend', 'Legend', 0.8], ['diamond', 'Diamond', 1], ['gold', 'Gold', 1.3], ['silver', 'Silver', 1.7], ['bronze', 'Bronze', Infinity]];
 CA.par = g => g === 'gauntlet' ? CA.games.reduce((a, x) => a + x.par, 0) : CA.games.find(x => x.id === g).par;
 CA.tier = (g, t) => { const p = CA.par(g), r = TIERS.find(x => t <= p * x[2]); return {key: r[0], name: r[1]}; };
-CA.tierCuts = g => TIERS.slice(0, 4).map(x => ({key: x[0], name: x[1], under: CA.par(g) * x[2]}));
+CA.tierCuts = g => TIERS.map(x => ({key: x[0], name: x[1], under: CA.par(g) * x[2]}));   // fastest tier first
+CA.tierOrder = TIERS.map(x => ({key: x[0], name: x[1]}));
 
 /* ---------- data layer (local + demo players) ---------- */
 const NAMES = 'Maya,Jordan,Leo,Ava,Noah,Zoe,Eli,Mia,Kai,Ivy,Owen,Ruby,Finn,Lena,Theo,Nora,Jude,Isla,Max,Elle,Remy,Tess,Cole,Wren,Dane,Faye,Reid,Skye,Beau,June,Nico,Cleo,Seth,Vera,Troy,Gwen,Abel,Dara,Zane,Lux'.split(',');
@@ -75,11 +76,21 @@ const demo = !C.demo ? [] : NAMES.map((n, i) => {
   const r = CA.rng(CA.hash('player' + i));
   return {id: 'd' + i, name: n + ' ' + String.fromCharCode(65 + Math.floor(r() * 26)) + '.', skill: 0.82 + r() * 1.0, friend: i < 8};
 });
-function demoTime(p, g, period) {
-  const today = period === 'today', r = CA.rng(CA.hash(p.id + g + (today ? S.day : '')));
-  if (r() < (today ? 0.25 : 0.08)) return null;
-  return Math.round(CA.par(g) * p.skill * (today ? 0.97 + r() * 0.22 : 0.93) * 100) / 100;
+/* day = a day key for that day's time, or 'best' for the all-time best */
+function demoTime(p, g, day) {
+  const best = day === 'best', r = CA.rng(CA.hash(p.id + g + (best ? '' : day)));
+  if (r() < (best ? 0.08 : 0.25)) return null;
+  return Math.round(CA.par(g) * p.skill * (best ? 0.93 : 0.97 + r() * 0.22) * 100) / 100;
 }
+/* The last n days, oldest first, ending today. */
+CA.lastDays = n => {
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    out.push({key: CA.dayKey(d), label: i === 0 ? 'Today' : d.toLocaleDateString(undefined, {weekday: 'short'})});
+  }
+  return out;
+};
 const myTime = (g, period) => period === 'today' ? (store.run(g).status === 'done' ? store.run(g).time : null) : store.best(g);
 const allIds = () => ['gauntlet'].concat(CA.games.map(g => g.id));
 
@@ -87,17 +98,21 @@ CA.net = {
   /* scope: 'friends' | 'global'.  period: 'today' | 'best'.  Returns rows fastest first. */
   board(g, scope, period) {
     const rows = demo.filter(p => scope !== 'friends' || p.friend)
-      .map(p => ({id: p.id, name: p.name, time: demoTime(p, g, period)}));
+      .map(p => ({id: p.id, name: p.name, time: demoTime(p, g, period === 'today' ? S.day : 'best')}));
     rows.push({id: S.me.id, name: S.me.name || 'You', time: myTime(g, period), me: true});
     return rows.filter(r => r.time != null).sort((a, b) => a.time - b.time);
   },
   profile(pid) {
     const mine = pid === S.me.id, p = mine ? {id: S.me.id, name: S.me.name || 'You'} : demo.find(x => x.id === pid);
     if (!p) return null;
-    const out = {id: p.id, name: p.name, mine, friend: !!p.friend, today: {}, best: {}};
+    /* days: the previous 6 days plus today. series[g][i] is the official time on days[i], or null. */
+    const days = CA.lastDays(7), out = {id: p.id, name: p.name, mine, friend: !!p.friend, days, best: {}, series: {}};
     allIds().forEach(g => {
-      out.today[g] = mine ? myTime(g, 'today') : demoTime(p, g, 'today');
       out.best[g] = mine ? myTime(g, 'best') : demoTime(p, g, 'best');
+      out.series[g] = days.map(d => {
+        const t = mine ? (S.history[g] || {})[d.key] : demoTime(p, g, d.key);
+        return t == null ? null : t;
+      });
     });
     return out;
   }

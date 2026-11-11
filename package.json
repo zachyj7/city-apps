@@ -1,8 +1,8 @@
 {
-  "name": "city-apps",
+  "name": "clock-rate",
   "version": "0.1.0",
   "private": true,
-  "description": "City Apps: five daily speedrun games in one app",
+  "description": "Clock Rate by City Apps: five speedrun games in one app",
   "scripts": {
     "serve": "python -m http.server 8124 --directory www",
     "sync": "cap sync",

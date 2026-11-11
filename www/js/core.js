@@ -27,7 +27,7 @@ CA.fmt = s => {
 };
 CA.fmtShort = s => { s = Math.round(s); return Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60); };
 
-/* Seeded random, so a course is identical for everyone on the same day. */
+/* Seeded random. Each game uses a fixed seed, so its course is identical on every run. */
 CA.rng = seed => {
   let a = seed | 0;
   return () => {

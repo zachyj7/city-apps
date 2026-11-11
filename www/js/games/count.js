@@ -1,17 +1,17 @@
 /* Count: search and tap. Tap the numbers in order, 1 upward. */
 CA.game({
-  id: 'count', name: 'Count', arc: '#2E7BF6', dot: '#F2466A', par: 55,
+  id: 'count', name: 'Count', arc: '#2E7BF6', dot: '#F2466A', par: 30,
   blurb: 'Tap the numbers in order.',
   how: 'Tap the numbers in order, starting at 1. A wrong number freezes the board for a moment.',
   make(env) {
-    const L = env.levels;
+    const L = env.levels, N = [3, 4, 4, 5, 5, 6, 6, 7, 7, 8];   // numbers per level
     let w = 300, h = 300, level = 1, items = null, next = 1, n = 0, cols = 2, rows = 2;
     let lock = 0, shake = 0, gap = 0, time = 0, done = false;
 
     function build() {
       const rnd = env.rng(level);
-      n = 4 + level; next = 1;
-      cols = Math.max(2, Math.round(Math.sqrt((n + 2) * w / h)));
+      n = N[level - 1]; next = 1;
+      cols = 3;                                   // fixed grid, so the layout is the same on every screen
       rows = Math.ceil((n + 2) / cols);
       const cells = [];
       for (let i = 0; i < cols * rows; i++) cells.push(i);
@@ -20,7 +20,7 @@ CA.game({
       for (let k = 0; k < n; k++) items.push({n: k + 1, c: cells[k] % cols, r: Math.floor(cells[k] / cols), jx: rnd() * 2 - 1, jy: rnd() * 2 - 1, gone: false});
     }
     function pos(it) {
-      const cw = w / cols, ch = h / rows, r = Math.min(cw, ch, 104) * 0.36;
+      const cw = w / cols, ch = h / rows, r = Math.min(cw, ch, 130) * 0.42;
       return {x: (it.c + 0.5) * cw + it.jx * Math.max(0, cw / 2 - r - 4), y: (it.r + 0.5) * ch + it.jy * Math.max(0, ch / 2 - r - 4), r};
     }
 
