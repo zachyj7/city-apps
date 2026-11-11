@@ -6,7 +6,7 @@ Lightweight mobile games that are simple, challenging and polished. Every game i
 
 | Game | Folder | What you do |
 | --- | --- | --- |
-| Pivot | [`pivot/`](pivot/) | Tap when the dot is inside the zone. Clear 15 levels against the clock. |
+| Pivot | [`pivot/`](pivot/) | Tap when the dot is inside the zone. Clear 10 levels against the clock. |
 
 ## How the repo is laid out
 
@@ -16,6 +16,7 @@ Lightweight mobile games that are simple, challenging and polished. Every game i
 
 ## What makes a City Apps game
 
+- **Ten levels.** Every game has exactly 10 levels, and the tenth is hard but fair.
 - **Speed is the score.** The clock is the main number on screen, and beating your best time is the goal.
 - **One simple input.** Playable with one thumb, understood in a few seconds.
 - **Learnable.** Levels are the same every run, so practice pays off.
@@ -25,5 +26,5 @@ Lightweight mobile games that are simple, challenging and polished. Every game i
 ## Adding a game
 
 1. Make a new folder named after the game, with an `index.html` inside.
-2. Use a unique save key in `localStorage` (Pivot uses `pivot-save-v2`).
+2. Use a unique save key in `localStorage` (Pivot uses `pivot-save-v3`).
 3. Add the game to the list in the root `index.html` and to the table above.

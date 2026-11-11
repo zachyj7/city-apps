@@ -79,8 +79,8 @@ canvas{display:block}
 .btn.narrow{flex:0 0 auto;padding:0 20px}
 .btn:active{transform:scale(.98)}
 .run-only{display:none}
-.app[data-state="failed"] .run-only,.app[data-state="paused"] .run-only{display:block}
-.app[data-state="failed"] .idle-only,.app[data-state="paused"] .idle-only{display:none}
+.app[data-state="paused"] .run-only{display:block}
+.app[data-state="paused"] .idle-only{display:none}
 
 .scrim{position:fixed;inset:0;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .25s}
 .sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:520px;max-height:86%;box-sizing:border-box;
@@ -129,7 +129,7 @@ canvas{display:block}
   <div class="segs" id="segs" aria-hidden="true"></div>
 
   <div class="stage" id="stage" role="button" tabindex="0" aria-label="Play area. Tap, or press space, when the dot is inside the zone.">
-    <div class="lvl" id="lvl">Level 1 of 15</div>
+    <div class="lvl" id="lvl">Level 1 of 10</div>
     <div class="ringwrap" id="wrap">
       <canvas id="cv" aria-hidden="true"></canvas>
       <div class="center" id="center">
@@ -173,16 +173,16 @@ canvas{display:block}
 const $ = id => document.getElementById(id);
 const TAU = Math.PI * 2, DEG = Math.PI / 180;
 const RM = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-const LEVELS = 15;
+const LEVELS = 10;
 
 /* need: null = always, 0 = finish any run, n = finish under n seconds */
 const THEMES = [
   {id:'lagoon',  name:'Lagoon',  arc:'#0FA08C', dot:'#EE3F74', need:null},
   {id:'sherbet', name:'Sherbet', arc:'#F5802A', dot:'#6A4CF0', need:0},
-  {id:'glacier', name:'Glacier', arc:'#2E7BF6', dot:'#F2466A', need:240},
-  {id:'orchid',  name:'Orchid',  arc:'#A650E0', dot:'#F2A413', need:180},
-  {id:'meadow',  name:'Meadow',  arc:'#6FAE1C', dot:'#1C74E8', need:135},
-  {id:'ember',   name:'Ember',   arc:'#E5484D', dot:'#E8B100', need:105}
+  {id:'glacier', name:'Glacier', arc:'#2E7BF6', dot:'#F2466A', need:90},
+  {id:'orchid',  name:'Orchid',  arc:'#A650E0', dot:'#F2A413', need:70},
+  {id:'meadow',  name:'Meadow',  arc:'#6FAE1C', dot:'#1C74E8', need:55},
+  {id:'ember',   name:'Ember',   arc:'#E5484D', dot:'#E8B100', need:45}
 ];
 const unlocked = (t, best) => t.need === null || (best != null && (t.need === 0 || best < t.need));
 
@@ -196,7 +196,7 @@ const fmtGoal = n => Math.floor(n / 60) + ':' + ((n % 60) < 10 ? '0' : '') + (n 
 const fmtD = d => (d < 0 ? '−' : '+') + Math.abs(d).toFixed(2);
 
 /* ---------- save ---------- */
-const KEY = 'pivot-save-v2';
+const KEY = 'pivot-save-v3';
 const fresh = () => ({best:null, bestSplits:[], runs:0, played:false, theme:'lagoon', sound:true});
 let S = fresh();
 try {
@@ -223,7 +223,7 @@ let col = {};
 function readColors() {
   const cs = getComputedStyle(document.documentElement);
   const g = n => cs.getPropertyValue(n).trim();
-  col = {track:g('--track'), bg:g('--bg'), arc:g('--arc'), dot:g('--dot')};
+  col = {track:g('--track'), bg:g('--bg'), arc:g('--arc'), dot:g('--dot'), muted:g('--muted')};
 }
 function applyTheme() {
   const t = THEMES.find(x => x.id === S.theme) || THEMES[0];
@@ -263,10 +263,11 @@ const note = n => 330 * Math.pow(2, (SCALE[n % 5] + 12 * Math.floor(n / 5)) / 12
 const buzz = ms => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} };
 
 /* ---------- game state ---------- */
-let state = 'ready';            // ready | playing | paused | failed | clearing | finished
+let state = 'ready';            // ready | playing | paused | clearing | finished
 let level = 1, elapsed = 0, splits = [];
 let angle = -Math.PI / 2, dir = 1, rem = 0, target = 0, half = 0.3, omega = 2.4;
 let need = 4, left = 4, perfectStreak = 0;
+let locked = 0;                 // after a miss: 1 = taps off until the far side of the ring, 2 = until the dot has passed the zone
 let lockUntil = 0, clearT = 0, pulse = 0, shake = 0, time = 0;
 let finishNote = '', newBest = false;
 let size = 300, dpr = 1, seed = 1;
@@ -281,7 +282,7 @@ function rnd() {
 }
 function cfg(l) {
   const k = (l - 1) / (LEVELS - 1);
-  return {need: 3 + Math.ceil(l * 0.5), omega: 2.4 + 2.0 * k, half: (44 - 18 * k) / 2 * DEG};
+  return {need: 3 + Math.ceil(l * 0.5), omega: 2.4 + 3.6 * k, half: (44 - 24 * k) / 2 * DEG};
 }
 function spawn(minDeg) {
   const lo = minDeg || 100;
@@ -293,7 +294,7 @@ function setupLevel() {
   need = c.need; left = need; omega = c.omega; half = c.half;
   seed = level * 7919 + 17;
   angle = -Math.PI / 2; dir = 1; spawn(160);
-  perfectStreak = 0; clearT = 0;
+  perfectStreak = 0; clearT = 0; locked = 0;
 }
 function resetRun() {
   level = 1; elapsed = 0; splits = []; particles.length = 0;
@@ -327,9 +328,8 @@ function ui() {
     lvlEl.textContent = 'Level ' + level + ' of ' + LEVELS;
     setLeft(false);
     hintEl.textContent =
-      state === 'failed' ? 'Missed. Tap to retry the level' :
       state === 'paused' ? 'Paused. Tap to resume' :
-      state === 'ready'  ? (S.played ? 'Tap to start the clock' : 'Tap when the dot is inside the zone. The bright center counts double.') : '';
+      state === 'ready'  ? (S.played ? 'Tap to start the clock' : 'Tap when the dot is in the zone. The bright center counts double, a miss costs a lap.') : '';
   }
   timerEl.textContent = fmtT(elapsed);
 }
@@ -370,9 +370,11 @@ function hit(perfect) {
 }
 function miss() {
   perfectStreak = 0;
-  state = 'failed'; shake = 1; lockUntil = performance.now() + 300;
-  tone(150, 0.3, 'sawtooth', 0.06); tone(110, 0.34, 'sine', 0.1); buzz([30, 40, 30]);
-  ui();
+  /* The dot keeps going. Taps stay off until it comes back around, so spamming never pays. */
+  locked = rem > Math.PI ? 1 : 2;
+  shake = 1;
+  flash('Miss', col.dot);
+  tone(150, 0.2, 'sawtooth', 0.05); tone(110, 0.24, 'sine', 0.08); buzz([30, 40, 30]);
 }
 function clearLevel() {
   splits[level - 1] = elapsed;
@@ -408,12 +410,11 @@ function tap() {
   audio();
   if (performance.now() < lockUntil) return;
   if (state === 'playing') {
+    if (locked) return;
     const g = ringGeom(), tol = (g.lw * 0.42 / g.R) * 0.5;
     if (Math.abs(rem) <= half + tol) hit(Math.abs(rem) <= half * 0.34); else miss();
   } else if (state === 'ready' || state === 'paused') {
     state = 'playing'; ui();
-  } else if (state === 'failed') {
-    setupLevel(); state = 'playing'; ui();
   } else if (state === 'finished') {
     resetRun();
   }
@@ -457,7 +458,7 @@ function draw() {
   const idle = (state === 'ready' && !RM) ? 1 + 0.08 * Math.sin(time * 4) : 1;
   const mx = c + Math.cos(angle) * R, my = c + Math.sin(angle) * R, mr = lw * 0.42 * idle;
   ctx.fillStyle = col.bg; ctx.beginPath(); ctx.arc(mx, my, mr + 3.5, 0, TAU); ctx.fill();
-  ctx.fillStyle = col.dot; ctx.beginPath(); ctx.arc(mx, my, mr, 0, TAU); ctx.fill();
+  ctx.fillStyle = (locked && state === 'playing') ? col.muted : col.dot; ctx.beginPath(); ctx.arc(mx, my, mr, 0, TAU); ctx.fill();
   ctx.restore();
 
   for (const p of particles) {
@@ -470,15 +471,16 @@ function draw() {
 let last = 0;
 function frame(t) {
   const dt = Math.min(0.05, last ? (t - last) / 1000 : 0); last = t; time += dt;
-  if (state === 'playing' || state === 'failed' || state === 'clearing') {
+  if (state === 'playing' || state === 'clearing') {
     elapsed += dt;
     timerEl.textContent = fmtT(elapsed);
   }
   if (state === 'playing') {
     const g = ringGeom(), tol = (g.lw * 0.42 / g.R) * 0.5;
     rem -= omega * dt;
+    if (locked === 1 && rem <= Math.PI) locked = 0;
+    if (rem < -(half + tol)) { rem += TAU; target += dir * TAU; locked = 0; perfectStreak = 0; }
     angle = target - dir * rem;
-    if (rem < -(half + tol)) miss();
   } else if (state === 'clearing') {
     clearT = Math.min(1, clearT + dt / 0.4);
     if (clearT >= 1) { level++; setupLevel(); state = 'playing'; ui(); }
@@ -516,7 +518,7 @@ function renderRec() {
   });
 }
 let resetArmed = 0;
-const runActive = () => state === 'playing' || state === 'clearing' || state === 'failed' || state === 'paused';
+const runActive = () => state === 'playing' || state === 'clearing' || state === 'paused';
 function openRec() {
   if (runActive()) return;
   renderRec(); rec.classList.add('open'); sheet.scrollTop = 0;
