@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>City Apps</title>
+<meta name="description" content="City Apps makes small, fast mobile games. Simple to learn, hard to master, all against the clock.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EDF2EF; --surface:#FFFFFF; --ink:#12262A; --muted:#5A7074; --line:#CBD8D3;
+}
+@media (prefers-color-scheme: dark){
+  :root{color-scheme:dark; --bg:#0F2A2E; --surface:#17393E; --ink:#EAF4F0; --muted:#93AEAC; --line:#2A575C}
+}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Bricolage Grotesque",ui-rounded,"SF Pro Rounded",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-tap-highlight-color:transparent;
+}
+.page{max-width:520px;margin:0 auto;box-sizing:border-box;
+  padding:calc(28px + env(safe-area-inset-top,0px)) 22px calc(28px + env(safe-area-inset-bottom,0px))}
+h1{font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;margin:0}
+.tag{font-size:18px;font-weight:500;color:var(--muted);line-height:1.35;margin:10px 0 28px}
+h2{font-size:15px;font-weight:700;color:var(--muted);margin:0 0 10px}
+.games{display:grid;gap:12px;list-style:none;margin:0;padding:0}
+.game{display:flex;align-items:center;gap:16px;background:var(--surface);border-radius:24px;padding:16px 18px;
+  color:inherit;text-decoration:none}
+.game:active{transform:scale(.98)}
+.game:focus-visible{outline:3px solid var(--c);outline-offset:3px}
+.icon{flex:0 0 auto;width:52px;height:52px;border-radius:50%;border:9px solid var(--c);box-sizing:border-box;position:relative}
+.icon::after{content:"";position:absolute;top:-12px;left:50%;width:14px;height:14px;margin-left:-7px;border-radius:50%;
+  background:var(--d);box-shadow:0 0 0 3px var(--surface)}
+.name{font-size:22px;font-weight:800;letter-spacing:-.02em}
+.desc{font-size:15px;color:var(--muted);margin-top:2px;line-height:1.3}
+.go{margin-left:auto;flex:0 0 auto;height:44px;padding:0 18px;border-radius:15px;background:var(--ink);color:var(--bg);
+  font-weight:700;font-size:16px;display:grid;place-items:center}
+.foot{color:var(--muted);font-size:14px;font-weight:600;text-align:center;margin-top:32px}
+</style>
+</head>
+<body>
+<main class="page">
+  <h1>City Apps</h1>
+  <p class="tag">Small games about being fast. Simple to learn, hard to master.</p>
+
+  <h2>Games</h2>
+  <ul class="games">
+    <li>
+      <a class="game" href="pivot/" style="--c:#0FA08C;--d:#EE3F74">
+        <span class="icon" aria-hidden="true"></span>
+        <span>
+          <span class="name">Pivot</span>
+          <span class="desc" style="display:block">Tap when the dot is in the zone. 15 levels, one clock.</span>
+        </span>
+        <span class="go">Play</span>
+      </a>
+    </li>
+  </ul>
+
+  <p class="foot">More games on the way.</p>
+</main>
+</body>
+</html>
