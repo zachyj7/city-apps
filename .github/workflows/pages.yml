@@ -1,4 +1,4 @@
-# Publishes the game in www/ to GitHub Pages every time main changes.
+# Publishes Clock Rate (www/) and Hourfall (hourfall/www/) to GitHub Pages every time main changes.
 name: Deploy to GitHub Pages
 
 on:
@@ -24,8 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # Clock Rate is served at the site root, Hourfall under /hourfall/.
+      - name: Assemble site
+        run: |
+          mkdir _site
+          cp -r www/. _site/
+          cp -r hourfall/www _site/hourfall
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: www
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

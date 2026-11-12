@@ -1,0 +1,1 @@
+{ "name": "Hourfall", "short_name": "Hourfall", "start_url": ".", "display": "fullscreen", "orientation": "any", "background_color": "#1b1838", "theme_color": "#1b1838", "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }] }
