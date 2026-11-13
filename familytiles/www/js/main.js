@@ -1,7 +1,7 @@
 // Family Tiles: what each player sees and touches.
 import { Net } from './net.js';
 import { Video } from './video.js';
-import { tile, analyze, rackPoints, openingPoints, checkTurn, segments, SYMBOLS, COLOR_NAMES, OPEN_POINTS } from './rules.js';
+import { tile, analyze, openingPoints, checkTurn, groupsOf, tidyPos, SYMBOLS, COLOR_NAMES, OPEN_POINTS, BOARD_W } from './rules.js';
 
 // Rack colors to pick from. hi/base/lo/deep shade the plastic, ink is the pressed-in name, text is printing on it.
 const RACKS = {
@@ -37,9 +37,9 @@ const cleanCode = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').s
 
 const A = {
   S: null, net: null, video: null, name: '', code: '',
-  W: null,            // my turn in progress: { turnNo, table: [{k, ids}], rack: [ids], startTable, startRack }
-  hist: [], sel: new Set(), order: [], seen: new Set(), fresh: new Set(),
-  nope: null, vol: store.get('vol', {}), sound: store.get('sound', true), sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
+  W: null,            // my turn in progress: { turnNo, pos: {id: [x, y]}, rack: [ids], startTable, startPos, startRack }
+  hist: [], sel: new Set(), order: [], seen: new Set(), fresh: new Map(), loose: new Set(), bu: null,
+  vol: store.get('vol', {}), sound: store.get('sound', true), sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
   status: 'connecting',
 };
 window.FT = A;   // for testing from the console
@@ -83,7 +83,7 @@ function start(name, code) {
     onOpen: () => hello(),
     onMsg: m => {
       if (m.t === 'state') setState(m.s);
-      else if (m.t === 'nope') { A.nope = m.why; renderCenter(); beep(220, 0.25); }
+      else if (m.t === 'nope') { toast(m.why); beep(220, 0.25); }
       else if (m.t === 'closed') {
         // Someone closed the table: forget this game so it can't come back, and go to the join screen.
         try { sessionStorage.removeItem(snapKey()); sessionStorage.removeItem(gridKey()); } catch (e) { /* ignore */ }
@@ -125,31 +125,36 @@ function setState(S) {
   A.S = S;
   saveSnap(S);
   const m = me();
-  // Keep my own rack order; newly drawn tiles go on the end and glow for a moment.
+  // Keep my own rack order; a newly drawn tile goes on the end and glows once.
   if (m) {
     const rack = new Set(m.rack);
     const keep = A.order.filter(id => rack.has(id));
     const added = m.rack.filter(id => !keep.includes(id));
-    if (was && was.phase === 'play' && S.phase === 'play' && added.length && added.length < 4) {
-      for (const id of added) A.fresh.add(id);
-      setTimeout(() => { for (const id of added) A.fresh.delete(id); renderRack(); }, 4000);
-    }
     A.order = keep.concat(added);
-    if (S.phase !== 'play' || !was || was.round !== S.round) A.fresh.clear();
+    // Only a tile that really is new to my rack glows (not tiles coming back from the table).
+    const prev = was && was.players.find(p => p.pid === pid);
+    if (prev && was.phase === 'play' && S.phase === 'play' && was.round === S.round) {
+      const had = new Set(prev.rack);
+      const drawn = m.rack.filter(id => !had.has(id));
+      if (drawn.length === 1) A.fresh.set(drawn[0], Date.now());
+    } else A.fresh.clear();
   }
   if (myTurn()) {
     if (!A.W || A.W.turnNo !== S.turnNo) beginTurn();
   } else {
     if (A.W) A.sel.clear();
-    A.W = null; A.hist = []; A.nope = null;
+    A.W = null; A.hist = []; A.loose.clear(); clearTimeout(settleT);
   }
   if (S.phase === 'play' && was && was.turn !== S.turn && S.turn === pid) beep(660, 0.15, 880);
-  if (S.phase === 'over' && was && was.phase === 'play') { confetti(); [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.22), i * 120)); }
+  if (S.phase === 'over' && was && was.phase === 'play' && S.result && S.result.pid) { confetti(); [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.22), i * 120)); }
   if (S.fx && S.fx.k !== A.lastFx) { if (A.lastFx !== null || (was && was.v < S.fx.k)) showMJ(S.fx.name); A.lastFx = S.fx.k; }
   else if (A.lastFx === null) A.lastFx = S.fx ? S.fx.k : 0;
   A.video.sync(S.players.filter(p => p.on && p.peer && p.pid !== pid).map(p => p.peer));
-  renderAll();
+  flip(null, renderAll);
 }
+
+const clonePos = p => { const o = {}; for (const k in p || {}) o[k] = [p[k][0], p[k][1]]; return o; };
+const r2 = v => Math.round(v * 100) / 100;
 
 function beginTurn() {
   const S = A.S, m = me();
@@ -157,13 +162,13 @@ function beginTurn() {
   A.W = {
     turnNo: S.turnNo,
     startTable: S.table.map(a => a.slice()),
-    startCells: (S.cells || []).slice(),
+    startPos: clonePos(S.pos),
     startRack: m.rack.slice(),
-    cells: ((w ? w.cells : S.cells) || []).slice(),
+    pos: clonePos(w ? w.pos : S.pos),
     rack: orderLike(w ? w.rack : m.rack),
     startGrid: cloneGrid(A.grid),
   };
-  A.hist = []; A.sel.clear(); A.nope = null;
+  A.hist = []; A.sel.clear(); A.loose.clear();
 }
 
 function orderLike(ids) {
@@ -172,24 +177,22 @@ function orderLike(ids) {
   return keep.concat(ids.filter(id => !keep.includes(id)));
 }
 
-function snapshotW() { return JSON.stringify({ cells: A.W.cells, rack: A.W.rack, grid: A.grid }); }
+function snapshotW() { return JSON.stringify({ pos: A.W.pos, rack: A.W.rack, grid: A.grid }); }
 function commit() {
-  A.nope = null;
-  while (A.W.cells.length && A.W.cells[A.W.cells.length - 1] == null) A.W.cells.pop();
   A.order = A.W.rack.slice();
-  send({ t: 'work', cells: A.W.cells, rack: A.W.rack });
+  send({ t: 'work', pos: A.W.pos, rack: A.W.rack });
   renderAll();
 }
 
 /* ---------------- moving tiles ---------------- */
 
-function moveSelected(target) {
+// target is 'rack', 'rackslot:r,c' or 'board' (with pt = where the first tile's top-left corner goes, in tile units).
+function moveSelected(target, pt) {
   const ids = [...A.sel];
   if (!ids.length) return;
   if (!A.W) {   // not my turn: only rearranging my own rack
-    if (!target.startsWith('rack')) return;
-    toRack(ids.filter(id => A.order.includes(id)), target);
-    A.sel.clear(); renderRack(); return;
+    if (target.startsWith('rack')) toRack(ids.filter(id => A.order.includes(id)), target);
+    A.sel.clear(); renderAll(); return;
   }
   const W = A.W;
   let moving = ids;
@@ -202,51 +205,128 @@ function moveSelected(target) {
   A.hist.push(snapshotW());
   const mv = new Set(moving);
   const rackRest = W.rack.filter(id => !mv.has(id));
-  // Lifting tiles off the table leaves empty spaces where they were (just like a real table).
-  W.cells = W.cells.map(x => (mv.has(x) ? null : x));
-  if (target.startsWith('tcell:')) { W.rack = rackRest; W.cells = placeCells(W.cells, moving, +target.slice(6)); }
-  else if (target === 'new') { W.rack = rackRest; W.cells = placeCells(W.cells, moving, endGap(W.cells)); }
-  else { W.rack = rackRest.concat(moving); toRack(moving, target); }
+  if (target === 'board') {
+    // Tiles stay exactly where they are put; a moment later they are straightened up (see settleNow).
+    W.rack = rackRest;
+    const x = Math.min(Math.max(pt[0], 0), Math.max(0, BOARD_W - moving.length)), y = Math.max(pt[1], 0);
+    moving.forEach((id, i) => { W.pos[id] = [r2(x + i), r2(y)]; A.loose.add(id); });
+    settleSoon();
+  } else {
+    for (const id of moving) delete W.pos[id];
+    W.rack = rackRest.concat(moving);
+    toRack(moving, target);
+  }
   A.sel.clear();
   commit();
+}
+
+// A moment after tiles are put down, each set is straightened into a level, evenly spaced row.
+// Sets stay where they were put: nothing snaps to a grid.
+let settleT = 0;
+function settleSoon() { clearTimeout(settleT); settleT = setTimeout(settleNow, 900); }
+function settleNow() {
+  clearTimeout(settleT);
+  if (!A.W) { A.loose.clear(); return; }
+  if (A.drag) return settleSoon();
+  const next = tidyPos(A.W.pos, A.loose);
+  A.loose.clear();
+  const ids = Object.keys(next);
+  if (ids.every(id => A.W.pos[id] && A.W.pos[id][0] === next[id][0] && A.W.pos[id][1] === next[id][1])) return;
+  flip(null, () => { A.W.pos = next; commit(); });
+}
+
+// Open a gap in a rack row at slot (r, c): the tile there and the ones after it slide one slot right.
+function gapAt(g, r, c) {
+  const row = g[r], n = row.length;
+  const k = row.indexOf(null, c);
+  const out = k < 0 ? row[n - 1] : null;
+  for (let i = k < 0 ? n - 1 : k; i > c; i--) row[i] = row[i - 1];
+  row[c] = null;
+  if (out == null) return;
+  // the row was full: its last tile moves down to the start of the next row
+  if (r + 1 >= g.length) g.push(Array(n).fill(null));
+  insertAt(g, out, r + 1, 0, false);
+}
+
+// The Space button: puts a space just before each selected tile. On the table that splits a set in two;
+// on the rack the tile and its neighbours slide over one slot.
+function addSpace() {
+  const ids = [...A.sel];
+  const W = A.W;
+  const onBoard = W ? ids.filter(id => W.pos[id]) : [];
+  const onRack = A.grid ? ids.filter(id => slotOf(id)) : [];
+  if (!onBoard.length && !onRack.length) return;
+  if (W) A.hist.push(snapshotW());
+  flip(null, () => {
+    if (onBoard.length) {
+      const sel = new Set(onBoard), moved = new Set(A.loose);
+      for (const g of groupsOf(W.pos)) {
+        let shift = 0;
+        g.forEach((id, i) => {
+          if (i && sel.has(id)) shift++;
+          if (shift) { W.pos[id] = [r2(W.pos[id][0] + shift), W.pos[id][1]]; moved.add(id); }
+        });
+      }
+      W.pos = tidyPos(W.pos, moved);
+      A.loose.clear();
+    }
+    const byCol = onRack.map(id => [id, slotOf(id)[1]]).sort((a, b) => b[1] - a[1]);
+    for (const [id] of byCol) { const [r, c] = slotOf(id); gapAt(A.grid, r, c); }
+    A.sel.clear();
+    if (W) commit(); else renderAll();
+  });
 }
 
 function undo() {
   if (!A.W || !A.hist.length) return;
   const h = JSON.parse(A.hist.pop());
-  A.W.cells = h.cells; A.W.rack = h.rack; A.grid = h.grid; A.sel.clear(); commit();
+  clearTimeout(settleT); A.loose.clear();
+  flip(null, () => { A.W.pos = h.pos; A.W.rack = h.rack; A.grid = h.grid; A.sel.clear(); commit(); });
 }
 function resetTurn() {
   if (!A.W) return;
   A.hist.push(snapshotW());
-  A.W.cells = A.W.startCells.slice();
-  A.W.rack = orderLike(A.W.startRack);
-  A.grid = cloneGrid(A.W.startGrid);
-  A.sel.clear(); commit();
+  clearTimeout(settleT); A.loose.clear();
+  flip(null, () => {
+    A.W.pos = clonePos(A.W.startPos);
+    A.W.rack = orderLike(A.W.startRack);
+    A.grid = cloneGrid(A.W.startGrid);
+    A.sel.clear(); commit();
+  });
 }
 function draw() {
   if (!myTurn()) return;
+  clearTimeout(settleT); A.loose.clear();
   A.sel.clear();
   send({ t: 'draw' });
 }
 function done() {
   if (!A.W) return;
-  const why = checkTurn(A.W.startTable, A.W.startRack, segments(A.W.cells), A.W.rack, me().opened);
-  if (why) { A.nope = why; renderCenter(); beep(220, 0.25); return; }
+  settleNow();
+  const why = checkTurn(A.W.startTable, A.W.startRack, groupsOf(A.W.pos), A.W.rack, me().opened);
+  if (why) { toast(why); beep(220, 0.25); return; }
   send({ t: 'done' });
 }
 /* ---------------- drawing the screen ---------------- */
 
-function tileHTML(id, extra = '') {
+const FRESH_MS = 1800;
+function tileHTML(id, extra = '', style = '') {
   const t = tile(id);
-  const cls = ['tile', t.j ? 'joker' : 'c' + t.c, A.sel.has(id) ? 'sel' : '', A.fresh.has(id) ? 'fresh' : '', extra].join(' ');
+  // The glow carries on from where it was when the screen is redrawn, instead of starting over.
+  let fresh = '';
+  if (A.fresh.has(id)) {
+    const age = Date.now() - A.fresh.get(id);
+    if (age < FRESH_MS) { fresh = 'fresh'; style += `;animation-delay:-${age}ms`; } else A.fresh.delete(id);
+  }
+  const cls = ['tile', t.j ? 'joker' : 'c' + t.c, A.sel.has(id) ? 'sel' : '', fresh, extra].join(' ');
   const label = t.j ? 'Joker' : `${COLOR_NAMES[t.c]} ${t.n}`;
   const face = t.j ? '<span class="num">☺</span><span class="sym">JOKER</span>'
     : `<span class="num">${t.n}</span>${A.shapes ? `<span class="sym">${SYMBOLS[t.c]}</span>` : ''}`;
-  return `<div class="${cls}" data-id="${id}" role="button" aria-label="${label}">${face}</div>`;
+  return `<div class="${cls}" data-id="${id}" role="button" aria-label="${label}"${style ? ` style="${style}"` : ''}>${face}</div>`;
 }
 
-function renderAll() { renderStatus(); renderSeats(); renderCenter(); renderMe(); }
+// The rack and buttons go first: the table then sizes itself to the room that is left.
+function renderAll() { renderStatus(); renderSeats(); renderMe(); renderCenter(); }
 
 function renderStatus() {
   const labels = { host: 'Connected', client: 'Connected', joining: 'Joining…', reconnecting: 'Reconnecting…', connecting: 'Connecting…', offline: 'No connection, retrying…' };
@@ -328,8 +408,8 @@ function seatEl(p) {
   if (!el) {
     el = document.createElement('div');
     el.className = 'seat';
-    el.innerHTML = `<div class="face"><div class="avatar"></div><div class="nm"></div><div class="flag">▶ TURN</div></div>
-      <div class="minirack"><div class="ridges"></div><div class="mini-edge"><span class="engr"></span></div><div class="count"></div></div>
+    el.innerHTML = `<div class="face"><div class="avatar"></div><div class="nm"></div><div class="flag">▶ TURN</div><div class="open30"></div></div>
+      <div class="minirack"><div class="backs"></div><div class="mini-edge"><span class="engr"></span></div></div>
       <div class="tag"></div>`;
     seatEls.set(p.pid, el);
   }
@@ -356,15 +436,21 @@ function renderSeats() {
     el.querySelector('.nm').textContent = p.name;
     const mr = el.querySelector('.minirack'), st = rackStyle(p.rc);
     if (mr.getAttribute('style') !== st) mr.setAttribute('style', st);
-    const c = el.querySelector('.count');
-    c.textContent = p.seat && S.phase !== 'lobby' ? String(count) : '';
-    c.title = 'tiles left';
+    // Their rack shows the backs of the tiles they still hold.
+    const backs = el.querySelector('.backs'), n = p.seat && playing ? count : 0;
+    if (backs.childElementCount !== n) backs.innerHTML = '<i></i>'.repeat(n);
+    backs.title = n ? `${n} tiles left` : '';
+    // Whether they have made their first play of 30 yet.
+    const ob = el.querySelector('.open30'), show = !!(p.seat && playing);
+    const obHtml = show ? `${ic(p.opened ? 'check' : 'lock')}30` : '';
+    if (ob.innerHTML !== obHtml) ob.innerHTML = obHtml;
+    ob.className = 'open30' + (show ? ' show' : '') + (p.opened ? ' yes' : '');
+    ob.title = p.opened ? 'Has made their first 30' : 'Has not made their first 30 yet';
     let tag = '';
     if (!p.on) tag = '⚠ Lost connection';
-    else if (playing && S.turn === p.pid) tag = isMe ? '▶ Your turn' : '▶ Playing now';
     else if (playing && !p.seat) tag = 'Watching';
-    else if (S.phase !== 'lobby' || p.total) tag = `Score ${p.total > 0 ? '+' : ''}${p.total}`;
-    el.querySelector('.tag').innerHTML = tag;
+    else if (p.wins) tag = `${ic('trophy')} ${p.wins}`;
+    if (el.querySelector('.tag').innerHTML !== tag) el.querySelector('.tag').innerHTML = tag;
     const face = el.querySelector('.face');
     const av = face.querySelector('.avatar');
     const avHtml = p.cpu ? `${ic('bot')}<small>${LEVEL_NAMES[p.cpu]}</small>` : esc((p.name || '?').slice(0, 1).toUpperCase());
@@ -417,28 +503,12 @@ function syncChildren(parent, kids) {
 
 function renderCenter() {
   const S = A.S, box = $('#center');
-  if (!S) { box.innerHTML = '<div class="panel"><h2>Finding your table…</h2></div>'; $('#banner').innerHTML = ''; return; }
-  renderBanner();
+  if (!S) { box.innerHTML = '<div class="panel"><h2>Finding your table…</h2></div>'; return; }
+  const cur = S.phase === 'play' && S.players.find(p => p.pid === S.turn);
+  document.title = !cur ? 'Family Tiles' : myTurn() ? '▶ Your turn! · Family Tiles' : `${cur.name}'s turn · Family Tiles`;
   if (S.phase === 'lobby') return renderLobby(box);
   if (S.phase === 'over') return renderOver(box);
   renderBoard(box);
-}
-
-function renderBanner() {
-  const S = A.S, b = $('#banner');
-  let html = '';
-  if (S.phase === 'play') {
-    const cur = S.players.find(p => p.pid === S.turn);
-    // A wide bar in the player's own rack color with their name, so whose turn it is reads at a glance.
-    if (cur) html = `<div class="turnbar ${myTurn() ? 'you' : ''}" style="${rackStyle(cur.rc)}">${cur.cpu ? ic('bot') : ''}${myTurn() ? 'Your turn!' : cur.cpu ? `${esc(cur.name)} is thinking…` : `${esc(cur.name)}'s turn`}</div>`;
-    const last = S.log[S.log.length - 1];
-    if (cur && !cur.on && !myTurn()) html += `<div class="lost">${ic('alert')}${esc(cur.name)} lost connection <button class="btn small" data-act="skip">${ic('skip')}Skip their turn</button></div>`;
-    html += `<div class="bannerline">${last ? `<span class="last">${esc(last)}</span>` : ''}<span class="pool">Tiles left to draw: <b>${S.pool.length}</b></span></div>`;
-  }
-  b.innerHTML = html;
-  b.className = myTurn() ? 'mine' : '';
-  const cur = S.phase === 'play' && S.players.find(p => p.pid === S.turn);
-  document.title = !cur ? 'Family Tiles' : myTurn() ? '▶ Your turn! · Family Tiles' : `${cur.name}'s turn · Family Tiles`;
 }
 
 function renderLobby(box) {
@@ -478,16 +548,14 @@ function renderLobby(box) {
   </div>`;
 }
 
+// No points: whoever plays all their tiles first wins, and only wins are counted.
 function renderOver(box) {
   const S = A.S;
-  const rows = (S.result || []).slice().sort((a, b) => b.delta - a.delta);
-  const win = rows.find(r => r.win);
-  const sign = n => (n > 0 ? `<span class="plus">+${n}</span>` : n < 0 ? `<span class="minus">${n}</span>` : '0');
+  const r = S.result || {};
+  const rows = S.players.filter(p => p.seat || p.wins).sort((a, b) => (b.wins || 0) - (a.wins || 0));
   box.innerHTML = `<div class="card over">
-    <div class="winner"><span class="cup">${ic('trophy')}</span><h2>${esc(win ? win.name : '')} wins!</h2></div>
-    <table class="scores"><tr><th>Player</th><th>Left</th><th>Game</th><th>Total</th></tr>
-    ${rows.map((r, i) => { const p = S.players.find(q => q.pid === r.pid); return `<tr class="${r.win ? 'win' : ''}"><td><span class="rank">${i + 1}</span>${esc(r.name)}</td><td>${r.left}</td><td>${sign(r.delta)}</td><td>${p ? sign(p.total) : ''}</td></tr>`; }).join('')}
-    </table>
+    <div class="winner"><span class="cup">${ic('trophy')}</span><h2>${r.name ? `${esc(r.name)} wins!` : 'No winner this time'}</h2></div>
+    <div class="wins">${rows.map(p => `<div class="winrow ${p.pid === r.pid ? 'win' : ''}"><span class="wn">${esc(p.name)}</span><span class="wc">${ic('trophy')}<b>${p.wins || 0}</b></span></div>`).join('')}</div>
     <button class="btn go huge" data-act="newgame">Play again ${ic('arrow')}</button>
   </div>`;
 }
@@ -506,85 +574,63 @@ function confetti() {
   setTimeout(() => { box.innerHTML = ''; }, 5500);
 }
 
-// Put tiles into the table's row of spaces starting at space i. An empty space just takes the tile;
-// a taken one makes room (everything after it moves along one), so sets are never joined by accident.
-function placeCells(cells, ids, i) {
-  const c = cells.slice();
-  for (const id of ids) {
-    while (c.length < i) c.push(null);
-    if (i >= c.length) c.push(id);
-    else if (c[i] == null) c[i] = id;
-    else c.splice(i, 0, id);
-    i++;
-  }
-  while (c.length && c[c.length - 1] == null) c.pop();
-  return c;
-}
-// The first space after everything on the table, leaving one empty space as a separator.
-function endGap(cells) { let n = cells.length; while (n && cells[n - 1] == null) n--; return n ? n + 1 : 0; }
+/* ---------------- the table: tiles sit wherever they are put ---------------- */
+// Every tile on the table has its own position, measured in tile widths across and rows down, on a table
+// that is the same width (BOARD_W tiles) for everyone. Tiles close together are one set (see groupsOf).
 
-function tableCells() {
+function boardPos() {
   const S = A.S;
-  if (A.W) return A.drag && A.drag.tview ? A.drag.tview : A.W.cells;
-  return (S.work ? S.work.cells : S.cells) || [];
+  if (A.W) return A.W.pos;
+  return (S.work ? S.work.pos : S.pos) || {};
 }
 
-// How many tile spaces fit across the playing area.
-function measureTableCols(box) {
+// The size of a tile on the table. It shrinks (down to a readable minimum) so the whole width fits;
+// on very narrow screens the table scrolls sideways instead of wrapping a set onto two lines.
+function measureBoard(box) {
   const probe = document.createElement('div');
-  probe.className = 'tablegrid';
-  probe.style.cssText = 'position:absolute;visibility:hidden';
-  probe.innerHTML = '<div class="tile"></div>';
+  probe.style.cssText = 'position:absolute;visibility:hidden;width:var(--bw)';
   box.appendChild(probe);
-  const tw = probe.firstChild.offsetWidth;
+  const base = probe.offsetWidth || 48;
   probe.remove();
-  const w = box.clientWidth;
-  return Math.max(6, Math.floor((w + 4) / (tw + 4)));
+  const fit = Math.floor(box.clientWidth / BOARD_W) - 4;
+  const bw = Math.min(base, Math.max(fit, Math.round(30 * A.zoom)));
+  const bh = Math.round(bw * 1.34);
+  return (A.bu = { bw, bh, ux: bw + 4, uy: bh + 16 });
+}
+
+const BOARD_PAD = 6;   // a little felt above the top row
+function boardPoint(px, py) {
+  const b = $('#board').getBoundingClientRect();
+  return [(px - b.left) / A.bu.ux, (py - b.top - BOARD_PAD) / A.bu.uy];
 }
 
 function renderBoard(box) {
   const S = A.S;
   const live = !!A.W;
-  const cells = tableCells();
-  const before = new Set((S.cells || []).filter(x => x != null));
+  const pos = boardPos();
+  const before = S.pos || {};
   const showMarks = live || !!S.work;
-  const landing = new Set(A.drag && A.drag.tview ? A.drag.ids : []);
-  // which set each tile belongs to, and whether that set is valid
-  const info = new Array(cells.length).fill(null);
-  const reasons = [];
-  for (let i = 0; i < cells.length;) {
-    if (cells[i] == null) { i++; continue; }
-    let j = i;
-    while (j < cells.length && cells[j] != null) j++;
-    const a = analyze(cells.slice(i, j));
-    if (!a.ok && !reasons.includes(a.why)) reasons.push(a.why);
-    for (let k = i; k < j; k++) info[k] = { ok: a.ok, start: k === i, end: k === j - 1 };
-    i = j;
+  const lifted = new Set(A.drag ? A.drag.ids : []);
+  const u = measureBoard(box);
+  let html = '', maxX = BOARD_W, maxY = 0;
+  for (const g of groupsOf(pos)) {
+    const ok = analyze(g).ok;
+    g.forEach((id, i) => {
+      const [x, y] = pos[id];
+      maxX = Math.max(maxX, x + 1); maxY = Math.max(maxY, y);
+      const cls = [before[id] ? '' : 'placed', lifted.has(id) ? 'lifted' : '', showMarks ? (ok ? 'seg-ok' : 'seg-bad') : 'seg', i ? '' : 'seg-start', i === g.length - 1 ? 'seg-end' : ''].join(' ');
+      html += tileHTML(id, cls, `left:${(x * u.ux).toFixed(1)}px;top:${(y * u.uy + BOARD_PAD).toFixed(1)}px`);
+    });
   }
-  let html = '';
-  if (A.nope) html += `<div class="nope" role="alert">${ic('alert')}${esc(A.nope)}</div>`;
-  if (live && !me().opened) {
-    const pts = openingPoints(A.W.startTable, A.W.startRack, segments(A.W.cells));
-    const ok = pts >= OPEN_POINTS;
-    html += `<div class="meter ${ok ? 'ok' : ''}"><span>First play</span><span class="bar"><i style="width:${Math.min(100, pts / OPEN_POINTS * 100)}%"></i></span><span><b>${pts}</b> / ${OPEN_POINTS}</span>${ok ? ic('check') : ''}</div>`;
-  }
-  if (showMarks && reasons.length) html += `<div class="badsets">${ic('alert')}<span><b>Sets marked in red need fixing:</b> ${reasons.map(esc).join(' · ')}</span></div>`;
-  else if (live && !cells.some(x => x != null)) html += `<div class="help">${ic('plus')}<span>${A.sel.size ? 'Now tap an empty spot on the table to put them there.' : 'Tap tiles on your rack, then tap an empty spot on the table. Or drag them there.'} Tiles side by side make a set; leave a space between sets.</span></div>`;
-  const cols = A.tcols = measureTableCols(box);
-  const used = cells.length;
-  const rows = live ? Math.max(Math.ceil((used + 1) / cols) + 1, 3) : Math.max(1, Math.ceil(used / cols));
-  const total = rows * cols;
-  let grid = '';
-  for (let i = 0; i < total; i++) {
-    const x = cells[i];
-    if (x == null) { grid += `<div class="tcell" ${live ? `data-drop="tcell:${i}"` : ''}></div>`; continue; }
-    const f = info[i];
-    const cls = [before.has(x) ? '' : 'placed', landing.has(x) ? 'landing' : '', showMarks ? (f.ok ? 'seg-ok' : 'seg-bad') : 'seg', f.start ? 'seg-start' : '', f.end ? 'seg-end' : ''].join(' ');
-    grid += tileHTML(x, cls);
-  }
-  html += `<div class="tablegrid ${live ? 'live' : ''}" style="grid-template-columns:repeat(${cols}, var(--bw))">${grid}</div>`;
-  if (!used && !live) html += `<div class="empty"><span class="ghosttiles"><i></i><i></i><i></i></span>The table is empty. Sets will appear here.</div>`;
-  box.innerHTML = html;
+  const mainEl = box.parentElement, cs = getComputedStyle(mainEl);
+  const room = mainEl.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 2;
+  const h = Math.max(html ? (maxY + (live ? 2.4 : 1.2)) * u.uy : 0, room);
+  box.innerHTML = `<div id="board" class="board ${live ? 'live' : ''}" style="--tw:${u.bw}px;--th:${u.bh}px;width:${Math.ceil(maxX * u.ux - 4)}px;height:${Math.floor(h)}px">${html}</div>`;
+}
+
+// The "first 30" badge: a green tick once a player has made their opening play, a grey padlock until then.
+function openBadge(opened, extra = '') {
+  return `<span class="open30 show ${opened ? 'yes' : ''} ${extra}" title="${opened ? 'Has made their first 30' : 'Has not made their first 30 yet'}">${ic(opened ? 'check' : 'lock')}30</span>`;
 }
 
 function renderMe() {
@@ -592,18 +638,31 @@ function renderMe() {
   const c = $('#controls');
   // The rack only shows during a game, so the lobby and results get the whole screen.
   document.querySelector('footer').hidden = !(S && S.phase === 'play');
-  if (!S || !m) { c.innerHTML = ''; renderRack(); return; }
+  if (!S || !m || S.phase !== 'play') { c.innerHTML = ''; renderRack(); return; }
+  const sp = `<button class="btn" data-act="space" aria-label="Add a space before the chosen tile" title="Add a space before the chosen tile" ${A.sel.size ? '' : 'disabled'}>${ic('space')}<span class="long">Space</span></button>`;
   let html = '';
   if (myTurn()) {
     const placed = A.W && A.W.rack.length < A.W.startRack.length;
+    if (A.W && !m.opened) {
+      const pts = openingPoints(A.W.startTable, A.W.startRack, groupsOf(A.W.pos));
+      const ok = pts >= OPEN_POINTS;
+      html += `<span class="meter ${ok ? 'ok' : ''}" title="Your first play has to add up to ${OPEN_POINTS}"><span class="bar"><i style="width:${Math.min(100, pts / OPEN_POINTS * 100)}%"></i></span><span><b>${pts}</b>/${OPEN_POINTS}</span>${ok ? ic('check') : ''}</span>`;
+    }
     html += `<button class="btn go" data-act="done">${ic('check')}Done</button>`;
-    html += `<button class="btn draw" data-act="draw">${S.pool.length ? `${ic('draw')}<span>Draw<span class="long"> a tile</span></span>` : `${ic('skip')}Pass`}</button>`;
-    html += `<button class="btn" data-act="undo" aria-label="Undo" ${A.hist.length ? '' : 'disabled'}>${ic('undo')}<span class="long">Undo</span></button>`;
-    html += `<button class="btn" data-act="reset" aria-label="Reset" ${placed || (A.W && A.hist.length) ? '' : 'disabled'}>${ic('reset')}<span class="long">Reset</span></button>`;
-    html += `<button class="btn" data-act="torack" aria-label="Back to rack" ${A.sel.size ? '' : 'disabled'}>${ic('torack')}<span><span class="long">Back to </span>rack</span></button>`;
+    html += `<button class="btn draw" data-act="draw" title="Tiles left to draw: ${S.pool.length}">${S.pool.length ? `${ic('draw')}Draw<b class="cnt">${S.pool.length}</b>` : `${ic('skip')}Pass`}</button>`;
+    html += `<button class="btn" data-act="undo" aria-label="Undo" title="Undo" ${A.hist.length ? '' : 'disabled'}>${ic('undo')}<span class="long">Undo</span></button>`;
+    html += `<button class="btn" data-act="reset" aria-label="Reset" title="Reset" ${placed || (A.W && A.hist.length) ? '' : 'disabled'}>${ic('reset')}<span class="long">Reset</span></button>`;
+    html += `<button class="btn" data-act="torack" aria-label="Back to rack" title="Back to rack" ${A.sel.size ? '' : 'disabled'}>${ic('torack')}<span class="long">Rack</span></button>`;
+    html += sp;
+  } else {
+    const cur = S.players.find(p => p.pid === S.turn);
+    if (cur) html += `<span class="turnchip" style="${rackStyle(cur.rc)}">${cur.cpu ? ic('bot') : ''}${esc(cur.name)}</span>`;
+    if (cur && !cur.on) html += `<button class="btn" data-act="skip">${ic('skip')}Skip</button>`;
+    html += `<span class="poolchip" title="Tiles left to draw: ${S.pool.length}">${ic('draw')}<b>${S.pool.length}</b></span>`;
+    if (m.seat) html += sp;
   }
   c.innerHTML = html;
-  $('#sorts').hidden = !(m.seat && S.phase === 'play');
+  $('#sorts').hidden = !m.seat;
   renderRack();
 }
 
@@ -695,6 +754,7 @@ function renderRack() {
   const rack = $('#rack');
   for (const kv of rackStyle(A.rc).split(';')) { const [k, v] = kv.split(':'); rack.style.setProperty(k, v); }
   rack.classList.toggle('picking', A.sel.size > 0);
+  rack.classList.toggle('myturn', myTurn());
   $('#rackName').textContent = A.name;
   const g = rack.querySelector('.grooves');
   if (!S || !m || !m.seat || S.phase === 'lobby') {
@@ -715,7 +775,7 @@ function renderRack() {
     if (x == null || (d && !d.view && d.ids.includes(x))) return `<div class="cell" data-drop="rackslot:${r},${c}"></div>`;
     return tileHTML(x, d && d.view && d.ids.includes(x) ? 'landing' : '');
   }).join('')).join('');
-  $('#rackInfo').innerHTML = `${ids.length} tiles<span class="pts"> · ${rackPoints(ids)} points</span>`;
+  $('#rackInfo').innerHTML = `${S.phase === 'play' ? openBadge(m.opened) : ''}${ids.length} tiles`;
   for (const b of document.querySelectorAll('.sortbtn')) {
     const by = b.dataset.act === 'sortnum' ? 'num' : 'col';
     const undo = canUndoSort(by);
@@ -785,7 +845,7 @@ function toRack(moving, target) {
 // Animate tiles from where they were to where they are now, so the rack slides instead of jumping.
 function flip(container, change) {
   const before = new Map();
-  const all = () => document.querySelectorAll('#rack .grooves .tile[data-id], #center .tablegrid .tile[data-id]');
+  const all = () => document.querySelectorAll('#rack .grooves .tile[data-id], #board .tile[data-id]');
   for (const el of all()) before.set(el.dataset.id, el.getBoundingClientRect());
   change();
   const moved = [];
@@ -806,7 +866,8 @@ function flip(container, change) {
 
 /* ---------------- tapping and dragging ---------------- */
 
-let press = null, ghost = null, hover = null;
+let press = null, ghost = null;
+const unit = v => Math.min(1, Math.max(0, v));
 
 function canPick(id) {
   if (A.W) return true;
@@ -818,21 +879,24 @@ document.addEventListener('pointerdown', e => {
   if (!t || e.button > 0 || t.closest('.ghost')) return;
   const id = +t.dataset.id;
   if (!canPick(id)) return;
-  press = { id, x: e.clientX, y: e.clientY, drag: false };
+  // Remember where on the tile it was grabbed, so it is put down exactly where it is shown while dragging.
+  const r = t.getBoundingClientRect();
+  press = { id, x: e.clientX, y: e.clientY, drag: false, fx: unit((e.clientX - r.left) / r.width), fy: unit((e.clientY - r.top) / r.height) };
 });
 
 function startDrag(id) {
   if (!A.sel.has(id)) { A.sel.clear(); A.sel.add(id); }
+  const ids = [...A.sel];
   ghost = document.createElement('div');
   ghost.className = 'ghost';
-  ghost.innerHTML = [...A.sel].slice(0, 6).map(x => tileHTML(x)).join('');
+  ghost.innerHTML = ids.slice(0, 6).map(x => tileHTML(x)).join('');
   document.body.appendChild(ghost);
   document.body.classList.add('dragging');
-  A.drag = { ids: [...A.sel], slot: null, view: null, tslot: null, tview: null };
+  const rt = $('#rack .grooves .tile, #rack .grooves .cell');
+  A.drag = { ids, idx: Math.min(ids.indexOf(id), 5), slot: null, view: null, over: false, gx: 0, gy: 0, rtw: rt ? rt.offsetWidth : 50 };
   // Start with the tiles shown where they already are, so nothing jumps.
   const at = slotOf(id);
   if (at) setDragSlot([...at, 0]);
-  else if (A.W && A.W.cells.includes(id)) setDragT(A.W.cells.indexOf(id));
   renderCenter(); renderMe();
 }
 
@@ -850,30 +914,6 @@ function setDragSlot(at) {
     d.view = dropInto(cloneGrid(A.grid).map(r => r.map(x => (mv.has(x) ? null : x))), d.ids, at[0], at[1], at[2]);
   } else d.view = null;
   return true;
-}
-
-function setDragT(i) {
-  const d = A.drag;
-  if (d.tslot === i) return false;
-  d.tslot = i;
-  if (i != null) {
-    const mv = new Set(d.ids);
-    d.tview = placeCells(A.W.cells.map(x => (mv.has(x) ? null : x)), d.ids, i);
-  } else d.tview = null;
-  return true;
-}
-
-// Which table space the pointer is over (worked out from the grid, like the rack).
-function tableSlotAt(x, y) {
-  const g = $('#center .tablegrid');
-  if (!g || !g.children.length) return 0;
-  const kids = g.children, cols = A.tcols, k0 = kids[0];
-  const pitchX = kids.length > 1 ? kids[1].offsetLeft - k0.offsetLeft : k0.offsetWidth + 4;
-  const pitchY = kids.length > cols ? kids[cols].offsetTop - k0.offsetTop : k0.offsetHeight + 16;
-  const box = g.getBoundingClientRect();
-  const c = Math.max(0, Math.min(cols - 1, Math.floor((x - box.left - k0.offsetLeft + 2) / pitchX)));
-  const r = Math.max(0, Math.floor((y - box.top - k0.offsetTop + 8) / pitchY));
-  return Math.min(r * cols + c, Math.ceil(kids.length / cols) * cols - 1);
 }
 
 // Which slot the pointer is over, from the rack's fixed grid (never from tiles that are mid-slide).
@@ -894,6 +934,13 @@ function slotAt(x, y) {
   return [r, c, 0];
 }
 
+// Dragging near the edge of the playing area scrolls it.
+function edgeScroll(e) {
+  const m = document.querySelector('main'), r = m.getBoundingClientRect(), E = 34, step = 14;
+  if (e.clientY > r.bottom - E) m.scrollTop += step; else if (e.clientY < r.top + E) m.scrollTop -= step;
+  if (e.clientX > r.right - E) m.scrollLeft += step; else if (e.clientX < r.left + E) m.scrollLeft -= step;
+}
+
 document.addEventListener('pointermove', e => {
   if (!press) return;
   if (!press.drag) {
@@ -902,23 +949,24 @@ document.addEventListener('pointermove', e => {
     startDrag(press.id);
   }
   e.preventDefault();
-  ghost.style.transform = `translate(${e.clientX - 30}px, ${e.clientY - 46}px) rotate(-3deg)`;
+  const d = A.drag;
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const overRack = el && el.closest('#rack');
-  const canRack = !A.W || A.drag.ids.every(id => A.W.startRack.includes(id));
-  const overTable = !overRack && A.W && el && el.closest('main');
-  const rackChanged = setDragSlot(overRack && canRack ? slotAt(e.clientX, e.clientY) : null);
-  const tableChanged = setDragT(overTable ? tableSlotAt(e.clientX, e.clientY) : null);
-  if (rackChanged || tableChanged) flip(null, () => { if (tableChanged) renderCenter(); if (rackChanged) renderRack(); });
-  const d = overRack || overTable ? null : el && el.closest('[data-drop]');
-  if (hover !== d) { if (hover) hover.classList.remove('hover'); hover = d; if (d) d.classList.add('hover'); }
+  const canRack = !A.W || d.ids.every(id => A.W.startRack.includes(id));
+  d.over = !!(!overRack && A.W && A.bu && el && el.closest('main'));
+  // The tiles being carried are drawn at the size they will be where they land, right under the finger.
+  const tw = d.over ? A.bu.bw : d.rtw, th = Math.round(tw * 1.34);
+  ghost.style.setProperty('--tw', tw + 'px'); ghost.style.setProperty('--th', th + 'px');
+  d.gx = e.clientX - press.fx * tw - d.idx * (tw + 4);
+  d.gy = e.clientY - press.fy * th;
+  ghost.style.transform = `translate(${d.gx}px, ${d.gy}px)`;
+  if (setDragSlot(overRack && canRack ? slotAt(e.clientX, e.clientY) : null)) flip(null, renderRack);
+  if (d.over) edgeScroll(e);
 }, { passive: false });
 
 function endDrag() {
   ghost && ghost.remove(); ghost = null;
   document.body.classList.remove('dragging');
-  if (hover) hover.classList.remove('hover');
-  hover = null;
   const d = A.drag; A.drag = null;
   return d;
 }
@@ -927,13 +975,10 @@ document.addEventListener('pointerup', () => {
   if (!press) return;
   const p = press; press = null;
   if (!p.drag) { toggle(p.id); return; }
-  const target = hover;
   const d = endDrag();
-  const g = $('#rack .grooves');
-  if (d.slot) flip(g, () => moveSelected('rackslot:' + d.slot));
-  else if (d.tslot != null) flip(g, () => moveSelected('tcell:' + d.tslot));
-  else if (target) moveSelected(target.dataset.drop);
-  else { A.sel.clear(); flip(g, renderAll); }
+  if (d.slot) flip(null, () => moveSelected('rackslot:' + d.slot));
+  else if (d.over && A.W && $('#board')) moveSelected('board', boardPoint(d.gx, d.gy));
+  else { A.sel.clear(); flip(null, renderAll); }
 });
 document.addEventListener('pointercancel', () => {
   if (!press) return;
@@ -948,8 +993,15 @@ function toggle(id) {
 }
 
 document.addEventListener('click', e => {
+  // Tapping an empty spot (on the table or the rack) puts the chosen tiles there.
+  const bd = e.target.closest('#board');
+  if (bd && A.sel.size && !e.target.closest('.tile')) {
+    if (A.W) moveSelected('board', boardPoint(e.clientX - A.bu.bw / 2, e.clientY - A.bu.bh / 2));
+    else { A.sel.clear(); renderAll(); }
+    return;
+  }
   const d = e.target.closest('[data-drop]');
-  if (d && A.sel.size && !e.target.closest('.tile')) { flip($('#rack .grooves'), () => moveSelected(d.dataset.drop)); return; }
+  if (d && A.sel.size && !e.target.closest('.tile')) { flip(null, () => moveSelected(d.dataset.drop)); return; }
   const sw = e.target.closest('[data-setrc]');
   if (sw) { A.rc = sw.dataset.setrc; saveRc(); send({ t: 'rc', rc: A.rc }); renderAll(); return; }
   const b = e.target.closest('[data-act]');
@@ -961,7 +1013,8 @@ document.addEventListener('click', e => {
   else if (act === 'draw') draw();
   else if (act === 'undo') undo();
   else if (act === 'reset') resetTurn();
-  else if (act === 'torack') moveSelected('rack');
+  else if (act === 'torack') flip(null, () => moveSelected('rack'));
+  else if (act === 'space') addSpace();
   else if (act === 'sortnum') sortRack('num');
   else if (act === 'sortcol') sortRack('col');
   else if (act === 'skip') send({ t: 'skip' });
@@ -1010,7 +1063,7 @@ function applyZoom() {
   A.zoom = Math.min(1.8, Math.max(0.7, Math.round(A.zoom * 10) / 10));
   document.documentElement.style.setProperty('--zoom', A.zoom);
   $('#zoomVal').textContent = Math.round(A.zoom * 100) + '%';
-  if (A.S) renderRack();
+  if (A.S) { if (A.S.phase === 'play') renderCenter(); renderRack(); }
   store.set('zoom', A.zoom);
 }
 
@@ -1041,7 +1094,7 @@ $('#setClose').addEventListener('click', () => showSettings(false));
 document.addEventListener('pointerdown', e => { if (!$('#settings').hidden && !(e.target.closest && e.target.closest('#settings, #setBtn'))) showSettings(false); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') showSettings(false); });
 let rz = 0;
-window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { renderSeats(); renderRack(); }, 150); });
+window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { renderSeats(); if (A.S && A.S.phase === 'play') renderCenter(); renderRack(); }, 150); });
 
 // Leave the table and go back to the join screen, where you can join again (same or different table).
 // Your seat is kept while a game is on, so joining the same table again puts you back in it.
@@ -1050,7 +1103,7 @@ function leaveTable(msg) {
   A.net.stop(); A.net = null;
   A.video.stopAll();
   A.camOn = false; A.micOn = true;
-  A.S = null; A.W = null; A.hist = []; A.sel.clear(); A.drag = null; A.nope = null; A.sortUndo = null; A.status = 'off';
+  A.S = null; A.W = null; A.hist = []; A.sel.clear(); A.drag = null; A.loose.clear(); A.sortUndo = null; A.status = 'off';
   for (const el of seatEls.values()) el.remove();
   seatEls.clear(); videoEls.clear();
   for (const g of gains.values()) try { g.src.disconnect(); } catch (e) { /* ignore */ }

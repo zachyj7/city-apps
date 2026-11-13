@@ -138,65 +138,108 @@ export function isMJ(startTable, startRack, table) {
   return false;
 }
 
-// ---- the table as a row of spaces ----
-// The table is laid out like words in a sentence: a list of spaces, each holding a tile or empty (null).
-// Tiles next to each other form a set; an empty space separates sets. Long lists wrap onto more rows.
+// ---- the table: every tile has its own place ----
+// A tile on the table sits at [x, y]: x in tile widths across, y in rows down, on a table BOARD_W tiles wide
+// (the same for everyone, so a set is never wrapped onto two lines). Nothing snaps to a grid. Tiles that are
+// close together on the same level are one set; tiles further apart are separate sets.
 
-export function segments(cells) {
-  const out = [];
-  let cur = [];
-  for (const x of cells || []) {
-    if (x == null) { if (cur.length) out.push(cur); cur = []; } else cur.push(x);
+export const BOARD_W = 15;      // wide enough for the longest run (13 tiles)
+const JOIN_X = 1.6;             // tiles whose left edges are this close (1 = touching) belong together...
+const JOIN_Y = 0.5;             // ...when they are also within half a row of the same height
+const GAP = 0.8;                // the clear space kept between two sets on one row, so they never read as one
+const r2 = v => Math.round(v * 100) / 100;
+
+// The sets on the table, each listed left to right.
+export function groupsOf(pos) {
+  const ids = Object.keys(pos || {}).map(Number).sort((a, b) => pos[a][0] - pos[b][0] || pos[a][1] - pos[b][1] || a - b);
+  const parent = new Map(ids.map(id => [id, id]));
+  const find = a => { while (parent.get(a) !== a) a = parent.get(a); return a; };
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+    const a = pos[ids[i]], b = pos[ids[j]];
+    if (b[0] - a[0] > JOIN_X) break;
+    if (Math.abs(b[1] - a[1]) <= JOIN_Y) parent.set(find(ids[j]), find(ids[i]));
   }
-  if (cur.length) out.push(cur);
-  return out;
+  const out = new Map();
+  for (const id of ids) { const r = find(id); if (!out.has(r)) out.set(r, []); out.get(r).push(id); }
+  return [...out.values()];
 }
 
-export function cellsFromSets(sets) {
-  const out = [];
-  for (const s of sets) { if (out.length) out.push(null); out.push(...s); }
-  return out;
-}
+// Sets as rectangles { x, y, n }: n tiles wide, one row tall.
+const hits = (a, b) => a.x < b.x + b.n + GAP - 1e-6 && b.x < a.x + a.n + GAP - 1e-6 && Math.abs(a.y - b.y) < 1 - 1e-6;
+const maxX = n => Math.max(0, BOARD_W - n);
+const freeAt = (placed, n, x, y) => y >= 0 && x >= 0 && x <= maxX(n) + 1e-6 && !placed.some(p => hits({ x, y, n }, p));
 
-const trim = cells => { const c = cells.slice(); while (c.length && c[c.length - 1] == null) c.pop(); return c; };
-
-// At the end of a turn, each valid set is put in order (runs low to high, groups by color).
-export function tidyCells(cells) {
-  const c = trim(cells);
-  let i = 0;
-  while (i < c.length) {
-    if (c[i] == null) { i++; continue; }
-    let j = i;
-    while (j < c.length && c[j] != null) j++;
-    const a = analyze(c.slice(i, j));
-    if (a.ok) c.splice(i, j - i, ...a.order);
-    i = j;
-  }
-  return c;
-}
-
-// Lay new sets onto the table (for computer players): sets that did not change stay where they were,
-// the rest go into the first empty stretch that fits them with a space on each side, or at the end.
-export function layoutSets(cells, sets) {
-  const key = s => [...s].sort((a, b) => a - b).join(',');
-  const want = new Map(sets.map(s => [key(s), s]));
-  const c = (cells || []).slice();
-  let i = 0;
-  while (i < c.length) {
-    if (c[i] == null) { i++; continue; }
-    let j = i;
-    while (j < c.length && c[j] != null) j++;
-    const k = key(c.slice(i, j));
-    if (want.has(k)) want.delete(k); else for (let x = i; x < j; x++) c[x] = null;
-    i = j;
-  }
-  for (const s of want.values()) {
-    let at = -1;
-    for (let p = 0; p + s.length <= c.length; p++) {
-      if ((p === 0 || c[p - 1] == null) && (p + s.length >= c.length || c[p + s.length] == null) && c.slice(p, p + s.length).every(x => x == null)) { at = p; break; }
+// The closest spot to (x, y) where a set of n tiles does not crowd any other set.
+function nearestFree(placed, n, x, y) {
+  if (freeAt(placed, n, x, y)) return [x, y];
+  for (let r = 1; r < 600; r++) {
+    const d = r * 0.25;
+    let best = null, bd = Infinity;
+    for (let i = -r; i <= r; i++) {
+      const e = i * 0.25;
+      for (const [dx, dy] of [[e, -d], [e, d], [-d, e], [d, e]]) {
+        const cx = r2(x + dx), cy = r2(y + dy);
+        if (!freeAt(placed, n, cx, cy)) continue;
+        const dist = dx * dx + dy * dy;
+        if (dist < bd) { bd = dist; best = [cx, cy]; }
+      }
     }
-    if (at < 0) { const t = trim(c); c.length = 0; c.push(...t); if (c.length) c.push(null); at = c.length; }
-    for (let x = 0; x < s.length; x++) c[at + x] = s[x];
+    if (best) return best;
   }
-  return tidyCells(c);
+  return [x, y];
+}
+
+// The first open spot reading across and then down, for a brand new set.
+function firstFree(placed, n) {
+  for (let y = 0; ; y++) for (let x = 0; x <= maxX(n); x += 0.5) if (freeAt(placed, n, x, y)) return [x, y];
+}
+
+// Straighten the table up: each set becomes a level, evenly spaced row, staying where it was put.
+// "moved" are the tiles just put down: the tiles that were already there stay still and the new ones line up
+// with them. A set that would crowd another is nudged to the nearest clear spot. With "reorder" (the end of
+// a turn) each valid set is also put in order (runs low to high, groups by color).
+export function tidyPos(pos, moved, reorder) {
+  const mv = moved || new Set();
+  const groups = groupsOf(pos).map(g => {
+    const still = g.filter(id => !mv.has(id));
+    const base = still.length ? still : g;
+    const y = base.reduce((s, id) => s + pos[id][1], 0) / base.length;
+    const k = g.findIndex(id => !mv.has(id));
+    const x = k < 0 ? pos[g[0]][0] : pos[g[k]][0] - k;
+    let ids = g;
+    if (reorder) { const a = analyze(g); if (a.ok) ids = a.order; }
+    return { ids, n: g.length, x: r2(Math.min(Math.max(x, 0), maxX(g.length))), y: r2(Math.max(0, y)), loose: still.length < g.length };
+  });
+  const placed = [], out = {};
+  for (const g of [...groups.filter(g => !g.loose), ...groups.filter(g => g.loose)]) {
+    const [x, y] = nearestFree(placed, g.n, g.x, g.y);
+    placed.push({ x, y, n: g.n });
+    g.ids.forEach((id, i) => { out[id] = [r2(x + i), r2(y)]; });
+  }
+  return out;
+}
+
+// Lay a new list of sets onto the table (for computer players, and for games saved by an older version):
+// sets that did not change stay where they were, a changed set goes where most of its tiles already were
+// (or as near as it fits), and a brand new set goes into the first open spot.
+export function layoutPos(pos, sets) {
+  const old = groupsOf(pos).map(g => ({ ids: g, set: new Set(g), x: pos[g[0]][0], y: pos[g[0]][1] }));
+  const byKey = new Map(old.map(o => [key(o.ids), o]));
+  const placed = [], out = {}, todo = [];
+  for (const s of sets) {
+    const o = byKey.get(key(s));
+    if (!o) { todo.push(s); continue; }
+    byKey.delete(key(s));
+    placed.push({ x: o.x, y: o.y, n: s.length });
+    for (const id of o.ids) out[id] = pos[id];
+  }
+  for (const s of todo) {
+    const a = analyze(s), ids = a.ok ? a.order : s, n = ids.length;
+    let home = null, most = 0;
+    for (const o of old) { const c = ids.filter(id => o.set.has(id)).length; if (c > most) { most = c; home = o; } }
+    const [x, y] = home ? nearestFree(placed, n, r2(Math.min(home.x, maxX(n))), home.y) : firstFree(placed, n);
+    placed.push({ x, y, n });
+    ids.forEach((id, i) => { out[id] = [r2(x + i), r2(y)]; });
+  }
+  return out;
 }

@@ -222,7 +222,7 @@ header {
 
 /* the playing area: a felt mat with a stitched edge */
 main {
-  min-height: 0; overflow-y: auto; padding: 14px 16px 22px; position: relative;
+  min-height: 0; overflow: auto; padding: 12px 14px; position: relative;
   box-shadow: inset 0 0 0 2px rgba(0,0,0,.18), inset 0 0 70px rgba(0,0,0,.35);
   outline: 2px dashed rgba(255,255,255,.1); outline-offset: -9px; border-radius: 6px;
 }
@@ -247,7 +247,7 @@ main {
 }
 .face.waiting::after { content: 'Video loading…'; position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font-size: .75em; color: #fff; text-shadow: 0 1px 2px #000; }
 .seat.mic-off .face::before {
-  content: ''; position: absolute; top: 6px; right: 6px; z-index: 2; width: 26px; height: 26px; border-radius: 50%;
+  content: ''; position: absolute; bottom: 6px; right: 6px; z-index: 2; width: 26px; height: 26px; border-radius: 50%;
   background: var(--bad) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'%3E%3Crect x='9' y='3' width='6' height='11' rx='3'/%3E%3Cpath d='M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M3 3l18 18'/%3E%3C/svg%3E") center / 16px no-repeat;
   box-shadow: 0 2px 4px rgba(0,0,0,.4);
 }
@@ -267,25 +267,37 @@ main {
 .seat.idle .face { filter: brightness(.78) saturate(.85); }
 
 /* the player's rack in miniature, name pressed into the front edge, tile count on the end */
-.minirack { position: relative; height: 34px; flex: none; }
-.minirack .ridges {
-  position: absolute; left: 5px; right: 5px; top: 0; height: 17px; border-radius: 6px 6px 0 0;
-  background: repeating-linear-gradient(to bottom, var(--rk-hi) 0 4px, var(--rk) 4px 6px, var(--rk-deep) 6px 7px), var(--rk);
-  transform: perspective(120px) rotateX(28deg); transform-origin: bottom;
+.minirack { flex: none; margin-bottom: 4px; }
+/* the backs of the tiles they still hold, standing on their rack */
+.minirack .backs {
+  display: flex; flex-wrap: wrap; align-content: flex-end; gap: 3px 2px; min-height: 22px; padding: 4px 6px 3px;
+  border-radius: 6px 6px 0 0; background: linear-gradient(var(--rk-hi), var(--rk));
+  box-shadow: inset 0 -3px 0 var(--rk-deep);
+}
+.minirack .backs i {
+  width: calc((100% - 28px) / 15); height: 15px; border-radius: 2px;
+  background: linear-gradient(var(--tile-face), var(--tile-low));
+  box-shadow: 0 1px 0 var(--tile-side-dark), 0 2px 2px rgba(0,0,0,.35);
 }
 .minirack .mini-edge {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 18px; border-radius: 0 0 7px 7px;
+  height: 18px; border-radius: 0 0 7px 7px;
   background: linear-gradient(var(--rk), var(--rk-lo));
   box-shadow: 0 3px 0 var(--rk-deep), 0 5px 8px rgba(0,0,0,.4);
-  display: flex; align-items: center; padding: 0 44px 0 9px; overflow: hidden;
+  display: flex; align-items: center; padding: 0 9px; overflow: hidden;
 }
 .minirack .engr { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.minirack .count {
-  position: absolute; right: 2px; top: -6px; min-width: 36px; height: 36px; padding: 0 6px; border-radius: 18px;
-  background: #fff; color: #0c1a12; font-family: var(--display); font-weight: 700; font-size: 20px; display: grid; place-items: center;
-  box-shadow: 0 0 0 3px rgba(0,0,0,.75), 0 3px 6px rgba(0,0,0,.4);
+
+/* the "first 30" badge: grey padlock until a player has made their opening play, then a green tick */
+.open30 {
+  display: none; position: absolute; top: 5px; right: 5px; z-index: 3; align-items: center; gap: 2px;
+  padding: 1px 8px 1px 5px; border-radius: 999px; font-family: var(--display); font-weight: 700; font-size: 15px; line-height: 1.3;
+  background: rgba(0,0,0,.72); color: #c9d6ce; border: 2px dashed rgba(255,255,255,.6);
 }
-.minirack .count:empty { display: none; }
+.open30.show { display: inline-flex; }
+.open30.yes { background: var(--green); color: #fff; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.4); }
+.open30 .ic { width: 1em; height: 1em; stroke-width: 3.2; }
+#rackInfo .open30 { position: static; vertical-align: middle; margin-right: 8px; font-size: .95em; }
+.tag .ic { width: 1em; height: 1em; vertical-align: -.12em; color: var(--gold); }
 
 .engr {
   font-weight: 700; font-style: italic; letter-spacing: .02em; color: var(--rk-text);
@@ -342,29 +354,28 @@ main {
 .help { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 1.05em; padding: 10px 14px; background: rgba(0,0,0,.28); border-radius: 14px; margin-bottom: 12px; border: 1px solid var(--line); }
 .nope { display: flex; align-items: center; gap: 10px; background: linear-gradient(#ff6a5e, var(--bad)); color: #fff; font-weight: 700; font-size: 1.1em; padding: .55em .9em; border-radius: 14px; margin-bottom: 12px; box-shadow: 0 4px 0 var(--bad-deep), 0 8px 16px rgba(0,0,0,.3); }
 .meter {
-  display: inline-flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 8px 14px; border-radius: 14px;
-  background: rgba(0,0,0,.4); border: 1px solid var(--line); font-family: var(--display); font-weight: 600; font-size: 1.05em;
+  display: inline-flex; align-items: center; gap: 8px; padding: 3px 10px; border-radius: 10px; min-height: 36px;
+  background: rgba(0,0,0,.4); border: 1px solid var(--line); font-family: var(--display); font-weight: 600; font-size: .85em;
 }
-.meter .bar { width: 140px; height: 12px; border-radius: 999px; background: rgba(255,255,255,.15); overflow: hidden; }
+.meter .bar { width: 70px; height: 10px; border-radius: 999px; background: rgba(255,255,255,.15); overflow: hidden; }
 .meter .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-hi)); border-radius: 999px; transition: width .25s ease; }
 .meter.ok { border-color: rgba(61,220,132,.6); color: #7ff0ae; }
 .meter.ok .bar i { background: linear-gradient(90deg, var(--green), var(--green-hi)); }
 
 /* the table: a grid of spaces like the rack; tiles side by side are one set, a space separates sets */
-.tablegrid { display: grid; column-gap: 4px; row-gap: 18px; justify-content: start; --tw: var(--bw); --th: var(--bh); padding: 4px 0 10px; }
-.tablegrid .tcell { width: var(--bw); height: var(--bh); }
-.tablegrid.live .tcell { cursor: pointer; }
-.tablegrid .tile::before {
+.board { position: relative; margin: 0 auto; }
+.board .tile { position: absolute; }
+.board .tile.lifted { opacity: .3; }
+.board .tile::before {
   content: ''; position: absolute; left: -2px; right: -2px; bottom: -10px; height: 5px;
   background: rgba(255,255,255,.28); pointer-events: none;
 }
-.tablegrid .tile.seg-start::before { left: 2px; border-radius: 3px 0 0 3px; }
-.tablegrid .tile.seg-end::before { right: 2px; border-radius: 0 3px 3px 0; }
-.tablegrid .tile.seg-ok::before { background: #3ddc84; }
-.tablegrid .tile.seg-bad::before { background: var(--bad); height: 6px; }
-.tablegrid .tile.seg-bad { outline: 3px dashed var(--bad); outline-offset: 1px; }
-.tablegrid .tile.sel { outline: 5px solid #1e7bff; outline-offset: 0; }
-.tablegrid .tile.landing { opacity: .6; outline: 4px dashed #1e7bff; outline-offset: -2px; background: #e3f0ff; }
+.board .tile.seg-start::before { left: 2px; border-radius: 3px 0 0 3px; }
+.board .tile.seg-end::before { right: 2px; border-radius: 0 3px 3px 0; }
+.board .tile.seg-ok::before { background: #3ddc84; }
+.board .tile.seg-bad::before { background: var(--bad); height: 6px; }
+.board .tile.seg-bad { outline: 3px dashed var(--bad); outline-offset: 1px; }
+.board .tile.sel { outline: 5px solid #1e7bff; outline-offset: 0; }
 .badsets { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 1em; padding: 8px 14px; background: rgba(255,77,64,.2); border: 1px solid rgba(255,77,64,.6); border-radius: 14px; margin-bottom: 12px; }
 .badsets .ic { color: #ff8a80; }
 
@@ -396,27 +407,44 @@ main {
   border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,.35);
 }
 .tile.placed { box-shadow: inset 0 1px 0 #fff, 0 0 0 3px #4fc3ff, 0 3px 0 var(--tile-side-dark), 0 5px 7px rgba(0,0,0,.35); }
-.tile.fresh { animation: fresh 1s ease-in-out 4; }
+.tile.fresh { animation: fresh .9s ease-in-out 2; }
 @keyframes fresh { 50% { box-shadow: 0 0 0 5px var(--gold), 0 0 20px var(--gold); } }
 .sets .tile { animation: drop .22s ease-out; }
 @keyframes drop { from { transform: translateY(-6px) scale(1.04); } }
-.ghost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; display: flex; gap: 3px; opacity: .95; filter: drop-shadow(0 14px 14px rgba(0,0,0,.5)); }
+.ghost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; display: flex; gap: 4px; opacity: .95; filter: drop-shadow(0 14px 14px rgba(0,0,0,.5)); }
 .ghost .tile { transform: none; }
 body.dragging { cursor: grabbing; }
 body.dragging .sets .tile.sel { opacity: .35; }
 
 /* ---------- my rack (modelled on the wedge rack in the family's photo) ---------- */
 footer {
-  display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: end;
-  padding: 10px 14px max(12px, env(safe-area-inset-bottom));
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: end;
+  padding: 10px 14px max(8px, env(safe-area-inset-bottom));
   background: linear-gradient(180deg, rgba(3,22,14,.6), rgba(2,14,9,.92));
   border-top: 1px solid var(--line); border-radius: 22px 22px 0 0;
   box-shadow: 0 -10px 24px rgba(0,0,0,.3);
 }
 #mySeat:empty { display: none; }
 .mine { min-width: 0; }
-#controls { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; }
+#controls { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; }
 #controls:empty { display: none; }
+#controls .btn { min-height: 36px; padding: .15em .7em; font-size: .8em; border-radius: 10px; gap: .35em; box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 3px 0 var(--b-edge); }
+#controls .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--b-edge); }
+#controls .btn[disabled] { box-shadow: 0 3px 0 var(--b-edge); }
+#controls .btn .ic { width: 1.1em; height: 1.1em; }
+#controls .cnt { font-size: .85em; padding: 0 .4em; border-radius: 999px; background: rgba(0,0,0,.28); }
+.turnchip, .poolchip {
+  display: inline-flex; align-items: center; gap: .35em; min-height: 32px; padding: 0 .7em; border-radius: 10px;
+  font-family: var(--display); font-weight: 600; font-size: .85em; white-space: nowrap;
+}
+.turnchip { background: linear-gradient(var(--rk-hi), var(--rk)); color: var(--rk-text); box-shadow: 0 2px 0 var(--rk-deep); max-width: 14em; overflow: hidden; text-overflow: ellipsis; }
+.turnchip::before { content: '▶'; font-size: .8em; }
+.poolchip { background: rgba(255,255,255,.1); border: 1px solid var(--line); color: var(--muted); }
+.poolchip b { color: #fff; }
+.turnchip .ic, .poolchip .ic { width: 1.05em; height: 1.05em; }
+/* my rack lights up when it is my turn */
+.rack.myturn { animation: rackturn 1.6s ease-in-out infinite; }
+@keyframes rackturn { 0%, 100% { box-shadow: inset 0 2px 0 rgba(255,255,255,.6), inset 0 -2px 0 var(--rk-lo), 0 0 0 3px rgba(255,207,51,.55); } 50% { box-shadow: inset 0 2px 0 rgba(255,255,255,.6), inset 0 -2px 0 var(--rk-lo), 0 0 0 5px rgba(255,207,51,.9), 0 0 26px rgba(255,207,51,.7); } }
 
 .rack {
   --th: calc(var(--tw) * 1.34);
@@ -527,6 +555,11 @@ footer {
 .winner .cup .ic { width: 52px; height: 52px; stroke-width: 2.2; }
 @keyframes cup { from { transform: scale(.3) rotate(-20deg); opacity: 0; } }
 .winner h2 { margin: 4px 0 0; font-family: var(--display); font-weight: 700; font-size: 2.2em; color: var(--gold); text-shadow: 0 3px 0 #6e5000; }
+.wins { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 10px; font-size: 1.1em; }
+.winrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; border-radius: 12px; background: rgba(255,255,255,.06); font-weight: 700; }
+.winrow .wn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.winrow .wc { display: inline-flex; align-items: center; gap: 6px; color: var(--gold-hi); }
+.winrow.win { background: rgba(255,207,51,.16); color: var(--gold-hi); }
 .scores { width: 100%; border-collapse: separate; border-spacing: 0 6px; font-size: 1.1em; margin: 6px 0 10px; text-align: left; }
 .scores th { font-family: var(--display); font-weight: 600; color: var(--soft); font-size: .85em; padding: 0 12px; }
 .scores td { padding: 10px 12px; background: rgba(255,255,255,.06); }
@@ -587,14 +620,14 @@ footer {
 @keyframes mjout { to { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .turnbar.you, .seat.turn, .sets .tile, .winner .cup, #toast { animation: none; }
+  .turnbar.you, .seat.turn, .sets .tile, .winner .cup, #toast, .rack.myturn { animation: none; }
   #mj.play .sig { animation: mjout .4s ease-in 2.75s forwards; }
   #mj .swoosh path { stroke-dashoffset: 0; }
   #confetti { display: none; }
 }
 
 /* ---------- medium widths: shorter labels so the turn buttons stay on one row ---------- */
-@media (max-width: 1150px) { #controls .long { display: none; } .chip.tname { display: none; } }
+@media (max-width: 1150px) { .chip.tname { display: none; } }
 
 /* ---------- phones and narrow windows: one slim strip of faces across the top ---------- */
 @media (max-height: 860px) {
@@ -625,21 +658,25 @@ footer {
   .face { flex: none; height: calc(54px * var(--zoom)); min-height: 0; border-radius: 8px; }
   .avatar { font-size: 1.5em; }
   .nm { display: block; }
-  .minirack { position: static; height: 7px; border-radius: 3px; background: linear-gradient(var(--rk-hi), var(--rk)); }
-  .minirack .ridges, .minirack .mini-edge { display: none; }
-  .minirack .count { top: 2px; right: 2px; min-width: 24px; height: 24px; font-size: 14px; padding: 0 4px; z-index: 3; box-shadow: 0 0 0 2px rgba(0,0,0,.75); }
+  .minirack { margin: 0; }
+  .minirack .mini-edge { display: none; }
+  .minirack .backs { min-height: 12px; padding: 2px 3px; gap: 2px 1px; border-radius: 3px; box-shadow: none; }
+  .minirack .backs i { width: calc((100% - 13px) / 14); height: 8px; border-radius: 1px; }
+  .open30 { top: 2px; right: 2px; font-size: 11px; padding: 0 5px 0 3px; border-width: 1px; }
+  .open30.yes { border-width: 1px; }
   .seat .tag, .seats .seat .tag { display: none; }
   .seat.mic-off .face::before { top: auto; bottom: 16px; right: 3px; width: 18px; height: 18px; background-size: 12px; }
-  .flag { font-size: 11px; padding: 1px 6px; }
-  main { padding: 8px 10px 16px; outline-offset: -5px; }
+  .flag { font-size: 0; padding: 1px 6px; }
+  .flag::before { content: '▶'; font-size: 11px; }
+  main { padding: 8px; outline-offset: -5px; }
   #banner { margin-bottom: 8px; }
   .turnbar { font-size: 1.35em; border-width: 2px; border-radius: 14px; }
   .bannerline { font-size: .85em; gap: 2px 12px; }
   .sets { gap: 12px 12px; }
-  footer { padding: 6px 8px max(8px, env(safe-area-inset-bottom)); border-radius: 18px 18px 0 0; gap: 8px; }
+  footer { padding: 6px 8px max(6px, env(safe-area-inset-bottom)); border-radius: 18px 18px 0 0; gap: 6px; }
   #mySeat { display: none; }
-  #controls { flex-wrap: nowrap; gap: 6px; }
-  #controls .btn { padding: .3em .6em; white-space: nowrap; min-height: 48px; }
+  #controls { gap: 5px; }
+  #controls .btn { padding: .15em .55em; white-space: nowrap; min-height: 36px; }
   #controls .long { display: none; }
   .rack { padding: 8px 8px 0; }
   .rack .edge { margin: 0 -8px; height: 36px; padding: 0 10px; gap: 6px; }

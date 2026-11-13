@@ -21,8 +21,8 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
   like words in a sentence. Everyone sees the same layout; finished sets are put in order at the end of a turn.
 - Settings has a volume slider for each person, plus text size, color shapes and game sounds.
 - Every menu (join, waiting room, results, settings) fits on one screen without scrolling, on phones and computers.
-- Whose turn it is shows as a big bar in that player's rack color, a flag and glowing frame on their face,
-  and in the browser tab's title.
+- Whose turn it is shows as a flag and glowing frame on that player's face, and in the browser tab's title.
+  Each face also shows the backs of the tiles they hold and whether they have made their first 30.
 - Split a run on the table and play your own tile into one of the halves, and everyone sees a signed **MJ!**
 
 ## Rules
@@ -32,8 +32,10 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
   Jokers stand in for any tile.
 - Your first play must add up to 30 points or more, using only your own tiles.
 - After that you can rearrange anything on the table, as long as every set is valid when you press Done.
-- First to empty their rack wins and scores the points left on everyone else's racks. If the tiles run out
-  and everyone passes, the lowest rack wins.
+- First to empty their rack wins. There are no points: only wins are counted. If the tiles run out and
+  everyone passes, the game ends with no winner.
+- Tiles on the table sit wherever you put them. Tiles close together are one set; leave a gap to keep sets
+  apart (or choose a tile and press Space to open a gap before it).
 
 ## How it works
 
