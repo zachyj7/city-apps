@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Family Tiles</title>
+<meta name="description" content="Play number tiles online with your family, with everyone's face around the table.">
+<meta name="theme-color" content="#0c3b26">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<section id="join">
+  <form id="joinForm" class="panel joinbox">
+    <div class="logo" aria-hidden="true"><span class="tile c1"><span class="num">7</span></span><span class="tile c2"><span class="num">8</span></span><span class="tile c3"><span class="num">9</span></span></div>
+    <h1>Family Tiles</h1>
+    <p>Play number tiles together, with everyone's face around the table.</p>
+    <label for="name">Your name</label>
+    <input id="name" autocomplete="nickname" maxlength="18" placeholder="Grandma">
+    <label for="code">Table name <small>(everyone types the same one)</small></label>
+    <input id="code" autocomplete="off" autocapitalize="none" maxlength="20" placeholder="family">
+    <p id="joinErr" class="err" role="alert"></p>
+    <button class="btn go huge" type="submit">Join the table</button>
+  </form>
+</section>
+
+<section id="game" hidden>
+  <header>
+    <span class="brand">Family Tiles</span>
+    <span class="tname">Table: <b id="tableName"></b></span>
+    <span id="status" class="pill">Connecting…</span>
+    <span class="spacer"></span>
+    <button id="camBtn" class="btn small">📷 Camera on</button>
+    <button id="micBtn" class="btn small" hidden>🎤 Mute</button>
+    <button id="shapesBtn" class="btn small" title="Show or hide the color shapes on tiles">■●▲◆</button>
+    <button id="smaller" class="btn small" aria-label="Smaller">A−</button>
+    <button id="bigger" class="btn small" aria-label="Bigger">A+</button>
+  </header>
+  <aside id="seatsL" class="seats"></aside>
+  <main>
+    <div id="banner"></div>
+    <div id="center"></div>
+  </main>
+  <aside id="seatsR" class="seats"></aside>
+  <footer>
+    <div id="controls"></div>
+    <div id="mySeat"></div>
+    <div class="mine">
+      <div id="rack" class="rack">
+        <div class="grooves" data-drop="rack"></div>
+        <div class="edge"><span id="rackInfo"></span><span id="sorts" hidden><button class="sortbtn" data-act="sortnum">Sort 1-2-3</button><button class="sortbtn" data-act="sortcol">Sort colors</button></span><span id="rackName" class="engr"></span></div>
+      </div>
+    </div>
+  </footer>
+</section>
+
+<div id="toast" role="status" hidden></div>
+
+<script src="js/vendor/peerjs.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
