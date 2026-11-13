@@ -3,6 +3,11 @@
 Number-tile rummy for up to 8 people online, with everyone's face around the table.
 
 - Everyone opens the same link (or types the same table name) and joins one table.
+- Add computer players in the waiting room: **Easy** (learning the game), **Medium** (a solid player) or **Hard**
+  (rearranges the table, splits runs, borrows tiles). Mix and match up to 8 players, or play alone against them.
+  The host's browser runs their turns (`js/ai.js`).
+- **Leave table** (in Settings or the waiting room) takes you back to the start so you can join again; your seat
+  is kept during a game. **Close table for everyone** sends everyone back and clears the game.
 - **Camera on** uses the front camera on phones and the webcam on computers. Faces stay on screen all game.
 - 2–4 players use one set of 106 tiles; 5–8 players use two sets.
 - Big, high-contrast tiles in the Atkinson Hyperlegible font, with a shape on every tile for each color

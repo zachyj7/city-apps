@@ -465,7 +465,18 @@ footer {
   box-shadow: 0 3px 0 var(--rk-deep);
 }
 .pchip .pn { font-weight: 700; font-size: 1.1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pchip .pt { display: block; color: var(--soft); font-size: .8em; font-weight: 400; }
+.pchip .pt { display: block; white-space: normal; color: var(--soft); font-size: .8em; font-weight: 400; }
+.pchip.cpu .av .ic { width: 26px; height: 26px; stroke-width: 2.2; }
+.pchip .rm { margin-left: auto; width: 38px; height: 38px; flex: none; }
+.pchip .pn { min-width: 0; }
+.cpuadd { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.cpuadd .btn { justify-content: flex-start; text-align: left; min-height: 64px; padding: .5em .8em; }
+.cpuadd .btn span { display: flex; flex-direction: column; line-height: 1.15; }
+.cpuadd .btn small { font-family: var(--font); font-weight: 400; font-size: .78em; opacity: .75; }
+.avatar.bot { flex-direction: column; gap: 2px; background: linear-gradient(160deg, var(--rk-hi), var(--rk) 55%, var(--rk-deep)); color: var(--rk-text); text-shadow: none; }
+.avatar.bot .ic { width: 46%; height: 46%; max-width: 70px; max-height: 70px; stroke-width: 2; }
+.avatar.bot small { font-family: var(--display); font-weight: 700; font-size: .32em; letter-spacing: .04em; text-transform: uppercase; }
+.turnbar .ic { width: 1em; height: 1em; }
 .pchip.empty-seat { border-style: dashed; color: var(--soft); justify-content: center; min-height: 60px; }
 .hint { color: var(--muted); margin: 10px 0 0; }
 .tip { display: flex; align-items: center; gap: 8px; color: var(--soft); font-size: .92em; margin: 14px 0 0; }
@@ -586,6 +597,9 @@ footer {
   .lobby, .over { padding: 16px; }
   .panelhead .badge { width: 46px; height: 46px; }
   .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cpuadd { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .cpuadd .btn { min-height: 54px; }
+  .avatar.bot small { display: none; }
   .scores { font-size: .95em; }
   .scores th, .scores td { padding-left: 8px; padding-right: 8px; }
   .title { font-size: 2.2em; }

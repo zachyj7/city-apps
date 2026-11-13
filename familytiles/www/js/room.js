@@ -2,6 +2,11 @@
 // Every change is sent to everyone as one full snapshot, so if the host leaves, whoever takes over
 // carries on from their last snapshot.
 import { makePool, checkTurn, rackPoints, openingPoints, isMJ, OPEN_POINTS, DEAL } from './rules.js';
+import { aiTurn } from './ai.js';
+
+const CPU_NAMES = ['Ruby', 'Otto', 'Pip', 'Juno', 'Ziggy', 'Nova', 'Bolt', 'Echo'];
+const LEVELS = ['easy', 'medium', 'hard'];
+const RACK_COLORS = ['red', 'blue', 'green', 'pink', 'purple', 'black', 'white', 'yellow'];
 
 const MAX_SEATS = 8;
 
@@ -12,12 +17,13 @@ export function emptyState() {
 export class Room {
   constructor(snapshot) {
     this.s = snapshot ? JSON.parse(JSON.stringify(snapshot)) : emptyState();
-    for (const p of this.s.players) p.on = false;          // everyone has to say hello again
+    for (const p of this.s.players) p.on = !!p.cpu;        // people have to say hello again; computers are always here
+    this.cpuT = null;
     this.conns = new Set();
     this.ping = setInterval(() => this.each(c => c.send({ t: 'ping' })), 3000);
   }
 
-  close() { clearInterval(this.ping); }
+  close() { clearInterval(this.ping); clearTimeout(this.cpuT); this.cpuT = null; this.closed = true; }
   each(f) { for (const c of this.conns) f(c); }
   player(pid) { return this.s.players.find(p => p.pid === pid); }
   seated() { return this.s.players.filter(p => p.seat); }
@@ -32,7 +38,7 @@ export class Room {
     const here = s.players.filter(p => p.on);
     this.s = JSON.parse(JSON.stringify(snap));
     const online = new Set([...this.conns].map(c => c.pid));
-    for (const p of this.s.players) p.on = online.has(p.pid);
+    for (const p of this.s.players) p.on = !!p.cpu || online.has(p.pid);
     for (const p of here) if (!this.player(p.pid)) this.s.players.push({ ...p, seat: false, rack: [], opened: false });
   }
 
@@ -41,6 +47,49 @@ export class Room {
     this.s.at = Date.now();
     const m = { t: 'state', s: this.s };
     this.each(c => c.send(m));
+    this.schedule();
+  }
+
+  // ---- computer players ----
+  schedule() {
+    const s = this.s;
+    if (this.closed || this.cpuT || s.phase !== 'play') return;
+    const p = this.player(s.turn);
+    if (!p || !p.cpu) return;
+    const turnNo = s.turnNo;
+    // a short pause to "think", so people can follow along
+    this.cpuT = setTimeout(() => { this.cpuT = null; this.cpuTurn(turnNo); }, 1500 + Math.random() * 1300);
+  }
+
+  cpuTurn(turnNo) {
+    const s = this.s;
+    const p = this.player(s.turn);
+    if (this.closed || s.phase !== 'play' || s.turnNo !== turnNo || !p || !p.cpu) return;
+    let plan = null;
+    try { plan = aiTurn(p.cpu, s.table, p.rack, p.opened); } catch (e) { console.error(e); }
+    if (!plan || checkTurn(s.table, p.rack, plan.table, plan.rack, p.opened)) return this.draw(p);
+    // Show the move on the table for a moment, then make it final.
+    s.work = plan;
+    this.s.v++; this.s.at = Date.now();
+    const m = { t: 'state', s: this.s };
+    this.each(c => c.send(m));
+    this.cpuT = setTimeout(() => {
+      this.cpuT = null;
+      if (this.closed || s !== this.s || s.turnNo !== turnNo) return;
+      this.commit(p, plan);
+    }, 1400);
+  }
+
+  addCpu(level) {
+    const s = this.s;
+    if (s.phase === 'play' || !LEVELS.includes(level)) return;
+    if (s.players.filter(q => q.on).length >= 8) return;
+    const used = new Set(s.players.map(q => q.name));
+    const name = CPU_NAMES.find(n => !used.has(n)) || 'Robot ' + (s.players.length + 1);
+    const usedColors = new Set(s.players.map(q => q.rc));
+    const rc = RACK_COLORS.find(c => !usedColors.has(c)) || 'yellow';
+    s.players.push({ pid: 'cpu-' + Math.random().toString(36).slice(2, 8), name, cpu: level, rc, on: true, seat: false, rack: [], opened: false, total: 0 });
+    this.note(`${name} (computer, ${level}) sat down`);
   }
 
   add(c) {
@@ -74,6 +123,13 @@ export class Room {
     }
     const p = c.pid && this.player(c.pid);
     if (!p) return;
+
+    if (m.t === 'addcpu') { this.addCpu(m.level); return this.push(); }
+    if (m.t === 'rmcpu') {
+      if (s.phase === 'play') return;
+      s.players = s.players.filter(q => !(q.cpu && q.pid === m.pid));
+      return this.push();
+    }
 
     if (m.t === 'cam') { p.cam = !!m.cam; p.mic = !!m.mic; return this.push(); }
     if (m.t === 'rc') { p.rc = cleanColor(m.rc); return this.push(); }
@@ -139,6 +195,14 @@ export class Room {
       const w = s.work || { table: s.table, rack: p.rack };
       const why = checkTurn(s.table, p.rack, w.table, w.rack, p.opened);
       if (why) return c.send({ t: 'nope', why });
+      return this.commit(p, w);
+    }
+  }
+
+  // A finished, checked turn: put it on the table, then it's the next player's turn (or the game is won).
+  commit(p, w) {
+    const s = this.s;
+    {
       const played = p.rack.length - w.rack.length;
       if (p.opened && isMJ(s.table, p.rack, w.table)) {
         s.fx = { t: 'mj', name: p.name, k: s.v + 1 };

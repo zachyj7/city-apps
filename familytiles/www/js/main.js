@@ -32,6 +32,7 @@ const pid = (() => {
   catch (e) { return make(); }
 })();
 const ic = n => `<svg class="ic" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const LEVEL_NAMES = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 const cleanCode = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
 
 const A = {
@@ -326,8 +327,11 @@ function renderSeats() {
     el.querySelector('.tag').innerHTML = tag;
     const face = el.querySelector('.face');
     const av = face.querySelector('.avatar');
-    av.textContent = (p.name || '?').slice(0, 1).toUpperCase();
-    av.style.background = `hsl(${hash(p.pid) % 360},55%,38%)`;
+    const avHtml = p.cpu ? `${ic('bot')}<small>${LEVEL_NAMES[p.cpu]}</small>` : esc((p.name || '?').slice(0, 1).toUpperCase());
+    if (av.innerHTML !== avHtml) av.innerHTML = avHtml;
+    av.classList.toggle('bot', !!p.cpu);
+    av.style.background = p.cpu ? '' : `hsl(${hash(p.pid) % 360},55%,38%)`;
+    if (p.cpu) av.setAttribute('style', rackStyle(p.rc));
     let stream = null, key = p.peer;
     if (isMe) { stream = A.camOn && A.video.cam; key = 'me'; }
     else if (p.cam && p.on) stream = A.video.streams.get(p.peer);
@@ -337,7 +341,7 @@ function renderSeats() {
       if (old !== v) { if (old) old.remove(); face.appendChild(v); v.play().catch(() => {}); }
     } else if (old) old.remove();
     // A remote person whose camera is on but whose picture has not arrived yet.
-    face.classList.toggle('waiting', !isMe && p.cam && p.on && !stream);
+    face.classList.toggle('waiting', !!(!isMe && p.cam && p.on && !stream));
     // Their own sound: unmuted for others. Show who is muted.
     el.classList.toggle('mic-off', !!p.cam && !p.mic);
     return el;
@@ -384,7 +388,7 @@ function renderBanner() {
   if (S.phase === 'play') {
     const cur = S.players.find(p => p.pid === S.turn);
     // A wide bar in the player's own rack color with their name, so whose turn it is reads at a glance.
-    if (cur) html = `<div class="turnbar ${myTurn() ? 'you' : ''}" style="${rackStyle(cur.rc)}">${myTurn() ? 'Your turn!' : `${esc(cur.name)}'s turn`}</div>`;
+    if (cur) html = `<div class="turnbar ${myTurn() ? 'you' : ''}" style="${rackStyle(cur.rc)}">${cur.cpu ? ic('bot') : ''}${myTurn() ? 'Your turn!' : cur.cpu ? `${esc(cur.name)} is thinking…` : `${esc(cur.name)}'s turn`}</div>`;
     const last = S.log[S.log.length - 1];
     if (cur && !cur.on && !myTurn()) html += `<div class="lost">${ic('alert')}${esc(cur.name)} lost connection <button class="btn small" data-act="skip">${ic('skip')}Skip their turn</button></div>`;
     html += `<div class="bannerline">${last ? `<span class="last">${esc(last)}</span>` : ''}<span class="pool">Tiles left to draw: <b>${S.pool.length}</b></span></div>`;
@@ -400,8 +404,10 @@ function renderLobby(box) {
   const here = S.players.filter(p => p.on);
   const sets = here.length > 4 ? 2 : 1;
   const link = location.origin + location.pathname + '?room=' + A.code;
-  const chips = here.map((p, i) => `<div class="pchip" style="${rackStyle(p.rc)}"><span class="av">${esc((p.name || '?').slice(0, 1).toUpperCase())}</span>
-      <span class="pn">${esc(p.name)}<span class="pt">${p.pid === pid ? 'You' : i >= 8 ? 'Watching (table full)' : 'Ready'}</span></span></div>`).join('');
+  const chips = here.map((p, i) => `<div class="pchip ${p.cpu ? 'cpu' : ''}" style="${rackStyle(p.rc)}"><span class="av">${p.cpu ? ic('bot') : esc((p.name || '?').slice(0, 1).toUpperCase())}</span>
+      <span class="pn">${esc(p.name)}<span class="pt">${p.pid === pid ? 'You' : p.cpu ? `Computer · ${LEVEL_NAMES[p.cpu]}` : i >= 8 ? 'Watching (table full)' : 'Ready'}</span></span>
+      ${p.cpu ? `<button class="iconbtn rm" data-act="rmcpu" data-pid="${esc(p.pid)}" aria-label="Remove ${esc(p.name)}">${ic('close')}</button>` : ''}</div>`).join('');
+  const full = here.length >= 8;
   const open = Math.max(0, Math.min(8, Math.max(2, here.length + 1)) - here.length);
   const empties = Array.from({ length: open }, () => `<div class="pchip empty-seat">Open seat</div>`).join('');
   box.innerHTML = `<div class="card lobby">
@@ -412,6 +418,14 @@ function renderLobby(box) {
     <div class="section"><h3>At the table · ${here.length} of 8</h3>
       <div class="players">${chips}${empties}</div>
       <p class="hint">${here.length < 2 ? 'Waiting for at least one more player…' : `${Math.min(here.length, 8)} players, ${sets === 2 ? 'two sets of tiles (5 or more players)' : 'one set of tiles'}.`}</p>
+    </div>
+    <div class="section"><h3>Computer players</h3>
+      <div class="cpuadd">
+        <button class="btn" data-act="addcpu" data-level="easy" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Easy</b><small>Learning the game</small></span></button>
+        <button class="btn" data-act="addcpu" data-level="medium" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Medium</b><small>A solid player</small></span></button>
+        <button class="btn" data-act="addcpu" data-level="hard" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Hard</b><small>Rearranges the table</small></span></button>
+      </div>
+      <p class="hint">${full ? 'The table is full (8 players).' : 'Add as many as you like, up to 8 players in all. You can also play just you against the computers.'}</p>
     </div>
     <div class="section"><h3>Your rack color</h3><div class="swatches">${swatches(A.rc, 'setrc')}</div></div>
     <button class="btn go huge" data-act="start" ${here.length < 2 ? 'disabled' : ''}>Start the game ${ic('arrow')}</button>
@@ -837,6 +851,8 @@ document.addEventListener('click', e => {
   else if (act === 'skip') send({ t: 'skip' });
   else if (act === 'copy') copyLink();
   else if (act === 'leave') leaveTable('You left the table.');
+  else if (act === 'addcpu') send({ t: 'addcpu', level: b.dataset.level });
+  else if (act === 'rmcpu') send({ t: 'rmcpu', pid: b.dataset.pid });
   else if (act === 'share') navigator.share({ title: 'Family Tiles', text: 'Come play tiles with us!', url: location.origin + location.pathname + '?room=' + A.code }).catch(() => {});
 });
 
