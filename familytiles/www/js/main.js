@@ -705,7 +705,7 @@ function canPick(id) {
 }
 
 document.addEventListener('pointerdown', e => {
-  const t = e.target.closest('.tile[data-id]');
+  const t = e.target.closest && e.target.closest('.tile[data-id]');
   if (!t || e.button > 0 || t.closest('.ghost')) return;
   const id = +t.dataset.id;
   if (!canPick(id)) return;
