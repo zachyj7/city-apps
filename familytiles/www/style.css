@@ -23,7 +23,7 @@
   --rk-deep: #a67f00;
   --rk-ink: #8f6c00;
   --rk-text: var(--rk-text);
-  --tw: calc(clamp(40px, 11vw, 58px) * var(--zoom));
+  --tw: calc(clamp(40px, min(11vw, 6.6vh), 58px) * var(--zoom));
   --th: calc(var(--tw) * 1.34);
   --bw: calc(var(--tw) * 0.92);
   --bh: calc(var(--bw) * 1.34);
@@ -218,7 +218,7 @@ main { min-height: 0; overflow-y: auto; padding: 10px 12px 20px; }
 
 /* ---------- my rack (modelled on the wedge rack in the family's photo) ---------- */
 footer {
-  display: grid; grid-template-columns: minmax(130px, 200px) minmax(0, 1fr); border-radius: 16px 16px 0 0; gap: 10px; align-items: end;
+  display: grid; grid-template-columns: minmax(0, 1fr); border-radius: 16px 16px 0 0; gap: 10px; align-items: end;
   padding: 6px 12px max(10px, env(safe-area-inset-bottom));
   background: linear-gradient(#0a3322, #061c13); border-top: 2px solid #1d4a35;
 }
@@ -229,15 +229,16 @@ footer {
 #controls:empty { display: none; }
 
 .rack {
+  --th: calc(var(--tw) * 1.34);
   position: relative; border-radius: 14px 14px 6px 6px; padding: 10px 12px 0;
   background: linear-gradient(170deg, var(--rk-hi) 0%, var(--rk) 45%, var(--rk) 100%);
   box-shadow: inset 0 3px 0 rgba(255,255,255,.55), inset 0 -2px 0 var(--rk-lo);
 }
 .rack .grooves {
   --row: calc(var(--th) + 12px);
-  display: flex; flex-wrap: wrap; gap: 0 5px; align-content: flex-start;
-  min-height: calc(var(--row) * 2 + 14px);
-  max-height: calc(var(--row) * 3 + 14px); overflow-y: auto;
+  /* a fixed grid of slots, three rows deep; tiles can sit anywhere and leave gaps */
+  display: grid; grid-auto-rows: var(--row); column-gap: 5px; align-content: start;
+  min-height: calc(var(--row) * 3 + 14px);
   /* each row of tiles stands in a slot cut into the plastic */
   background-image: linear-gradient(to bottom,
     transparent 0, transparent calc(100% - 14px),
@@ -299,12 +300,10 @@ footer {
 #banner .lost { font-weight: 700; color: #ffd0cc; margin: 4px 0; }
 
 /* ---------- dragging on the rack: the empty slot where tiles will land ---------- */
-.rack .gap {
-  flex: none; height: var(--th); margin-bottom: 12px; border-radius: calc(var(--tw) * .14);
-  border: 3px dashed var(--rk-deep); background: rgba(255,255,255,.35);
-  animation: gapin .14s ease-out;
-}
-@keyframes gapin { from { transform: scaleX(.2); opacity: 0; } }
+.rack .cell { width: var(--tw); height: var(--th); border-radius: calc(var(--tw) * .14); }
+/* Empty slots show while you hold tiles, so you can see where they can go. Tap one to put them there. */
+.rack.picking .cell, body.dragging .rack .cell { border: 2px dashed var(--rk-deep); background: rgba(255,255,255,.18); cursor: pointer; }
+.rack .tile.landing { opacity: .55; outline: 4px dashed #1e7bff; outline-offset: -2px; background: #e3f0ff; }
 .ghost { filter: drop-shadow(0 10px 12px rgba(0,0,0,.55)); }
 body.dragging { cursor: grabbing; }
 body.dragging .sets .tile.sel { opacity: .35; }
@@ -331,6 +330,8 @@ body.dragging .sets .tile.sel { opacity: .35; }
 @keyframes sign { to { stroke-dashoffset: 0; } }
 @keyframes mjout { to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { #mj.play .sig { animation: mjout .4s ease-in 2.75s forwards; } #mj .swoosh path { stroke-dashoffset: 0; } }
+
+@media (max-width: 1150px) { #controls .long { display: none; } }
 
 /* ---------- phones and narrow windows: faces in a strip across the top ---------- */
 @media (max-width: 899px) {

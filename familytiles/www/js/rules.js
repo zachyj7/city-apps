@@ -127,7 +127,8 @@ export function isMJ(startTable, startRack, table) {
     const homes = table.filter(t => t.some(id => old.has(id)));
     const runs = homes.filter(t => { const b = analyze(t); return b.ok && b.kind === 'run'; });
     if (runs.length < 2) continue;
-    const inside = homes.some(t => t.some(id => {
+    // The player's tile has to go into one of the split runs (not, say, a group made from the middle tile).
+    const inside = runs.some(t => t.some(id => {
       if (!played.has(id)) return false;
       const x = tile(id);
       return x.j || (x.n >= lo && x.n <= hi);

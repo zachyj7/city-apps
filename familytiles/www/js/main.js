@@ -37,7 +37,7 @@ const A = {
   S: null, net: null, video: null, name: '', code: '',
   W: null,            // my turn in progress: { turnNo, table: [{k, ids}], rack: [ids], startTable, startRack }
   hist: [], sel: new Set(), order: [], seen: new Set(), fresh: new Set(),
-  nope: null, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
+  nope: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
   status: 'connecting',
 };
 window.FT = A;   // for testing from the console
@@ -74,6 +74,7 @@ function start(name, code) {
   $('#join').hidden = true; $('#game').hidden = false;
   $('#tableName').textContent = code;
   applyZoom();
+  A.grid = loadGrid();
   A.video = new Video(() => renderSeats());
   A.video.init();
   A.net = new Net(code, {
@@ -149,6 +150,7 @@ function beginTurn() {
     startRack: m.rack.slice(),
     table: (w ? w.table : S.table).map(ids => ({ k: setKey++, ids: ids.slice() })),
     rack: orderLike(w ? w.rack : m.rack),
+    startGrid: cloneGrid(A.grid),
   };
   A.hist = []; A.sel.clear(); A.nope = null;
 }
@@ -159,7 +161,7 @@ function orderLike(ids) {
   return keep.concat(ids.filter(id => !keep.includes(id)));
 }
 
-function snapshotW() { return JSON.stringify({ table: A.W.table, rack: A.W.rack }); }
+function snapshotW() { return JSON.stringify({ table: A.W.table, rack: A.W.rack, grid: A.grid }); }
 function commit() {
   A.nope = null;
   A.W.table = A.W.table.filter(s => s.ids.length);
@@ -175,7 +177,7 @@ function moveSelected(target) {
   if (!ids.length) return;
   if (!A.W) {   // not my turn: only rearranging my own rack
     if (!target.startsWith('rack')) return;
-    A.order = place(A.order.filter(id => !A.sel.has(id)), ids.filter(id => A.order.includes(id)), target);
+    toRack(ids.filter(id => A.order.includes(id)), target);
     A.sel.clear(); renderRack(); return;
   }
   const W = A.W;
@@ -195,34 +197,22 @@ function moveSelected(target) {
     const s = W.table.find(x => x.k === +target.slice(4));
     W.rack = rackRest;
     if (s) s.ids.push(...moving); else W.table.push({ k: setKey++, ids: moving });
-  } else W.rack = place(rackRest, moving, target);
+  } else { W.rack = rackRest.concat(moving); toRack(moving, target); }
   A.sel.clear();
   commit();
-}
-
-// Put tiles into a rack order, at the end or just before a given tile.
-function place(rest, moving, target) {
-  if (target.startsWith('rackidx:')) {
-    const at = Math.min(+target.slice(8), rest.length);
-    return [...rest.slice(0, at), ...moving, ...rest.slice(at)];
-  }
-  if (target.startsWith('rackat:')) {
-    const at = rest.indexOf(+target.slice(7));
-    if (at >= 0) return [...rest.slice(0, at), ...moving, ...rest.slice(at)];
-  }
-  return [...rest, ...moving];
 }
 
 function undo() {
   if (!A.W || !A.hist.length) return;
   const h = JSON.parse(A.hist.pop());
-  A.W.table = h.table; A.W.rack = h.rack; A.sel.clear(); commit();
+  A.W.table = h.table; A.W.rack = h.rack; A.grid = h.grid; A.sel.clear(); commit();
 }
 function resetTurn() {
   if (!A.W) return;
   if (A.W.table.length || A.hist.length) A.hist.push(snapshotW());
   A.W.table = A.W.startTable.map(ids => ({ k: setKey++, ids: ids.slice() }));
   A.W.rack = orderLike(A.W.startRack);
+  A.grid = cloneGrid(A.W.startGrid);
   A.sel.clear(); commit();
 }
 function draw() {
@@ -236,14 +226,6 @@ function done() {
   if (why) { A.nope = why; renderCenter(); beep(220, 0.25); return; }
   send({ t: 'done' });
 }
-function sortRack(by) {
-  const cmp = by === 'num'
-    ? (a, b) => { const x = tile(a), y = tile(b); return x.j - y.j || x.n - y.n || x.c - y.c || a - b; }
-    : (a, b) => { const x = tile(a), y = tile(b); return x.c - y.c || x.n - y.n || a - b; };
-  if (A.W) { A.W.rack.sort(cmp); A.order = A.W.rack.slice(); renderRack(); }
-  else { A.order.sort(cmp); renderRack(); }
-}
-
 /* ---------------- drawing the screen ---------------- */
 
 function tileHTML(id, extra = '') {
@@ -352,10 +334,11 @@ function renderSeats() {
   const m = me();
   const mine = m ? [fill(m, true)] : [];
   if (wide) {
-    const half = Math.ceil(els.length / 2);
-    syncChildren(left, els.slice(0, half));
-    syncChildren(right, els.slice(half));
-    syncChildren($('#mySeat'), mine);
+    // You sit at the end of the shorter side, so the rack below gets the full width.
+    const all = [...els, ...mine], half = Math.ceil(all.length / 2);
+    syncChildren(left, all.slice(0, half));
+    syncChildren(right, all.slice(half));
+    syncChildren($('#mySeat'), []);
   } else {
     syncChildren($('#mySeat'), []);
     syncChildren(left, [...els, ...mine]);
@@ -484,31 +467,137 @@ function renderMe() {
   renderRack();
 }
 
+/* ---------------- the rack: 3 rows of slots, gaps allowed ---------------- */
+
+const ROWS = 3, GAP = 5;
+const gridKey = () => 'ft-grid-' + A.code;
+function saveGrid() { try { sessionStorage.setItem(gridKey(), JSON.stringify(A.grid)); } catch (e) { /* ignore */ } }
+function loadGrid() { try { return JSON.parse(sessionStorage.getItem(gridKey())); } catch (e) { return null; } }
+const cloneGrid = g => (g || []).map(r => r.slice());
+
+function putFirstEmpty(g, id, cols) {
+  for (const row of g) { const c = row.indexOf(null); if (c >= 0) { row[c] = id; return; } }
+  const r = Array(cols).fill(null); r[0] = id; g.push(r);
+}
+
+// Make the grid hold exactly these tiles: tiles keep their slots, tiles that left leave a gap,
+// new tiles (just drawn, or back from the table) go into the first empty slot.
+function fitGrid(g, ids, cols) {
+  const want = new Set(ids), seen = new Set(), homeless = [];
+  g = (g || []).map(row => {
+    const r = [];
+    row.forEach((x, c) => {
+      const keep = x != null && want.has(x) && !seen.has(x);
+      if (keep) seen.add(x);
+      if (c < cols) r.push(keep ? x : null); else if (keep) homeless.push(x);
+    });
+    while (r.length < cols) r.push(null);
+    return r;
+  });
+  while (g.length < ROWS) g.push(Array(cols).fill(null));
+  for (const id of ids) if (!seen.has(id) && !homeless.includes(id)) homeless.push(id);
+  for (const id of homeless) putFirstEmpty(g, id, cols);
+  while (g.length > ROWS && g[g.length - 1].every(x => x == null)) g.pop();
+  return g;
+}
+
+// Put a tile into slot (r, c). If it is taken, the neighbours slide over into the nearest gap in that row.
+function insertAt(g, id, r, c) {
+  const row = g[r], n = row.length;
+  if (row[c] == null) { row[c] = id; return; }
+  let k = row.indexOf(null, c);
+  if (k >= 0) { for (let i = k; i > c; i--) row[i] = row[i - 1]; row[c] = id; return; }
+  k = row.lastIndexOf(null, c);
+  if (k >= 0) { for (let i = k; i < c; i++) row[i] = row[i + 1]; row[c] = id; return; }
+  const out = row[n - 1];
+  for (let i = n - 1; i > c; i--) row[i] = row[i - 1];
+  row[c] = id;
+  putFirstEmpty(g, out, n);
+}
+function dropInto(g, ids, r, c) {
+  const cols = g[0].length;
+  for (const id of ids) {
+    while (r >= g.length) g.push(Array(cols).fill(null));
+    insertAt(g, id, r, c);
+    if (++c >= cols) { c = 0; r++; }
+  }
+  return g;
+}
+
+// Fit at least 7 slots across; on a narrow rack the tiles shrink a little to make room.
+const MIN_COLS = 7;
+function measureCols() {
+  const g = $('#rack .grooves');
+  $('#rack').style.removeProperty('--tw');
+  let probe = document.createElement('div');
+  probe.className = 'tile'; probe.style.cssText = 'position:absolute;visibility:hidden';
+  g.appendChild(probe);
+  const tw = probe.offsetWidth;
+  probe.remove();
+  const w = g.clientWidth;
+  if (!w) return A.cols || MIN_COLS;
+  const cols = Math.floor((w + GAP) / (tw + GAP));
+  if (cols >= MIN_COLS) return cols;
+  $('#rack').style.setProperty('--tw', Math.max(30, Math.floor((w + GAP) / MIN_COLS - GAP)) + 'px');
+  return MIN_COLS;
+}
+
 function renderRack() {
   const S = A.S, m = me();
   const rack = $('#rack');
-  rack.setAttribute('style', rackStyle(A.rc));
+  for (const kv of rackStyle(A.rc).split(';')) { const [k, v] = kv.split(':'); rack.style.setProperty(k, v); }
+  rack.classList.toggle('picking', A.sel.size > 0);
   $('#rackName').textContent = A.name;
   const g = rack.querySelector('.grooves');
   if (!S || !m || !m.seat || S.phase === 'lobby') {
+    g.style.gridTemplateColumns = '';
     g.innerHTML = `<div class="rackmsg">${S && S.phase === 'play' ? 'You are watching this game. You will get a seat in the next one.' : 'Your tiles will appear here.'}</div>`;
     $('#rackInfo').textContent = '';
     return;
   }
   const ids = rackIds();
-  const pts = rackPoints(ids);
-  // While dragging, the picked-up tiles leave the rack and an empty slot shows where they will land.
-  let html;
-  if (A.drag) {
-    const rest = ids.filter(id => !A.sel.has(id)).map(id => tileHTML(id));
-    if (A.drag.gap != null) rest.splice(Math.min(A.drag.gap, rest.length), 0, `<div class="gap" style="width:calc(var(--tw) * ${Math.min(A.drag.n, 3)} + ${Math.min(A.drag.n, 3) - 1} * 5px)"></div>`);
-    html = rest.join('');
-  } else html = ids.map(id => tileHTML(id)).join('');
-  g.innerHTML = html;
-  $('#rackInfo').innerHTML = `${ids.length} tiles<span class="pts"> · ${pts} points</span>`;
+  A.cols = measureCols();
+  A.grid = fitGrid(A.grid, ids, A.cols);
+  saveGrid();
+  // While dragging: a preview of where the tiles would land (shown faint), or gaps where they came from.
+  const d = A.drag;
+  const view = d && d.view ? d.view : A.grid;
+  g.style.gridTemplateColumns = `repeat(${A.cols}, var(--tw))`;
+  g.innerHTML = view.map((row, r) => row.map((x, c) => {
+    if (x == null || (d && !d.view && d.ids.includes(x))) return `<div class="cell" data-drop="rackslot:${r},${c}"></div>`;
+    return tileHTML(x, d && d.view && d.ids.includes(x) ? 'landing' : '');
+  }).join('')).join('');
+  $('#rackInfo').innerHTML = `${ids.length} tiles<span class="pts"> · ${rackPoints(ids)} points</span>`;
 }
 
 const rackIds = () => (A.W ? A.W.rack : A.order);
+
+function sortRack(by) {
+  const ids = rackIds().slice();
+  const cmp = by === 'num'
+    ? (a, b) => { const x = tile(a), y = tile(b); return x.j - y.j || x.n - y.n || x.c - y.c || a - b; }
+    : (a, b) => { const x = tile(a), y = tile(b); return x.c - y.c || x.n - y.n || a - b; };
+  ids.sort(cmp);
+  const cols = A.cols || 7;
+  // Colors get a gap between them when there is room.
+  const groups = by === 'num' ? [ids] : [0, 1, 2, 3, 4].map(c => ids.filter(id => tile(id).c === c)).filter(a => a.length);
+  const room = ROWS * cols - ids.length >= groups.length - 1;
+  const flat = [];
+  groups.forEach((grp, i) => { if (i && room) flat.push(null); flat.push(...grp); });
+  const g = [];
+  for (let i = 0; i < Math.max(flat.length, ROWS * cols); i += cols) { const r = flat.slice(i, i + cols); while (r.length < cols) r.push(null); g.push(r); }
+  flip($('#rack .grooves'), () => { A.grid = g; renderRack(); });
+}
+
+// Put tiles onto the rack: into a chosen slot (neighbours slide over), or the first empty slots.
+function toRack(moving, target) {
+  const mv = new Set(moving);
+  const g = cloneGrid(A.grid).map(r => r.map(x => (mv.has(x) ? null : x)));
+  if (target.startsWith('rackslot:')) {
+    const [r, c] = target.slice(9).split(',').map(Number);
+    A.grid = dropInto(g, moving, r, c);
+  } else A.grid = g;   // renderRack puts them in the first gaps
+}
 
 // Animate tiles from where they were to where they are now, so the rack slides instead of jumping.
 function flip(container, change) {
@@ -550,28 +639,45 @@ document.addEventListener('pointerdown', e => {
 
 function startDrag(id) {
   if (!A.sel.has(id)) { A.sel.clear(); A.sel.add(id); }
-  const ids = rackIds();
-  const fromRack = ids.includes(id);
-  // Start with the slot where the tile was, so nothing jumps.
-  const gap = fromRack ? ids.slice(0, ids.indexOf(id)).filter(x => !A.sel.has(x)).length : null;
   ghost = document.createElement('div');
   ghost.className = 'ghost';
   ghost.innerHTML = [...A.sel].slice(0, 6).map(x => tileHTML(x)).join('');
   document.body.appendChild(ghost);
   document.body.classList.add('dragging');
-  A.drag = { n: A.sel.size, gap };
+  A.drag = { ids: [...A.sel], slot: null, view: null };
+  // Start with the tiles shown where they already are, so nothing jumps.
+  const at = slotOf(id);
+  if (at) setDragSlot(at);
   renderCenter(); renderMe();
 }
 
-// Which slot in the rack the pointer is over, counted among the tiles that are not being dragged.
+function slotOf(id) {
+  for (let r = 0; r < A.grid.length; r++) { const c = A.grid[r].indexOf(id); if (c >= 0) return [r, c]; }
+  return null;
+}
+
+function setDragSlot(at) {
+  const d = A.drag, key = at ? at.join(',') : null;
+  if (d.slot === key) return false;
+  d.slot = key;
+  if (at) {
+    const mv = new Set(d.ids);
+    d.view = dropInto(cloneGrid(A.grid).map(r => r.map(x => (mv.has(x) ? null : x))), d.ids, at[0], at[1]);
+  } else d.view = null;
+  return true;
+}
+
+// The rack slot nearest the pointer.
 function slotAt(x, y) {
-  const tiles = [...document.querySelectorAll('#rack .grooves .tile[data-id]')];
-  for (let i = 0; i < tiles.length; i++) {
-    const r = tiles[i].getBoundingClientRect();
-    if (y < r.top - 6) return i;                                   // pointer is in an earlier row
-    if (y <= r.bottom + 14 && x < r.left + r.width / 2) return i;  // left half of a tile in this row
-  }
-  return tiles.length;
+  const kids = [...document.querySelectorAll('#rack .grooves > .tile, #rack .grooves > .cell')];
+  let best = null, bd = Infinity;
+  kids.forEach((el, i) => {
+    const r = el.getBoundingClientRect();
+    const dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2);
+    const dist = dx * dx + dy * dy * 1.5;
+    if (dist < bd) { bd = dist; best = i; }
+  });
+  return best == null ? null : [Math.floor(best / A.cols), best % A.cols];
 }
 
 document.addEventListener('pointermove', e => {
@@ -585,9 +691,8 @@ document.addEventListener('pointermove', e => {
   ghost.style.transform = `translate(${e.clientX - 30}px, ${e.clientY - 46}px) rotate(-3deg)`;
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const overRack = el && el.closest('#rack');
-  const canRack = !A.W || [...A.sel].every(id => A.W.startRack.includes(id));
-  const gap = overRack && canRack ? slotAt(e.clientX, e.clientY) : null;
-  if (gap !== A.drag.gap) { A.drag.gap = gap; flip($('#rack .grooves'), renderRack); }
+  const canRack = !A.W || A.drag.ids.every(id => A.W.startRack.includes(id));
+  if (setDragSlot(overRack && canRack ? slotAt(e.clientX, e.clientY) : null)) flip($('#rack .grooves'), renderRack);
   const d = overRack ? null : el && el.closest('[data-drop]');
   if (hover !== d) { if (hover) hover.classList.remove('hover'); hover = d; if (d) d.classList.add('hover'); }
 }, { passive: false });
@@ -608,7 +713,7 @@ document.addEventListener('pointerup', () => {
   const target = hover;
   const d = endDrag();
   const g = $('#rack .grooves');
-  if (d.gap != null) flip(g, () => moveSelected('rackidx:' + d.gap));
+  if (d.slot) flip(g, () => moveSelected('rackslot:' + d.slot));
   else if (target) moveSelected(target.dataset.drop);
   else { A.sel.clear(); flip(g, renderAll); }
 });
@@ -618,6 +723,7 @@ document.addEventListener('pointercancel', () => {
   if (p.drag) { endDrag(); A.sel.clear(); renderAll(); }
 });
 
+
 function toggle(id) {
   if (A.sel.has(id)) A.sel.delete(id); else A.sel.add(id);
   renderCenter(); renderMe();
@@ -625,7 +731,7 @@ function toggle(id) {
 
 document.addEventListener('click', e => {
   const d = e.target.closest('[data-drop]');
-  if (d && A.sel.size && !e.target.closest('.tile')) { moveSelected(d.dataset.drop); return; }
+  if (d && A.sel.size && !e.target.closest('.tile')) { flip($('#rack .grooves'), () => moveSelected(d.dataset.drop)); return; }
   const sw = e.target.closest('[data-setrc]');
   if (sw) { A.rc = sw.dataset.setrc; saveRc(); send({ t: 'rc', rc: A.rc }); renderAll(); return; }
   const b = e.target.closest('[data-act]');
@@ -682,6 +788,7 @@ function toggleMic() {
 function applyZoom() {
   A.zoom = Math.min(1.8, Math.max(0.7, Math.round(A.zoom * 10) / 10));
   document.documentElement.style.setProperty('--zoom', A.zoom);
+  if (A.S) renderRack();
   store.set('zoom', A.zoom);
 }
 
@@ -691,7 +798,7 @@ $('#bigger').addEventListener('click', () => { A.zoom += 0.1; applyZoom(); });
 $('#smaller').addEventListener('click', () => { A.zoom -= 0.1; applyZoom(); });
 $('#shapesBtn').addEventListener('click', () => { A.shapes = !A.shapes; store.set('shapes', A.shapes); renderCenter(); renderRack(); });
 let rz = 0;
-window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(renderSeats, 150); });
+window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { renderSeats(); renderRack(); }, 150); });
 
 // The signature move: a big signed "MJ!" across everyone's screen.
 let mjT = 0;
