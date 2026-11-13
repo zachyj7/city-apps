@@ -257,12 +257,12 @@ footer {
   /* a fixed grid of slots, three rows deep; tiles can sit anywhere and leave gaps */
   display: grid; grid-auto-rows: var(--row); column-gap: 5px; align-content: start;
   min-height: calc(var(--row) * 3 + 14px);
-  /* one dark channel per row, cut into the plastic, that the bottom of each tile stands in;
-     a light lip on its front edge. Painted only under the rows (not in the padding above). */
+  /* one dark channel per row, cut into the plastic, that the tiles stand in (drawn behind them, so
+     every tile stays fully visible); a light lip on its front edge. Only under the rows, none above. */
   background-image: linear-gradient(to bottom,
-    transparent 0, transparent calc(var(--th) - 7px),
-    var(--rk-deep) calc(var(--th) - 7px), var(--rk-deep) calc(var(--th) + 3px),
-    var(--rk-lo) calc(var(--th) + 3px), var(--rk-hi) calc(var(--th) + 5px), transparent calc(var(--th) + 6px));
+    transparent 0, transparent calc(var(--th) - 4px),
+    var(--rk-deep) calc(var(--th) - 4px), var(--rk-deep) calc(var(--th) + 5px),
+    var(--rk-lo) calc(var(--th) + 5px), var(--rk-hi) calc(var(--th) + 7px), transparent calc(var(--th) + 8px));
   background-size: 100% var(--row);
   background-repeat: repeat-y;
   background-origin: content-box; background-clip: content-box;
@@ -283,12 +283,6 @@ footer {
   border: 2px solid var(--rk-deep); border-radius: 10px; padding: .2em .7em; min-height: 32px;
 }
 .rack .grooves { padding-top: 14px; }
-/* The front of the channel covers the bottom of each tile, so tiles look pushed into the slot. */
-.rack .grooves .tile::before {
-  content: ''; position: absolute; left: -3px; right: -3px; top: calc(var(--th) - 7px); height: 10px;
-  background: var(--rk-deep); box-shadow: inset 0 3px 3px rgba(0,0,0,.45); pointer-events: none;
-}
-.rack .grooves .tile.sel::before { transform: translateY(6px); }
 #rackName { font-size: 1.25em; }
 
 /* ---------- lobby + results ---------- */
