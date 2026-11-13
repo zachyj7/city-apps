@@ -35,7 +35,7 @@ export const QUESTS = {
     name: 'The Hour That Stayed', main: true,
     steps: [
       { t: 'Speak with Elder Maren in Dawnmere', done: g => g.flag('met_maren'), at: () => P('dawnmere', 200, 14) },
-      { t: 'Wake the Pivot: fight the Stilled Scarecrow in the yard south-east of the village', done: g => killed(g, 'scarecrow'), at: () => P('dawnmere', 135, 62) },
+      { t: 'Wake the Pivot: fight the Stilled Scarecrow in the field just south-east of the village', done: g => killed(g, 'scarecrow'), at: () => P('dawnmere', 135, 90) },
       { t: "Read the note in Oren's old workshop, the house by the windmill", done: g => g.flag('read_note'), at: () => P('dawnmere', 330, 34) },
       { t: 'Follow the road north-east to the castle city of Highmark and find the Regent', done: g => g.flag('met_regent'), at: () => P('highmark', 0, 74) },
       { t: g => `Recover the nine Cogs from the nine countries (${cogCount(g)}/9)`, done: g => cogCount(g) >= 9, at: g => { const k = COGS.find(k => !g.has('cog_' + k)); return k ? [REG[k].x, REG[k].z] : null; } },

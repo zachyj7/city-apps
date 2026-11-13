@@ -78,6 +78,7 @@ export class Combat {
     if (this.st.trinket.dice) dmg *= rand(0.5, 3);
     dmg = Math.max(1, Math.round(dmg));
     f.hp -= dmg; f.hitT = 1;
+    if (this.tut && this.tut.stage < 2) f.hp = Math.max(f.hp, f.maxHp * 0.4);   // the lesson is not over until a parry lands
     this.float(f, (label ? label + ' ' : '') + dmg, color || '#ffffff');
     if (!f.phase2 && f.def.pat2 && f.hp > 0 && f.hp <= f.maxHp / 2) { f.phase2 = true; this.say(f.def.name + ' quickens!', true); f.cd = 1.5; this.g.sfx.roar(); }
     if (f.hp <= 0) {
@@ -325,7 +326,11 @@ export class Combat {
     if (this.tut) {
       const s = this.tut.stage === 0 ? 'Tap when the dot is inside the TEAL zone' : this.tut.stage === 1 ? 'RED means it is swinging. Tap as the dot passes through to parry'
         : g_focus(this) ? 'FOCUS is full: press FLOW, then tap as fast as you can' : 'Hit the bright CENTRE for a critical. Three in a row is a FINISHER';
-      txt(s, cx, Math.min(this.h - 96, cy + R + lw + 26), Math.min(17, this.w * 0.038), '#ffffff', 700);
+      /* wrap onto two lines on narrow screens */
+      const size = Math.max(14, Math.min(17, this.w * 0.042)), yy = Math.min(this.h - 150, cy + R + lw + 26);
+      c.font = '700 ' + size + 'px system-ui, sans-serif';
+      if (c.measureText(s).width > this.w - 24) { const mid = s.indexOf(' ', s.length / 2 - 4); txt(s.slice(0, mid), cx, yy, size, '#ffffff', 700); txt(s.slice(mid + 1), cx, yy + size * 1.35, size, '#ffffff', 700); }
+      else txt(s, cx, yy, size, '#ffffff', 700);
     }
   }
 }

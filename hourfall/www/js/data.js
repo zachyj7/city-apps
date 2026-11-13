@@ -103,7 +103,7 @@ export const SKILLS = [
 /* Enemy kinds. Stats scale with the level of wherever they are met. hp/atk are multipliers. */
 const K = (name, hp, atk, tempo, pat, x = {}) => Object.assign({ name, hp, atk, tempo, pat }, x);
 export const KINDS = {
-  scarecrow: K('Stilled Scarecrow', 0.5, 0.5, -0.2, ['single'], { tutorial: true, still: true }),
+  scarecrow: K('Stilled Scarecrow', 1.3, 0.5, -0.2, ['single'], { tutorial: true, still: true }),
   husk: K('Husk', 1, 1, 0, ['single'], { drops: [['scrap', 0.5], ['tonic', 0.12]] }),
   wolf: K('Stillwolf', 0.9, 1.1, 0.3, ['single', 'double'], { drops: [['pelt', 0.6]] }),
   boar: K('Tuskhusk', 1.3, 1.2, 0, ['heavy', 'single'], { drops: [['pelt', 0.5]] }),
@@ -158,7 +158,7 @@ export const ROSTER = {
   heath: ['galewisp', 'stormhawk', 'cloudjelly'], reef: ['eel', 'jelly', 'angler', 'reefcrab'], volcano: ['cinderling', 'magmagolem', 'ashwraith', 'emberhound'],
 };
 export const BOSSES = [
-  { id: 'scarecrow', kind: 'scarecrow', lvl: 1, town: 'dawnmere', ang: 135, rad: 62 },
+  { id: 'scarecrow', kind: 'scarecrow', lvl: 1, town: 'dawnmere', ang: 135, rad: 90 },
   { id: 'harvestking', kind: 'harvestking', lvl: 5, town: 'a_vale', cog: 'vale' },
   { id: 'breaker', kind: 'breaker', lvl: 9, town: 'a_coast', cog: 'coast', need: 'horn_blown' },
   { id: 'antlerking', kind: 'antlerking', lvl: 13, town: 'a_jungle', cog: 'jungle', need: 'lure_set' },

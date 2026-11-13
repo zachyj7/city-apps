@@ -609,6 +609,11 @@ function updateCamera(dt) {
       const t = i / 5, x = lerp(tmpB.x, tmpA.x, t), z = lerp(tmpB.z, tmpA.z, t), y = lerp(tmpB.y, tmpA.y, t);
       if (height(x, z) + 0.5 > y) { tmpA.lerpVectors(tmpB, tmpA, Math.max(0.22, t - 0.2)); tmpA.y += 1.5; break; }
     }
+    /* Keep the camera out of buildings. */
+    for (let i = 2; i <= 6; i++) {
+      const t = i / 6, x = lerp(tmpB.x, tmpA.x, t), z = lerp(tmpB.z, tmpA.z, t);
+      if (g.world.colliders.some(c => c.r > 3 && !!c.sky === sky() && dist(x, z, c.x, c.z) < c.r - 0.3)) { tmpA.lerpVectors(tmpB, tmpA, Math.max(0.25, t - 0.22)); tmpA.y += 2.2; break; }
+    }
   }
   if (!sky()) tmpA.y = Math.max(tmpA.y, height(tmpA.x, tmpA.z) + 1.2, p.under ? -999 : WATER + 0.8);
   if (p.under) tmpA.y = Math.min(tmpA.y, WATER - 1.5);
@@ -636,7 +641,7 @@ function drawMiniTex() {
   const p = g.player, M = g.mini; M.x = p.x; M.z = p.z;
   for (let j = 0; j < 44; j++) for (let i = 0; i < 44; i++) {
     const x = p.x + (i - 21.5) * 9, z = p.z + (j - 21.5) * 9, w = weights(x, z), h = height(x, z, w), k = (j * 44 + i) * 4;
-    if (h < WATER) mc.set(0x3f8fb0); else groundColor(x, z, h, 0.2, w, mc);
+    if (h < WATER && w.id !== 'reef') mc.set(0x3f8fb0); else { groundColor(x, z, h, 0.2, w, mc); if (h < WATER) mc.lerp(new THREE.Color(0x3f8fb0), 0.45); }
     mc.convertLinearToSRGB(); mimg.data[k] = mc.r * 255; mimg.data[k + 1] = mc.g * 255; mimg.data[k + 2] = mc.b * 255; mimg.data[k + 3] = 255;
   }
   mctx.putImageData(mimg, 0, 0);
