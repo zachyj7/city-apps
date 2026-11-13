@@ -3,6 +3,21 @@ import { Net } from './net.js';
 import { Video } from './video.js';
 import { tile, analyze, rackPoints, openingPoints, checkTurn, SYMBOLS, COLOR_NAMES, OPEN_POINTS } from './rules.js';
 
+// Rack colors to pick from. hi/base/lo/deep shade the plastic, ink is the pressed-in name, text is printing on it.
+const RACKS = {
+  yellow: { label: 'Yellow', hi: '#ffe14d', base: '#f7c600', lo: '#d9a800', deep: '#a67f00', ink: '#8f6c00', text: '#3a2c00' },
+  red:    { label: 'Red',    hi: '#ff8a80', base: '#e3262a', lo: '#bb1a1e', deep: '#7d0e10', ink: '#8a1012', text: '#2e0000' },
+  blue:   { label: 'Blue',   hi: '#7db4ff', base: '#2472e6', lo: '#1857b5', deep: '#0d3570', ink: '#0d3570', text: '#001433' },
+  green:  { label: 'Green',  hi: '#7fe39a', base: '#25a84e', lo: '#18843b', deep: '#0d5224', ink: '#0b4a20', text: '#00240c' },
+  pink:   { label: 'Pink',   hi: '#ffc2e0', base: '#ff6eb6', lo: '#e04a96', deep: '#a3265f', ink: '#8a1a52', text: '#3a0020' },
+  purple: { label: 'Purple', hi: '#c9a6ff', base: '#9257ff', lo: '#7136e6', deep: '#43169a', ink: '#3a1088', text: '#16003d' },
+  black:  { label: 'Black',  hi: '#6b6b6b', base: '#333333', lo: '#222222', deep: '#000000', ink: '#141414', text: '#f2f2f2' },
+  white:  { label: 'White',  hi: '#ffffff', base: '#ebebeb', lo: '#cfcfcf', deep: '#9a9a9a', ink: '#9a9a9a', text: '#1a1a1a' },
+};
+const rackStyle = rc => { const r = RACKS[rc] || RACKS.yellow; return `--rk-hi:${r.hi};--rk:${r.base};--rk-lo:${r.lo};--rk-deep:${r.deep};--rk-ink:${r.ink};--rk-text:${r.text}`; };
+const swatches = (cur, act) => Object.entries(RACKS).map(([k, r]) =>
+  `<button type="button" class="swatch ${k === cur ? 'on' : ''}" data-${act}="${k}" style="${rackStyle(k)}" aria-pressed="${k === cur}" aria-label="${r.label} rack"><span class="sw-top"></span><span class="sw-edge">${r.label}</span></button>`).join('');
+
 const $ = s => document.querySelector(s);
 const qs = new URLSearchParams(location.search);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -10,6 +25,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('ft-' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('ft-' + k, JSON.stringify(v)); } catch (e) { /* private window */ } },
 };
+function saveRc() { store.set('rc', A.rc); try { sessionStorage.setItem('ft-rc', A.rc); } catch (e) { /* ignore */ } }
 const pid = (() => {
   const make = () => Math.random().toString(36).slice(2, 10);
   try { let p = sessionStorage.getItem('ft-pid'); if (!p) { p = make(); sessionStorage.setItem('ft-pid', p); } return p; }
@@ -21,7 +37,7 @@ const A = {
   S: null, net: null, video: null, name: '', code: '',
   W: null,            // my turn in progress: { turnNo, table: [{k, ids}], rack: [ids], startTable, startRack }
   hist: [], sel: new Set(), order: [], seen: new Set(), fresh: new Set(),
-  nope: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
+  nope: null, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
   status: 'connecting',
 };
 window.FT = A;   // for testing from the console
@@ -44,6 +60,10 @@ function setupJoin() {
     try { sessionStorage.setItem('ft-name', name); } catch (e) { /* ignore */ }
     start(name, code);
   });
+  const pick = $('#rcPick');
+  const paint = () => { pick.innerHTML = swatches(A.rc, 'rc'); };
+  paint();
+  pick.addEventListener('click', e => { const b = e.target.closest('[data-rc]'); if (b) { A.rc = b.dataset.rc; saveRc(); paint(); } });
   if (qs.has('auto') && $('#name').value) $('#joinForm').requestSubmit();
 }
 
@@ -80,7 +100,7 @@ function snapshot() { return A.S || loadSnap(); }
 
 function hello() {
   const snap = snapshot();
-  A.net.send({ t: 'hello', pid, name: A.name, snap: snap && snap.round ? snap : null, peer: A.net.peer && A.net.peer.id, cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
+  A.net.send({ t: 'hello', pid, name: A.name, rc: A.rc, snap: snap && snap.round ? snap : null, peer: A.net.peer && A.net.peer.id, cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
 }
 function send(m) { A.net && A.net.send(m); }
 
@@ -114,6 +134,8 @@ function setState(S) {
     A.W = null; A.hist = []; A.nope = null;
   }
   if (S.phase === 'play' && was && was.turn !== S.turn && S.turn === pid) beep(660, 0.15, 880);
+  if (S.fx && S.fx.k !== A.lastFx) { if (A.lastFx !== null || (was && was.v < S.fx.k)) showMJ(S.fx.name); A.lastFx = S.fx.k; }
+  else if (A.lastFx === null) A.lastFx = S.fx ? S.fx.k : 0;
   A.video.sync(S.players.filter(p => p.on && p.peer && p.pid !== pid).map(p => p.peer));
   renderAll();
 }
@@ -180,6 +202,10 @@ function moveSelected(target) {
 
 // Put tiles into a rack order, at the end or just before a given tile.
 function place(rest, moving, target) {
+  if (target.startsWith('rackidx:')) {
+    const at = Math.min(+target.slice(8), rest.length);
+    return [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+  }
   if (target.startsWith('rackat:')) {
     const at = rest.indexOf(+target.slice(7));
     if (at >= 0) return [...rest.slice(0, at), ...moving, ...rest.slice(at)];
@@ -265,7 +291,7 @@ function seatEl(p) {
   if (!el) {
     el = document.createElement('div');
     el.className = 'seat';
-    el.innerHTML = `<div class="face"><div class="avatar"></div></div>
+    el.innerHTML = `<div class="face"><div class="avatar"></div><div class="nm"></div></div>
       <div class="minirack"><div class="ridges"></div><div class="mini-edge"><span class="engr"></span></div><div class="count"></div></div>
       <div class="tag"></div>`;
     seatEls.set(p.pid, el);
@@ -289,6 +315,9 @@ function renderSeats() {
     el.classList.toggle('off', !p.on);
     el.classList.toggle('me', !!isMe);
     el.querySelector('.engr').textContent = p.name;
+    el.querySelector('.nm').textContent = p.name;
+    const mr = el.querySelector('.minirack'), st = rackStyle(p.rc);
+    if (mr.getAttribute('style') !== st) mr.setAttribute('style', st);
     const c = el.querySelector('.count');
     c.textContent = p.seat && S.phase !== 'lobby' ? String(count) : '';
     c.title = 'tiles left';
@@ -297,7 +326,6 @@ function renderSeats() {
     else if (playing && S.turn === p.pid) tag = isMe ? '▶ Your turn' : '▶ Playing now';
     else if (playing && !p.seat) tag = 'Watching';
     else if (S.phase !== 'lobby' || p.total) tag = `Score ${p.total > 0 ? '+' : ''}${p.total}`;
-    if (!p.on && playing && S.turn === p.pid && !isMe) tag += ' <button class="skip" data-act="skip">Skip turn</button>';
     el.querySelector('.tag').innerHTML = tag;
     const face = el.querySelector('.face');
     const av = face.querySelector('.avatar');
@@ -360,6 +388,7 @@ function renderBanner() {
     if (myTurn()) html = `<div class="big you">Your turn!</div>`;
     else if (cur) html = `<div class="big">${esc(cur.name)} is playing…</div>`;
     const last = S.log[S.log.length - 1];
+    if (cur && !cur.on && !myTurn()) html += `<div class="lost">${esc(cur.name)} lost connection. <button class="btn small" data-act="skip">Skip their turn</button></div>`;
     if (last) html += `<div class="last">${esc(last)}</div>`;
     html += `<div class="pool">Tiles left to draw: <b>${S.pool.length}</b></div>`;
   }
@@ -379,6 +408,8 @@ function renderLobby(box) {
     <h3>At the table (${here.length} of 8)</h3>
     <ol class="who">${here.map((p, i) => `<li>${esc(p.name)}${p.pid === pid ? ' (you)' : ''}${i >= 8 ? ' — watching, table is full' : ''}</li>`).join('')}</ol>
     <p class="hint">${here.length < 2 ? 'Waiting for at least one more player…' : `${Math.min(here.length, 8)} players: ${sets === 2 ? 'two sets of tiles (5 or more players)' : 'one set of tiles'}.`}</p>
+    <h3>Your rack color</h3>
+    <div class="swatches">${swatches(A.rc, 'setrc')}</div>
     <button class="btn go huge" data-act="start" ${here.length < 2 ? 'disabled' : ''}>Start the game</button>
     <p class="hint">Tip: press <b>📷 Camera on</b> at the top so everyone can see your face.</p>
   </div>`;
@@ -443,10 +474,10 @@ function renderMe() {
   if (myTurn()) {
     const placed = A.W && A.W.rack.length < A.W.startRack.length;
     html += `<button class="btn go" data-act="done">✓ Done</button>`;
-    html += `<button class="btn draw" data-act="draw">${S.pool.length ? '⬇ Draw a tile' : 'Pass'}</button>`;
-    html += `<button class="btn" data-act="undo" ${A.hist.length ? '' : 'disabled'}>↶ Undo</button>`;
-    html += `<button class="btn" data-act="reset" ${placed || (A.W && A.hist.length) ? '' : 'disabled'}>⟲ Reset</button>`;
-    html += `<button class="btn" data-act="torack" ${A.sel.size ? '' : 'disabled'}>Back to rack</button>`;
+    html += `<button class="btn draw" data-act="draw">${S.pool.length ? '⬇ Draw<span class="long"> a tile</span>' : 'Pass'}</button>`;
+    html += `<button class="btn" data-act="undo" aria-label="Undo" ${A.hist.length ? '' : 'disabled'}>↶<span class="long"> Undo</span></button>`;
+    html += `<button class="btn" data-act="reset" aria-label="Reset" ${placed || (A.W && A.hist.length) ? '' : 'disabled'}>⟲<span class="long"> Reset</span></button>`;
+    html += `<button class="btn" data-act="torack" ${A.sel.size ? '' : 'disabled'}>↩<span class="long"> Back to</span> rack</button>`;
   }
   c.innerHTML = html;
   $('#sorts').hidden = !(m.seat && S.phase === 'play');
@@ -456,16 +487,48 @@ function renderMe() {
 function renderRack() {
   const S = A.S, m = me();
   const rack = $('#rack');
+  rack.setAttribute('style', rackStyle(A.rc));
   $('#rackName').textContent = A.name;
+  const g = rack.querySelector('.grooves');
   if (!S || !m || !m.seat || S.phase === 'lobby') {
-    rack.querySelector('.grooves').innerHTML = `<div class="rackmsg">${S && S.phase === 'play' ? 'You are watching this game. You will get a seat in the next one.' : 'Your tiles will appear here.'}</div>`;
+    g.innerHTML = `<div class="rackmsg">${S && S.phase === 'play' ? 'You are watching this game. You will get a seat in the next one.' : 'Your tiles will appear here.'}</div>`;
+    $('#rackInfo').textContent = '';
     return;
   }
-  const ids = A.W ? A.W.rack : A.order;
+  const ids = rackIds();
   const pts = rackPoints(ids);
-  rack.querySelector('.grooves').innerHTML = ids.map(id => tileHTML(id)).join('');
+  // While dragging, the picked-up tiles leave the rack and an empty slot shows where they will land.
+  let html;
+  if (A.drag) {
+    const rest = ids.filter(id => !A.sel.has(id)).map(id => tileHTML(id));
+    if (A.drag.gap != null) rest.splice(Math.min(A.drag.gap, rest.length), 0, `<div class="gap" style="width:calc(var(--tw) * ${Math.min(A.drag.n, 3)} + ${Math.min(A.drag.n, 3) - 1} * 5px)"></div>`);
+    html = rest.join('');
+  } else html = ids.map(id => tileHTML(id)).join('');
+  g.innerHTML = html;
   $('#rackInfo').innerHTML = `${ids.length} tiles<span class="pts"> · ${pts} points</span>`;
-  rack.classList.toggle('live', true);
+}
+
+const rackIds = () => (A.W ? A.W.rack : A.order);
+
+// Animate tiles from where they were to where they are now, so the rack slides instead of jumping.
+function flip(container, change) {
+  const before = new Map();
+  for (const el of container.querySelectorAll('.tile[data-id]')) before.set(el.dataset.id, el.getBoundingClientRect());
+  change();
+  const moved = [];
+  for (const el of container.querySelectorAll('.tile[data-id]')) {
+    const b = before.get(el.dataset.id);
+    if (!b) continue;
+    const a = el.getBoundingClientRect();
+    const dx = b.left - a.left, dy = b.top - a.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+    el.style.transition = 'none';
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    moved.push(el);
+  }
+  if (!moved.length) return;
+  container.offsetWidth;   // apply the starting positions before animating
+  for (const el of moved) { el.style.transition = 'transform .18s ease-out'; el.style.transform = ''; }
 }
 
 /* ---------------- tapping and dragging ---------------- */
@@ -479,53 +542,80 @@ function canPick(id) {
 
 document.addEventListener('pointerdown', e => {
   const t = e.target.closest('.tile[data-id]');
-  if (!t || e.button > 0) return;
+  if (!t || e.button > 0 || t.closest('.ghost')) return;
   const id = +t.dataset.id;
   if (!canPick(id)) return;
   press = { id, x: e.clientX, y: e.clientY, drag: false };
 });
 
+function startDrag(id) {
+  if (!A.sel.has(id)) { A.sel.clear(); A.sel.add(id); }
+  const ids = rackIds();
+  const fromRack = ids.includes(id);
+  // Start with the slot where the tile was, so nothing jumps.
+  const gap = fromRack ? ids.slice(0, ids.indexOf(id)).filter(x => !A.sel.has(x)).length : null;
+  ghost = document.createElement('div');
+  ghost.className = 'ghost';
+  ghost.innerHTML = [...A.sel].slice(0, 6).map(x => tileHTML(x)).join('');
+  document.body.appendChild(ghost);
+  document.body.classList.add('dragging');
+  A.drag = { n: A.sel.size, gap };
+  renderCenter(); renderMe();
+}
+
+// Which slot in the rack the pointer is over, counted among the tiles that are not being dragged.
+function slotAt(x, y) {
+  const tiles = [...document.querySelectorAll('#rack .grooves .tile[data-id]')];
+  for (let i = 0; i < tiles.length; i++) {
+    const r = tiles[i].getBoundingClientRect();
+    if (y < r.top - 6) return i;                                   // pointer is in an earlier row
+    if (y <= r.bottom + 14 && x < r.left + r.width / 2) return i;  // left half of a tile in this row
+  }
+  return tiles.length;
+}
+
 document.addEventListener('pointermove', e => {
   if (!press) return;
   if (!press.drag) {
-    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 10) return;
+    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8) return;
     press.drag = true;
-    if (!A.sel.has(press.id)) { A.sel.clear(); A.sel.add(press.id); }
-    ghost = document.createElement('div');
-    ghost.className = 'ghost';
-    ghost.innerHTML = [...A.sel].slice(0, 6).map(id => tileHTML(id)).join('');
-    document.body.appendChild(ghost);
-    document.body.classList.add('dragging');
-    renderCenter(); renderRack(); renderMe();
+    startDrag(press.id);
   }
   e.preventDefault();
-  ghost.style.transform = `translate(${e.clientX - 30}px, ${e.clientY - 40}px)`;
+  ghost.style.transform = `translate(${e.clientX - 30}px, ${e.clientY - 46}px) rotate(-3deg)`;
   const el = document.elementFromPoint(e.clientX, e.clientY);
-  const d = dropAt(el);
+  const overRack = el && el.closest('#rack');
+  const canRack = !A.W || [...A.sel].every(id => A.W.startRack.includes(id));
+  const gap = overRack && canRack ? slotAt(e.clientX, e.clientY) : null;
+  if (gap !== A.drag.gap) { A.drag.gap = gap; flip($('#rack .grooves'), renderRack); }
+  const d = overRack ? null : el && el.closest('[data-drop]');
   if (hover !== d) { if (hover) hover.classList.remove('hover'); hover = d; if (d) d.classList.add('hover'); }
 }, { passive: false });
 
-function dropAt(el) {
-  if (!el) return null;
-  const t = el.closest('#rack .tile[data-id]');
-  if (t) return t;
-  return el.closest('[data-drop]') || (el.closest('#rack') ? $('#rack .grooves') : null);
-}
-
-document.addEventListener('pointerup', e => {
-  if (!press) return;
-  const p = press; press = null;
-  if (!p.drag) { toggle(p.id); return; }
+function endDrag() {
   ghost && ghost.remove(); ghost = null;
   document.body.classList.remove('dragging');
   if (hover) hover.classList.remove('hover');
-  const d = hover; hover = null;
-  if (d && d.matches('.tile[data-id]')) moveSelected('rackat:' + d.dataset.id);
-  else if (d) moveSelected(d.dataset.drop);
-  else { A.sel.clear(); renderAll(); }
+  hover = null;
+  const d = A.drag; A.drag = null;
+  return d;
+}
+
+document.addEventListener('pointerup', () => {
+  if (!press) return;
+  const p = press; press = null;
+  if (!p.drag) { toggle(p.id); return; }
+  const target = hover;
+  const d = endDrag();
+  const g = $('#rack .grooves');
+  if (d.gap != null) flip(g, () => moveSelected('rackidx:' + d.gap));
+  else if (target) moveSelected(target.dataset.drop);
+  else { A.sel.clear(); flip(g, renderAll); }
 });
 document.addEventListener('pointercancel', () => {
-  press = null; ghost && ghost.remove(); ghost = null; document.body.classList.remove('dragging');
+  if (!press) return;
+  const p = press; press = null;
+  if (p.drag) { endDrag(); A.sel.clear(); renderAll(); }
 });
 
 function toggle(id) {
@@ -536,6 +626,8 @@ function toggle(id) {
 document.addEventListener('click', e => {
   const d = e.target.closest('[data-drop]');
   if (d && A.sel.size && !e.target.closest('.tile')) { moveSelected(d.dataset.drop); return; }
+  const sw = e.target.closest('[data-setrc]');
+  if (sw) { A.rc = sw.dataset.setrc; saveRc(); send({ t: 'rc', rc: A.rc }); renderAll(); return; }
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
   const act = b.dataset.act;
@@ -600,6 +692,18 @@ $('#smaller').addEventListener('click', () => { A.zoom -= 0.1; applyZoom(); });
 $('#shapesBtn').addEventListener('click', () => { A.shapes = !A.shapes; store.set('shapes', A.shapes); renderCenter(); renderRack(); });
 let rz = 0;
 window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(renderSeats, 150); });
+
+// The signature move: a big signed "MJ!" across everyone's screen.
+let mjT = 0;
+function showMJ(name) {
+  const el = $('#mj');
+  el.querySelector('.by').textContent = `${name} pulled an MJ!`;
+  el.hidden = false;
+  el.classList.remove('play'); el.offsetWidth; el.classList.add('play');
+  clearTimeout(mjT); mjT = setTimeout(() => { el.hidden = true; el.classList.remove('play'); }, 3200);
+  [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.18), i * 90));
+}
+window.FT.showMJ = showMJ;
 
 let toastT = 0;
 function toast(text, ms = 4000) {

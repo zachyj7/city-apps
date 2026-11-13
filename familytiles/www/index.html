@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,700&family=Yellowtail&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -24,6 +24,8 @@
     <input id="name" autocomplete="nickname" maxlength="18" placeholder="Grandma">
     <label for="code">Table name <small>(everyone types the same one)</small></label>
     <input id="code" autocomplete="off" autocapitalize="none" maxlength="20" placeholder="family">
+    <label>Your rack color</label>
+    <div id="rcPick" class="swatches"></div>
     <p id="joinErr" class="err" role="alert"></p>
     <button class="btn go huge" type="submit">Join the table</button>
   </form>
@@ -60,6 +62,11 @@
 </section>
 
 <div id="toast" role="status" hidden></div>
+<div id="mj" role="status" hidden>
+  <div class="sig">MJ!</div>
+  <svg class="swoosh" viewBox="0 0 300 60" aria-hidden="true"><path d="M10 40 C 70 10, 120 58, 170 34 S 260 12, 292 26"/></svg>
+  <div class="by"></div>
+</div>
 
 <script src="js/vendor/peerjs.min.js"></script>
 <script type="module" src="js/main.js"></script>

@@ -7,7 +7,10 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
 - 2–4 players use one set of 106 tiles; 5–8 players use two sets.
 - Big, high-contrast tiles in the Atkinson Hyperlegible font, with a shape on every tile for each color
   (■ black, ● red, ▲ blue, ◆ orange). **A− / A+** makes everything bigger or smaller.
-- Each player's rack is a yellow wedge rack with their name pressed into the edge.
+- Each player's rack is a wedge rack with their name pressed into the edge, in the color they pick
+  (yellow, red, blue, green, pink, purple, black or white).
+- Drag tiles along your rack and the others slide apart to show where they will land.
+- Split a run on the table and play your own tile in the middle, and everyone sees a signed **MJ!**
 
 ## Rules
 

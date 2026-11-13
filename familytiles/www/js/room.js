@@ -1,7 +1,7 @@
 // The referee. It runs in one player's browser (the host) and holds the true game.
 // Every change is sent to everyone as one full snapshot, so if the host leaves, whoever takes over
 // carries on from their last snapshot.
-import { makePool, checkTurn, rackPoints, openingPoints, OPEN_POINTS, DEAL } from './rules.js';
+import { makePool, checkTurn, rackPoints, openingPoints, isMJ, OPEN_POINTS, DEAL } from './rules.js';
 
 const MAX_SEATS = 8;
 
@@ -69,13 +69,14 @@ export class Room {
         if (s.phase === 'lobby') this.note(`${clean(m.name)} sat down`);
         else this.note(`${clean(m.name)} is watching`);
       }
-      p.name = clean(m.name); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true;
+      p.name = clean(m.name); p.rc = cleanColor(m.rc); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true;
       return this.push();
     }
     const p = c.pid && this.player(c.pid);
     if (!p) return;
 
     if (m.t === 'cam') { p.cam = !!m.cam; p.mic = !!m.mic; return this.push(); }
+    if (m.t === 'rc') { p.rc = cleanColor(m.rc); return this.push(); }
 
     if (m.t === 'start') {
       if (s.phase === 'play') return;
@@ -132,6 +133,10 @@ export class Room {
       const why = checkTurn(s.table, p.rack, w.table, w.rack, p.opened);
       if (why) return c.send({ t: 'nope', why });
       const played = p.rack.length - w.rack.length;
+      if (p.opened && isMJ(s.table, p.rack, w.table)) {
+        s.fx = { t: 'mj', name: p.name, k: s.v + 1 };
+        this.note(`MJ! ${p.name} split a run and played in the middle`);
+      }
       if (!p.opened) {
         p.opened = true;
         this.note(`${p.name} made a first play worth ${openingPoints(s.table, p.rack, w.table)} points (${OPEN_POINTS} needed)`);
@@ -182,4 +187,5 @@ export class Room {
   }
 }
 
+function cleanColor(c) { return /^[a-z]{2,8}$/.test(c || '') ? c : 'yellow'; }
 function clean(n) { return String(n || 'Player').replace(/[<>&"]/g, '').trim().slice(0, 18) || 'Player'; }

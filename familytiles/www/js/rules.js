@@ -112,3 +112,27 @@ export function checkTurn(startTable, startRack, table, rack, opened) {
   }
   return null;
 }
+
+// The "MJ": an existing run on the table gets split into two runs, and the player's own tile goes in the middle.
+// Example: red 3-4-5-6-7-8-9 becomes 3-4-5-6 and 6-7-8-9 using the player's red 6.
+export function isMJ(startTable, startRack, table) {
+  const mine = new Set(startRack);
+  const played = new Set(table.flat().filter(id => mine.has(id)));
+  if (!played.size) return false;
+  for (const s of startTable) {
+    const a = analyze(s);
+    if (!a.ok || a.kind !== 'run') continue;
+    const lo = a.lo, hi = a.lo + s.length - 1;
+    const old = new Set(s);
+    const homes = table.filter(t => t.some(id => old.has(id)));
+    const runs = homes.filter(t => { const b = analyze(t); return b.ok && b.kind === 'run'; });
+    if (runs.length < 2) continue;
+    const inside = homes.some(t => t.some(id => {
+      if (!played.has(id)) return false;
+      const x = tile(id);
+      return x.j || (x.n >= lo && x.n <= hi);
+    }));
+    if (inside) return true;
+  }
+  return false;
+}
