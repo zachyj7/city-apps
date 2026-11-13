@@ -19,9 +19,22 @@ export class Net {
     this.state = 'connecting'; this.lastRx = Date.now(); this.retryAt = 0;
   }
 
-  start() { this.tryHost(); setInterval(() => this.watch(), 2000); }
+  start() { this.tryHost(); this.timer = setInterval(() => this.watch(), 2000); }
+
+  // Leave the table: drop the connection (and the referee, if we were hosting). Someone else takes over hosting.
+  stop() {
+    this.gen++;
+    this.stopped = true;
+    clearInterval(this.timer);
+    if (this.room) { this.room.close(); this.room = null; }
+    this.loop = null;
+    try { this.conn && this.conn.close(); } catch (e) { /* ignore */ }
+    this.conn = null;
+    this.killPeer();
+    this.state = 'off';
+  }
   status(s) { this.state = s; this.h.onStatus(s); }
-  rx(m) { this.lastRx = Date.now(); if (m.t !== 'ping') this.h.onMsg(m); }
+  rx(m) { if (this.stopped) return; this.lastRx = Date.now(); if (m.t !== 'ping') this.h.onMsg(m); }
   send(m) {
     if (this.loop) this.loop(m);
     else if (this.conn && this.conn.open) try { this.conn.send(m); } catch (e) { /* dropped */ }
@@ -37,6 +50,7 @@ export class Net {
   }
 
   tryHost() {
+    if (this.stopped) return;
     const gen = ++this.gen;
     if (!window.Peer) return this.offline();
     let peer, done = false;
@@ -63,7 +77,12 @@ export class Net {
         c.on('close', () => k.onclose && k.onclose());
         c.on('error', () => k.onclose && k.onclose());
       });
-      peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) { /* ignore */ } });
+      // Lost touch with the broker: reconnect, unless we are leaving on purpose. (Destroying a peer also
+      // fires 'disconnected' first; reconnecting then would keep a ghost host holding the table.)
+      peer.on('disconnected', () => {
+        if (this.stopped || gen !== this.gen || peer.destroyed) return;
+        setTimeout(() => { if (!this.stopped && gen === this.gen && !peer.destroyed) try { peer.reconnect(); } catch (e) { /* ignore */ } }, 300);
+      });
       this.status('host');
       this.h.onOpen();
     });
@@ -74,6 +93,7 @@ export class Net {
   }
 
   join() {
+    if (this.stopped) return;
     const gen = ++this.gen;
     this.status('joining');
     let peer;

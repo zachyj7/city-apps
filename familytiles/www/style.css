@@ -204,6 +204,11 @@ header {
 .stepper { display: inline-flex; align-items: center; gap: 8px; }
 .stepper .btn { min-height: 42px; min-width: 50px; padding: 0 .6em; }
 .stepper b { min-width: 3.2em; text-align: center; }
+.setactions { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.setactions .btn { width: 100%; }
+#closeAllBtn.armed { --b-top: #ffd0cc; --b-bot: #ffb4ae; --b-ink: #7a1008; animation: armed .6s ease-in-out infinite alternate; }
+@keyframes armed { to { filter: brightness(1.12); } }
+.lobby .leave { margin: 14px auto 0; display: flex; }
 .switch { appearance: none; -webkit-appearance: none; flex: none; width: 58px; height: 34px; border-radius: 999px; background: #4d6156; position: relative; cursor: pointer; margin: 0; transition: background .15s; }
 .switch::after { content: ''; position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,.35); transition: transform .15s; }
 .switch:checked { background: var(--green); }

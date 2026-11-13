@@ -76,14 +76,21 @@ function start(name, code) {
   $('#tableName').textContent = code;
   applyZoom();
   A.grid = loadGrid();
-  A.video = new Video(() => renderSeats());
-  A.video.init();
+  if (!A.video) { A.video = new Video(() => renderSeats()); A.video.init(); }
   A.net = new Net(code, {
     onStatus: s => { A.status = s; renderStatus(); },
     onOpen: () => hello(),
     onMsg: m => {
       if (m.t === 'state') setState(m.s);
       else if (m.t === 'nope') { A.nope = m.why; renderCenter(); beep(220, 0.25); }
+      else if (m.t === 'closed') {
+        // Someone closed the table: forget this game so it can't come back, and go to the join screen.
+        try { sessionStorage.removeItem(snapKey()); sessionStorage.removeItem(gridKey()); } catch (e) { /* ignore */ }
+        A.grid = null;
+        const hosting = !!(A.net && A.net.room);
+        // The host waits a moment so the message reaches everyone before its connection closes.
+        setTimeout(() => leaveTable(`${m.by} closed the table. Join again to start fresh.`), hosting ? 1200 : 0);
+      }
     },
     onLost: () => {},
     onPeer: peer => A.video.setPeer(peer),
@@ -409,6 +416,7 @@ function renderLobby(box) {
     <div class="section"><h3>Your rack color</h3><div class="swatches">${swatches(A.rc, 'setrc')}</div></div>
     <button class="btn go huge" data-act="start" ${here.length < 2 ? 'disabled' : ''}>Start the game ${ic('arrow')}</button>
     <p class="tip">${ic('cam')}Press <b>Camera</b> at the top so everyone can see your face.</p>
+    <button class="btn small leave" data-act="leave">${ic('logout')}Leave table</button>
   </div>`;
 }
 
@@ -828,6 +836,7 @@ document.addEventListener('click', e => {
   else if (act === 'sortcol') sortRack('col');
   else if (act === 'skip') send({ t: 'skip' });
   else if (act === 'copy') copyLink();
+  else if (act === 'leave') leaveTable('You left the table.');
   else if (act === 'share') navigator.share({ title: 'Family Tiles', text: 'Come play tiles with us!', url: location.origin + location.pathname + '?room=' + A.code }).catch(() => {});
 });
 
@@ -892,6 +901,41 @@ document.addEventListener('pointerdown', e => { if (!$('#settings').hidden && !(
 document.addEventListener('keydown', e => { if (e.key === 'Escape') showSettings(false); });
 let rz = 0;
 window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { renderSeats(); renderRack(); }, 150); });
+
+// Leave the table and go back to the join screen, where you can join again (same or different table).
+// Your seat is kept while a game is on, so joining the same table again puts you back in it.
+function leaveTable(msg) {
+  if (!A.net) return;
+  A.net.stop(); A.net = null;
+  A.video.stopAll();
+  A.camOn = false; A.micOn = true;
+  A.S = null; A.W = null; A.hist = []; A.sel.clear(); A.drag = null; A.nope = null; A.sortUndo = null; A.status = 'off';
+  for (const el of seatEls.values()) el.remove();
+  seatEls.clear(); videoEls.clear();
+  showSettings(false);
+  $('#game').hidden = true; $('#join').hidden = false;
+  document.title = 'Family Tiles';
+  const u = new URL(location.href); u.searchParams.delete('auto'); history.replaceState(null, '', u);
+  if (msg) toast(msg, 6000);
+}
+window.FT.leaveTable = leaveTable;
+
+$('#leaveBtn').addEventListener('click', () => leaveTable('You left the table.'));
+// Closing the table for everyone asks for a second tap, so it can't happen by accident.
+let closeArm = 0;
+$('#closeAllBtn').addEventListener('click', () => {
+  const b = $('#closeAllBtn');
+  if (!b.classList.contains('armed')) {
+    b.classList.add('armed');
+    b.querySelector('span').textContent = 'Tap again to close it for everyone';
+    clearTimeout(closeArm);
+    closeArm = setTimeout(() => { b.classList.remove('armed'); b.querySelector('span').textContent = 'Close table for everyone'; }, 4000);
+    return;
+  }
+  clearTimeout(closeArm);
+  b.classList.remove('armed'); b.querySelector('span').textContent = 'Close table for everyone';
+  send({ t: 'closeall' });
+});
 
 // The signature move: a big signed "MJ!" across everyone's screen.
 let mjT = 0;

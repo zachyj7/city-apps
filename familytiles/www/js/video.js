@@ -106,6 +106,14 @@ export class Video {
     this.swapTracks();
   }
 
+  // Hang up every call and turn the camera off.
+  stopAll() {
+    for (const c of this.calls.values()) try { c.close(); } catch (e) { /* ignore */ }
+    this.calls.clear(); this.streams.clear();
+    this.cameraOff();
+    this.peer = null;
+  }
+
   setMic(on) {
     if (this.cam) for (const t of this.cam.getAudioTracks()) t.enabled = on;
   }

@@ -78,6 +78,13 @@ export class Room {
     if (m.t === 'cam') { p.cam = !!m.cam; p.mic = !!m.mic; return this.push(); }
     if (m.t === 'rc') { p.rc = cleanColor(m.rc); return this.push(); }
 
+    // Close the table for everyone: they all go back to the join screen and the game is cleared.
+    if (m.t === 'closeall') {
+      this.s = emptyState();
+      this.each(k => k.send({ t: 'closed', by: p.name }));
+      return;
+    }
+
     if (m.t === 'start') {
       if (s.phase === 'play') return;
       const ready = s.players.filter(q => q.on);

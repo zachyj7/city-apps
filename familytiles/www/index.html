@@ -41,6 +41,7 @@
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5L2.5 20h19z"/><path d="M12 10v4.5M12 17.2v.3"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/></symbol>
     <symbol id="i-skip" viewBox="0 0 24 24"><path d="M5 5l9 7-9 7zM18 5v14"/></symbol>
   </defs>
 </svg>
@@ -83,6 +84,11 @@
     </div>
     <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-shapes"/></svg>Shapes on tiles for each color</span><input type="checkbox" class="switch" id="shapesOn"></label>
     <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-sound"/></svg>Sounds</span><input type="checkbox" class="switch" id="soundOn"></label>
+    <div class="setactions">
+      <button class="btn" id="leaveBtn"><svg class="ic"><use href="#i-logout"/></svg><span>Leave table</span></button>
+      <button class="btn muted" id="closeAllBtn"><svg class="ic"><use href="#i-close"/></svg><span>Close table for everyone</span></button>
+      <p class="fieldhint">Leave takes you back to the start so you can join again. Close sends everyone back and clears the game.</p>
+    </div>
   </div>
   <aside id="seatsL" class="seats"></aside>
   <main>
