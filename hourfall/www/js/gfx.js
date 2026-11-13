@@ -31,6 +31,10 @@ export const G = {
   cap: (r, l) => cached(`p${r},${l}`, () => new THREE.CapsuleGeometry(r, l, 3, 8)),
 };
 
+let offsetOf = null, colorer = null;
+/* assets.js hands over its helpers here, so gfx.js does not import it (that would be circular). */
+export function useAssetHelpers(off, col) { offsetOf = off; colorer = col; Builder.prototype.colorer = col; }
+
 export class Builder {
   constructor() { this.p = []; this.n = []; this.c = []; this.B = null; }
   /* Everything added after this is placed relative to (x,y,z), turned by ry and scaled by s. */
@@ -45,6 +49,23 @@ export class Builder {
       V.set(pa[i], pa[i + 1], pa[i + 2]).applyMatrix4(M); p.push(V.x, V.y, V.z);
       V.set(na[i], na[i + 1], na[i + 2]).applyMatrix3(N3).normalize(); n.push(V.x, V.y, V.z);
       c.push(C.r, C.g, C.b);
+    }
+    return this;
+  }
+  /* Append a whole Blender model (see assets.js), tinted with a palette. */
+  addAsset(model, pal, o = {}) {
+    if (!model) return this;
+    E.set(o.rx || 0, o.ry || 0, o.rz || 0); Q.setFromEuler(E);
+    P.set(o.x || 0, o.y || 0, o.z || 0); S.set(o.sx ?? o.s ?? 1, o.sy ?? o.s ?? 1, o.sz ?? o.s ?? 1);
+    M.compose(P, Q, S); if (this.B) M.premultiply(this.B); N3.getNormalMatrix(M);
+    const p = this.p, n = this.n, c = this.c;
+    for (const part of model.parts) {
+      const off = offsetOf(model, part), col = this.colorer(part, pal), pa = part.P, na = part.N;
+      for (let i = 0; i < pa.length; i += 3) {
+        V.set(pa[i] + off[0], pa[i + 1] + off[1], pa[i + 2] + off[2]).applyMatrix4(M); p.push(V.x, V.y, V.z);
+        V.set(na[i], na[i + 1], na[i + 2]).applyMatrix3(N3).normalize(); n.push(V.x, V.y, V.z);
+        c.push(col[i], col[i + 1], col[i + 2]);
+      }
     }
     return this;
   }

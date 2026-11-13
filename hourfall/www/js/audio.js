@@ -67,6 +67,9 @@ export function makeAudio() {
     step(wet) { tone(wet ? 300 : 110, 0.05, wet ? 'sine' : 'triangle', 0.035, wet ? 1.8 : 0.6); },
     talk() { tone(380 + Math.random() * 160, 0.03, 'square', 0.018); },
     tickSound() { tone(900, 0.03, 'square', 0.05); },
+    jump() { tone(300, 0.12, 'triangle', 0.08, 1.8); },
+    glide() { tone(500, 0.5, 'sine', 0.08, 1.5); tone(750, 0.6, 'sine', 0.05, 1.3, 0.1); },
+    whistle() { tone(1500, 0.12, 'sine', 0.1, 1.3); tone(1900, 0.22, 'sine', 0.1, 0.9, 0.14); },
     card() { tone(600, 0.04, 'triangle', 0.08, 0.5); },
     /* Each country plays the music box in its own key. */
     setRegion(id) { root = { vale: 0, plains: 0, coast: 5, jungle: -3, desert: 2, crag: -5, frost: -7, heath: 7, reef: -2, volcano: -9 }[id] ?? 0; },

@@ -31,6 +31,9 @@ export class UI {
     const press = (id, fn) => $(id).addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); fn(); });
     press('act', () => g.interact()); press('flowBtn', () => g.combat.flow()); press('potBtn', () => g.combat.potion()); press('fleeBtn', () => g.combat.flee()); press('gadBtn', () => g.combat.gadget());
     $('crawl').addEventListener('pointerdown', () => this.crawlNext && this.crawlNext());
+    $('jumpBtn').addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); g.setJumpHeld(true); });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $('jumpBtn').addEventListener(ev, () => g.setJumpHeld(false));
+    press('mountBtn', () => g.mount());
     this.mini = $('mini').getContext('2d');
   }
   get blocking() { return this.dialogOpen || this.menuOpen || this.crawlOpen || this.titleOpen || this.lookOpen; }
@@ -114,6 +117,10 @@ export class UI {
     const gd = st.gadget, gb = $('gadBtn');
     gb.classList.toggle('hidden', !inC || !gd);
     if (inC && gd) { gb.textContent = gd.icon + (c.gadCd > 0 ? ' ' + Math.ceil(c.gadCd) : g.touch ? '' : ' G'); gb.classList.toggle('cool', c.gadCd > 0); }
+    const roam = !inC && !cine && !this.blocking && g.touch;
+    $('jumpBtn').classList.toggle('hidden', !roam || !g.has('r_glider'));
+    $('mountBtn').classList.toggle('hidden', !roam || !g.has('r_strider'));
+    $('mountBtn').classList.toggle('on', !!g.player.mounted);
     $('menuBtn').classList.toggle('hidden', inC); $('mini').classList.toggle('hidden', inC);
     if (!inC && !cine) this.drawMini();
   }

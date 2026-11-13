@@ -26,4 +26,16 @@ An open-world RPG by City Apps. The sun stopped nine days ago; you carry the onl
 - `www/js/ui.js` HUD, menus, editor, casino
 - `www/js/audio.js` synthesised sound
 
-No build step and no downloaded assets: models, terrain and sound are generated in code.
+## Models (Blender)
+
+All characters, creatures, buildings, landmarks and scenery are modelled in Blender from code in `blender/` and exported to `www/models/assets.glb` (Draco-compressed, about 1 MB). Materials named `c_rrggbb` are fixed colours; `r_ROLE` materials are tinted by the game, so one house or outfit model serves many palettes.
+
+Rebuild after editing `blender/build_assets.py`:
+
+```
+blender -b --factory-startup --python hourfall/blender/build_assets.py -- hourfall/www/models/assets.glb
+```
+
+`blender/preview.py` renders a contact sheet of any group of models for checking by eye.
+
+Terrain and sound are still generated in code at runtime.

@@ -57,6 +57,8 @@ export const ITEMS = {
   r_boots: { name: 'Windstride Boots', type: 'relic', icon: '👢', r: 3, price: 1500, desc: 'RELIC, always active. You run 45% faster across the world.' },
   r_compass: { name: 'Minute Compass', type: 'relic', icon: '🧭', r: 3, price: 0, desc: 'RELIC, always active. Chests and Lost Minutes near you appear on the minimap.' },
   r_tide: { name: 'Tidecharm', type: 'relic', icon: '🫧', r: 3, price: 0, desc: 'RELIC, always active. You can breathe water, and walk the sea floor as if it were a road.' },
+  r_strider: { name: 'Clockwork Strider', type: 'relic', icon: '🐎', r: 3, price: 0, desc: "RELIC. Oren's brass mount. Press H, or the horse button, to ride. Fastest on roads." },
+  r_glider: { name: 'Wind-sail', type: 'relic', icon: '🪁', r: 3, price: 0, desc: 'RELIC. Jump from any height and hold jump to glide. Step off the Aerie to sail down to the ground.' },
   r_horn: { name: 'Storm Horn', type: 'key', icon: '📯', r: 2, desc: 'A lighthouse horn. Old Breaker comes when it is blown.' },
   tonic: { name: 'Tonic', type: 'use', icon: '🧪', r: 0, heal: 45, price: 25, desc: 'Restores 45 health. Tastes of mint and pennies.' },
   tonic2: { name: 'Strong Tonic', type: 'use', icon: '⚗️', r: 1, heal: 120, price: 70, desc: 'Restores 120 health.' },

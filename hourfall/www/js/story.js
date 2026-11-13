@@ -1,7 +1,7 @@
 /* The story: quests, the people of Meridian, what makes each city worth returning to, and the endings.
    Dialogue is plain async code: `await say(...)` shows lines, `await g.ui.choose(...)` asks. */
 import { COGS, PAGES, ITEMS, PEARL_SHOP } from './data.js';
-import { TOWN, REG } from './world.js';
+import { TOWN, REG, ISLES } from './world.js';
 
 const count = o => Object.keys(o).length;
 export const cogCount = g => COGS.filter(k => g.has('cog_' + k)).length;
@@ -63,7 +63,7 @@ export const QUESTS = {
     { t: 'Speak with Fenn the tracker in Canopy', done: g => g.flag('met_fenn'), at: () => P('canopy', 100, 20) },
     { t: g => `Gather Moth Dust from Mothwisps for the lure-lantern (${Math.min(3, g.has('dust'))}/3)`, done: g => g.flag('has_lure') || g.has('dust') >= 3 },
     { t: 'Have Ixa the apothecary make the lure-lantern', done: g => g.flag('has_lure'), at: () => P('canopy', 250, 20) },
-    { t: 'Hang the lantern in Antler Hollow, south-west of Canopy', done: g => g.flag('lure_set'), at: () => T('a_jungle') },
+    { t: 'Hang the lantern in Antler Hollow, west of Canopy', done: g => g.flag('lure_set'), at: () => T('a_jungle') },
     { t: 'Face the Antler King', done: g => killed(g, 'antlerking'), at: () => T('a_jungle') },
   ], reward: { xp: 700, coins: 400, items: { a_bark: 1 } } },
   q_desert: { name: 'The Hourglass', steps: [
@@ -90,7 +90,7 @@ export const QUESTS = {
     { t: 'Find Pim the liftkeeper in Galefoot, on the western heath', done: g => g.flag('met_pim'), at: () => P('galefoot', 180, 8) },
     { t: g => `The wind-lift needs Storm Feathers from Stormhawks (${Math.min(3, g.has('feather'))}/3)`, done: g => g.flag('lift_on') },
     { t: 'Ride the wind-lift north of Galefoot up to the Aerie and find Archivist Seraphine', done: g => g.flag('met_seraphine'), at: () => P('aerie', 200, 14) },
-    { t: 'Cross the far bridge and face the Stormcrown', done: g => killed(g, 'stormcrown'), at: () => [-2960, 60] },
+    { t: 'Cross the far bridge and face the Stormcrown', done: g => killed(g, 'stormcrown'), at: () => [ISLES[2].x, ISLES[2].z] },
   ], reward: { xp: 2900, coins: 1800, items: { a_feather: 1 } } },
   q_reef: { name: 'The Drowned Bell', steps: [
     { t: 'Nerida the diver in Saltcrest knows the way under the sea', done: g => g.has('r_tide') > 0, at: () => P('saltcrest', 100, 20) },
@@ -229,7 +229,7 @@ export const NPCS = [
   /* Highmark */
   N('isaura', 'Regent Isaura', 'highmark', 356, 70, { top: 0x3d5fb0, hair: 0x2a211c, hairStyle: 4, hat: 'crown', cape: 0x8a3a55, outfit: 'dress', trim: 0xd9b45a, skin: 0xc98a5e }, async g => {
     if (!g.flag('met_regent')) {
-      await g.cine.orbit(0, -96, 130, 70, 5, 'The Dial Spire');
+      await g.cine.orbit(TOWN.highmark.x, TOWN.highmark.z - 96, 130, 70, 5, 'The Dial Spire');
       await say(g, 'Regent Isaura', "So you are the apprentice. Oren spoke of you. Usually while complaining. I took that for love.", 'He went up the Spire nine nights ago with the Cog-keys on his belt, and the door sealed behind him. Nine sockets. Nine Cogs. All gone.',
         "My scouts have found where they fell: one in each country under the Dial. Each has gathered a guardian around itself. Something Stilled, and strong.",
         'The Vale, the Salt Coast, the Verdance. Those are within your reach. The Wastes, the Highcrags, Frostspine: harder. The sky-city, the drowned city, and the Cinderdeep will kill you until you are a great deal more than you are now.',
@@ -295,7 +295,7 @@ export const NPCS = [
   /* Canopy */
   N('yara', 'Elder Yara', 'canopy', 200, 14, { top: 0x3f9a4a, hair: 0xe6e0d0, hairStyle: 3, hat: 'feather', hatColor: 0xffd24a, skin: 0x6e4530, outfit: 'dress', acc: ['leaf'] }, async g => {
     if (!g.flag('met_yara')) { await say(g, 'Elder Yara', 'The forest told us you were coming. It tells us very little else now. It has stopped mid-word.', 'The stag in the Hollow was the oldest thing in the Verdance. Now it is the oldest thing that cannot die. It hides from footsteps but not from light.', 'Fenn tracks it. Ixa, in the great tree, makes lanterns the moths cannot resist, and where the moths go, the King follows. Speak to them both.'); g.setFlag('met_yara'); return; }
-    return say(g, 'Elder Yara', killed(g, 'antlerking') ? 'He landed. After nine days in the air, he landed, and the whole forest breathed out. Take our thanks, and the bark of the eldest tree to wear.' : 'Fenn, then Ixa. The Hollow lies south-west.');
+    return say(g, 'Elder Yara', killed(g, 'antlerking') ? 'He landed. After nine days in the air, he landed, and the whole forest breathed out. Take our thanks, and the bark of the eldest tree to wear.' : 'Fenn, then Ixa. The Hollow lies west of the great tree.');
   }),
   N('fenn', 'Fenn', 'canopy', 100, 20, { top: 0x4a5a3a, hair: 0x2a2a2a, hat: 'hood', hatColor: 0x3a4a30, cape: 0x3a4a30, skin: 0xc98a5e }, async g => {
     if (!g.flag('met_fenn')) { await say(g, 'Fenn', 'Keep your voice down. The wood listens now.', "I saw your master come through, the night it stopped. Running. Something gold under his coat, and crying like a man at a graveside.", 'Bring three pinches of Moth Dust to Ixa. Mothwisps drop it. They are everywhere here. Mind the Shadecats; they feint.'); g.setFlag('met_fenn'); return; }
@@ -365,13 +365,13 @@ export const NPCS = [
     g.take('feather', 3); await say(g, 'Pim', "Ha! Listen to it hum! North of the village, the ring of light. Up you go."); g.setFlag('lift_on');
   }),
   N('seraphine', 'Archivist Seraphine', 'aerie', 200, 14, { top: 0xffffff, hair: 0xb0b4c0, hairStyle: 4, hat: 'goggles', outfit: 'robe', acc: ['wings'], trim: 0xd9b45a, skin: 0xffe0cc }, async g => {
-    if (!g.flag('met_seraphine')) { await g.cine.orbit(-2800, 200, 170, 60, 5, 'The Aerie'); await say(g, 'Archivist Seraphine', 'A groundling. With a Pivot. How perfectly timely, if you will forgive the word.', 'From here we watched it happen. We saw Oren on the Spire. We saw someone fall. We have not been able to look away since.', 'Our Cog is in the breast of the Stormcrown, on the far isle, across the long bridge. It was our weathervane. It reverses the ring more than any creature I have catalogued. Keep your head.'); g.setFlag('met_seraphine'); return; }
+    if (!g.flag('met_seraphine')) { await g.cine.orbit(TOWN.aerie.x, TOWN.aerie.z, 170, 60, 5, 'The Aerie'); await say(g, 'Archivist Seraphine', 'A groundling. With a Pivot. How perfectly timely, if you will forgive the word.', 'From here we watched it happen. We saw Oren on the Spire. We saw someone fall. We have not been able to look away since.', 'Our Cog is in the breast of the Stormcrown, on the far isle, across the long bridge. It was our weathervane. It reverses the ring more than any creature I have catalogued. Keep your head.'); g.setFlag('met_seraphine'); return; }
     return say(g, 'Archivist Seraphine', killed(g, 'stormcrown') ? 'We are under sail again. Take the cloak. It was made for someone who falls. I think you should have it.' : 'The far isle, across the western bridge. And visit Quill. Glyphs are our trade.');
   }),
   N('quill', 'Quill', 'aerie', 112, 26, { top: 0xf2e0b0, hair: 0xd9a04a, hairStyle: 7, outfit: 'robe', acc: ['wings'], hat: 'goggles' }, async g => g.ui.shop('scribe', "Quill's Glyphs")),
   /* Pearlreach */
   N('thalassa', 'Queen Thalassa', 'pearlreach', 200, 14, { skin: 0x6fd0e0, top: 0xf2d0e0, outfit: 'dress', hat: 'crown', hairStyle: 0, cape: 0x5a6ad0, trim: 0xfff0f6, eyes: 0x1c1a2a, acc: ['scarf'], hatColor: 0xff8ab0 }, async g => {
-    if (!g.flag('met_thalassa')) { await g.cine.orbit(2100, 2300, 90, 26, 5, 'Pearlreach'); await say(g, 'Queen Thalassa', 'A walker from the dry, wearing a Tidecharm. Nerida chooses her friends well.', 'Our great bell kept the tides for the whole coast. When the hour stopped, the bell fell silent, and something drifted into it and made it a body.', 'It can be rung out. But the three clappers were lost in the wrecks around the city. Bring them, and I will wake the bell for you to break.'); g.setFlag('met_thalassa'); return; }
+    if (!g.flag('met_thalassa')) { await g.cine.orbit(TOWN.pearlreach.x, TOWN.pearlreach.z, 90, 26, 5, 'Pearlreach'); await say(g, 'Queen Thalassa', 'A walker from the dry, wearing a Tidecharm. Nerida chooses her friends well.', 'Our great bell kept the tides for the whole coast. When the hour stopped, the bell fell silent, and something drifted into it and made it a body.', 'It can be rung out. But the three clappers were lost in the wrecks around the city. Bring them, and I will wake the bell for you to break.'); g.setFlag('met_thalassa'); return; }
     if (g.flag('clappers_in')) return say(g, 'Queen Thalassa', killed(g, 'drownedbell') ? 'The current has returned. Pearlreach will sing of you for as long as there are tides.' : 'The Bell Deep lies south-east. Strike in threes, as it does.');
     if (g.has('clapper') < 3) return say(g, 'Queen Thalassa', `${g.has('clapper')} of three clappers. Search the wrecks.`);
     g.take('clapper', 3); await say(g, 'Queen Thalassa', 'All three. Then it wakes. Go to the Bell Deep, and may the water carry you.'); g.setFlag('clappers_in');
@@ -385,7 +385,7 @@ export const NPCS = [
     g.take('core', 2); await say(g, 'Garrick', 'Stand back. ...There. Hear it tick as it cools? Canyon is open. Tell Vessa I sent you.'); g.setFlag('gate_cooled');
   }),
   N('vessa', 'Forge-matron Vessa', 'emberdeep', 200, 50, { top: 0x3a3644, hair: 0xe6e0d0, hairStyle: 6, body: 1, hat: 'mask', acc: ['apron', 'pads'], hatColor: 0xc8443a, skin: 0x9a6442 }, async g => {
-    if (!g.flag('met_vessa')) { await g.cine.orbit(2200, -2100, 150, 60, 5, 'Emberdeep'); await say(g, 'Forge-matron Vessa', 'Garrick sent you. Then you carried frost across the whole continent to get here. Good. Stubborn is what we work with.', "The Cinder Heart sits on the Ash Throne outside the crater. It is the mountain's own heart, stopped mid-beat. Five layers of slag for armour. Nothing here is harder.", 'I will not send anyone to it who cannot stand three rounds of the Crucible. Prove it at the ring of pillars, north of the lake.'); g.setFlag('met_vessa'); return; }
+    if (!g.flag('met_vessa')) { await g.cine.orbit(TOWN.emberdeep.x, TOWN.emberdeep.z, 150, 60, 5, 'Emberdeep'); await say(g, 'Forge-matron Vessa', 'Garrick sent you. Then you carried frost across the whole continent to get here. Good. Stubborn is what we work with.', "The Cinder Heart sits on the Ash Throne outside the crater. It is the mountain's own heart, stopped mid-beat. Five layers of slag for armour. Nothing here is harder.", 'I will not send anyone to it who cannot stand three rounds of the Crucible. Prove it at the ring of pillars, north of the lake.'); g.setFlag('met_vessa'); return; }
     return say(g, 'Forge-matron Vessa', killed(g, 'cinderheart') ? 'You brought the Heart down. Wear the Core. It suits you better than it suited the mountain.' : (g.S.crucible || 0) >= 3 ? 'Three rounds. You will do. The Ash Throne is west of the crater, outside the wall.' : 'The Crucible. Three rounds. Then we talk.');
   }),
   N('crucible', 'Crucible-keeper Ash', 'emberdeep', 0, 62, { top: 0x2a2630, hair: 0xc8443a, hairStyle: 2, hat: 'mask', outfit: 'bare', body: 1, acc: ['pads'], hatColor: 0xff7a2a, skin: 0x6e4530 }, async g => {
@@ -401,7 +401,7 @@ export const NPCS = [
   }),
   N('cole', 'Cole', 'emberdeep', 112, 62, { top: 0x4a4450, hair: 0x2a211c, hairStyle: 1, hat: 'goggles', acc: ['apron'] }, async g => g.ui.shop('ember', "Cole's Coalworks")),
   /* hamlet traders */
-  ...[['millbrook', 'Miller Anwen', "The mill hasn't turned in nine days. I sell what I've got."], ['threestones', 'Hob', 'Three stones, three roads. East is the Wastes. Buy water.'], ['windrest', 'Widow Carys', 'West of here the heath begins, and above it the sky-city. Nobody goes up any more.'], ['dunewatch', 'Sef', "Prices are what they were at dusk, because it's still dusk."], ['galefoot', 'Bryn', 'You want the lift? Talk to Pim. You want supplies? Talk to me.'], ['coldwater', 'Marta', 'North-west is the Crags. North is the Spine. Either way, buy tonics.'], ['lanternfall', 'Kell', 'We keep the lanterns lit so the dark knows where the village ends.'], ['ashford', 'Tansy', "Everything tastes of ash. I've stopped apologising for it."], ['reedhaven', 'Dilly', 'Tam shouts, I sell. It works.']]
+  ...[['millbrook', 'Miller Anwen', "The mill hasn't turned in nine days. I sell what I've got."], ['threestones', 'Hob', 'Three stones, three roads. East is the Wastes. Buy water.'], ['windrest', 'Widow Carys', 'West of here the heath begins, and above it the sky-city. Nobody goes up any more.'], ['dunewatch', 'Sef', "Prices are what they were at dusk, because it's still dusk."], ['galefoot', 'Bryn', 'You want the lift? Talk to Pim. You want supplies? Talk to me.'], ['coldwater', 'Marta', 'North-west is the Crags. North is the Spine. Either way, buy tonics.'], ['lanternfall', 'Kell', 'We keep the lanterns lit so the dark knows where the village ends.'], ['ashford', 'Tansy', "Everything tastes of ash. I've stopped apologising for it."], ['reedhaven', 'Dilly', 'Tam shouts, I sell. It works.'], ['brightwater', 'Ferryman Cole', 'The lake used to ripple. Now it just reflects. Buy something, the quiet gets to me.'], ['stonebridge', 'Gwyn', 'Every road west crosses my bridge. Every traveller buys a tonic. Mostly.'], ['oasis', 'Amira', 'The only water for a day in any direction. Drink, then buy.']]
     .map(([town, name, line], i) => N('trader_' + town, name, town, 20, 8, null, async g => { await say(g, name, line); return g.ui.shop('hamlet', name); })),
 ];
 
@@ -411,6 +411,9 @@ export async function readNote(g) {
     'The nine Cogs are out of the Dial. I took them out. One has gone to each country, as far apart as I could carry them. They are to stay there.',
     'Do not look for them. Do not come to Highmark. Do not come up the Spire. Mind the shop. Be kind to Tick.', 'I am sorry about the dusk. It was the best I could do. — O.');
   await say(g, '', 'He stopped the Dial himself. Oren, who would not let a clock in the shop run four seconds slow.', 'There are pages torn from his journal, too. He must have dropped them as he ran. And there are nine Cogs to find, whatever he says.');
+  await say(g, '', 'In the shed behind the workshop stands his clockwork strider, wound and waiting, and his old wind-sail folded on a hook. He always said the continent was too big to walk.');
+  g.give('r_strider', 1); g.give('r_glider', 1);
+  await say(g, '', g.touch ? 'Tap the horse button to ride, and the jump button to leap. Hold jump in mid-air to glide.' : 'Press H to ride, Space to jump. Hold Space in mid-air to glide.');
   g.setFlag('read_note');
 }
 
@@ -427,7 +430,7 @@ export async function spireDoor(g) {
 
 async function afterOren(g) {
   await say(g, 'Oren', 'Enough. Enough. You always were quicker than me. I just had longer arms.', 'You want to know why. Look up. Not at the Dial. At the crown of the Spire. The scaffold.');
-  await g.cine.look([18, 40, -40], [0, 200, -100], 6);
+  await g.cine.look([TOWN.highmark.x + 18, 40, TOWN.highmark.z - 40], [TOWN.highmark.x, 200, TOWN.highmark.z - 100], 6);
   await say(g, '', 'You look up.', "High above, where the rotten boards have given way, someone is falling. They hang in the amber air a hand's width above the stones, perfectly still.", 'They are wearing your coat.');
   await say(g, 'Oren', 'It was the last minute of dusk. I heard the boards go. I had the nine keys on my belt and I did not think.', 'What stands here talking to me is the part of you I could carry home. A shadow with a ring in its hand. The rest of you is up there, one heartbeat from the ground.',
     'If the Spark moves, that heartbeat happens. So I stopped it. I stopped everything. And I would do it again, and I am sorry, and I would do it again.');
@@ -461,7 +464,7 @@ async function ending(g) {
 export async function cogScene(g, boss) {
   const n = cogCount(g);
   await say(g, '', `${boss.def.name} finishes the moment it was stuck in, and is gone. Where it stood lies a Cog.`);
-  await g.cine.look(null, [0, 900, 0], 4.5, n >= 9 ? 'All nine Cogs' : `${n} of nine`);
+  await g.cine.look(null, [TOWN.highmark.x, 900, TOWN.highmark.z], 4.5, n >= 9 ? 'All nine Cogs' : `${n} of nine`);
   await say(g, '', n >= 9 ? 'Far off over Highmark, the Spark shudders a ninth time. All nine Cogs are yours. The Spire is waiting, and so is whoever sealed it.' : 'Far off over Highmark, the Spark shudders forward a notch, and the colour of the whole sky changes.');
 }
 export { PEARL_SHOP };

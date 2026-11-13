@@ -153,3 +153,9 @@ button.sw.on { border-color: #fff; box-shadow: 0 0 0 2px var(--gold); }
 .item .nm { font-weight: 600; }
 .shoprow .ic { min-width: 30px; text-align: center; font-size: 18px; letter-spacing: 1px; color: var(--gold); }
 #tabs { padding-right: 52px; }
+
+.tbtn { position: absolute; right: calc(22px + env(safe-area-inset-right)); width: 62px; height: 62px; padding: 0; border-radius: 50%; font-size: 26px; border-color: var(--gold); }
+#jumpBtn { bottom: calc(160px + env(safe-area-inset-bottom)); }
+#mountBtn { bottom: calc(232px + env(safe-area-inset-bottom)); font-size: 24px; }
+#mountBtn.on { background: linear-gradient(#fff0c0, #f0b040); }
+@media (max-height: 480px) { #jumpBtn { bottom: calc(132px + env(safe-area-inset-bottom)); right: calc(160px + env(safe-area-inset-right)); } #mountBtn { bottom: calc(132px + env(safe-area-inset-bottom)); right: calc(232px + env(safe-area-inset-right)); } }

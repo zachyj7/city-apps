@@ -261,7 +261,7 @@ export class Combat {
     return this.zones.some(z => Math.abs(angDiff(this.angle, z.a)) <= z.half * 0.3);
   }
 
-  layout(w, h) { this.w = w; this.h = h; this.R = Math.min(w * 0.42, h * 0.36, 250); this.cx = w / 2; this.cy = h * 0.5; }
+  layout(w, h) { this.w = Math.max(w, 240); this.h = Math.max(h, 240); this.R = Math.max(60, Math.min(this.w * 0.42, this.h * 0.36, 250)); this.cx = w / 2; this.cy = h * 0.5; }
 
   draw(c) {
     const { cx, cy, R } = this, lw = Math.max(16, R * 0.14), st = this.st;

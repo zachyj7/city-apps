@@ -1,12 +1,13 @@
 /* Hourfall: game loop, player, streaming of towns / people / enemies, world content, cutscenes, saving. */
 import * as THREE from './vendor/three.module.min.js';
-import { buildWorld, height, weights, groundColor, regionAt, townAt, skyGround, WATER, EDGE, TOWNS, TOWN, ISLES, LIFT, REG } from './world.js';
+import { buildWorld, height, weights, groundColor, regionAt, roadDist, townAt, skyGround, WATER, EDGE, TOWNS, TOWN, ISLES, LIFT, REG } from './world.js';
 import * as E from './models.js';
 import { buildTown, plazaR, polar } from './towns.js';
 import { Builder, G } from './gfx.js';
 import { ITEMS, KINDS, ROSTER, BOSSES, COGS, SKILLS, PAGES, HERB_COLOR, WAY_NAMES, foeStats, xpNeed } from './data.js';
 import { QUESTS, NPCS, INTRO, SITES, CROWD, ambientLine, readNote, spireDoor, cogScene, cogCount } from './story.js';
 import { Combat } from './combat.js';
+import { loadAssets } from './assets.js';
 import { UI } from './ui.js';
 import { makeAudio } from './audio.js';
 import { clamp, lerp, dist, rng, TAU, angDiff } from './util.js';
@@ -123,7 +124,7 @@ const g = {
   afterEnding() { g.world.setPhase(4); },
   cine: {
     /* Camera circles a place while its name is shown. */
-    orbit(x, z, r, h, secs, title) { return shot({ kind: 'orbit', x, z, r, h, dur: secs, y: Math.max(height(x, z), 0) + (g.S.layer === 'sky' ? 230 : 0) }, title); },
+    orbit(x, z, r, h, secs, title) { return shot({ kind: 'orbit', x, z, r, h, dur: secs, y: g.S.layer === 'sky' ? ISLES[0].y : g.player.under ? height(x, z) + 4 : Math.max(height(x, z), 0) }, title); },
     /* Camera turns from where it is (or `from`) to look at a far point. */
     look(from, at, secs, title) { return shot({ kind: 'look', from, at, dur: secs }, title); },
   },
@@ -197,14 +198,14 @@ function buildStatic() {
   for (const [id, kind, x, z, label] of SITES) {
     const wet = kind === 'wreck';
     const th = addThing({ type: 'site', id, x, z, wet, r: 3.8, label: S.opened[id] ? null : label, swing: 0,
-      make: () => (kind === 'bell' ? E.bell() : kind === 'crate' ? E.crate() : kind === 'wreck' ? E.chest(2) : new Builder().add(G.cyl(1.2, 1.5, 2.4, 8), 0x8d8a9a, { y: 1.2 }).add(G.cone(0.9, S.opened[id] ? 2.2 : 0.01, 6), 0xffa040, { y: 3.4 }).mesh()),
+      make: () => (kind === 'bell' ? E.bell() : kind === 'crate' ? E.crate() : kind === 'wreck' ? E.chest(2) : E.beacon(S.opened[id])),
       use: async () => {
         if (kind === 'beacon' && !g.flag('frost_ward')) return g.ui.say('', 'A cold iron beacon. It will not hold a flame without a ward.');
         S.opened[id] = 1; th.label = null;
         if (kind === 'bell') { th.swing = 1; g.sfx.bell(); g.ui.toast('The bell rings, and the old echo lets go.', 1); }
         if (kind === 'crate') { g.give('cargo', 1); hideThing(th); th.gone = true; }
         if (kind === 'wreck') { g.give('clapper', 1); th.mesh.userData.lid.rotation.x = -1.9; }
-        if (kind === 'beacon') { hideThing(th); g.sfx.flow(); g.ui.toast('The beacon catches.', 1); }
+        if (kind === 'beacon') { th.mesh.userData.flame.visible = true; g.sfx.flow(); g.ui.toast('The beacon catches.', 1); }
       } });
     if (kind === 'crate' && S.opened[id]) th.gone = true;
   }
@@ -251,7 +252,7 @@ async function travel(id) {
   g.busy = false; await g.ui.fade(false); g.save();
 }
 function placePlayer(x, z) {
-  const p = g.player; p.x = x; p.z = z; p.y = groundY(x, z); camSnap = true;
+  const p = g.player; p.x = x; p.z = z; p.y = groundY(x, z); p.air = false; p.glide = false; p.vy = 0; camSnap = true;
   g.world.stream(x, z, true); streamT = 9;
 }
 
@@ -263,8 +264,11 @@ function streamTowns() {
     const d = dist(p.x, p.z, t.x, t.z), on = loaded.has(t.id);
     if (!on && d < t.r + 520) {
       const o = { things: [] };
+      const reserve = things.filter(th => ['npc', 'way', 'desk', 'door', 'spot', 'lift', 'site'].includes(th.type) && dist(th.x, th.z, t.x, t.z) < t.r + 40).map(th => ({ x: th.x, z: th.z, r: 3.5 }))
+        .concat(foes.filter(f => f.boss && dist(f.x, f.z, t.x, t.z) < t.r + 40).map(f => ({ x: f.x, z: f.z, r: 8 })));
+      const bt = buildTown(t, reserve); o.mesh = bt.mesh; o.tiles = bt.tiles; o.col = bt.colliders; scene.add(o.mesh);
+      for (const T of o.tiles) { scene.add(T.hi); scene.add(T.lo); T.hi.visible = false; }
       if (t.size > 0) {
-        const b = buildTown(t); o.mesh = b.mesh; o.col = b.colliders; scene.add(o.mesh);
         const R = rng(t.x * 7 + t.z * 13 + 1), n = CROWD[t.size], P = plazaR(t);
         for (let i = 0; i < n; i++) {
           const a = R() * 360, rad = P * (0.3 + R() * 0.62), [x, z] = polar(t, a, rad), look = E.culture(t.style, rng(i * 131 + t.x));
@@ -272,20 +276,16 @@ function streamTowns() {
           const th = addThing({ type: 'amb', x, z, hx: x, hz: z, sky: t.sky, wet: t.reg === 'reef', r: 3, label: 'Talk', rot: R() * TAU, wt: R() * 6, make: () => E.person(look), use: () => g.ui.say(t.name + ' townsfolk', ambientLine(g, t.style === 'crag' && t.reg === 'heath' ? 'sky' : t.style, i + t.x)) });
           o.things.push(th);
         }
-      } else {
-        const b = new Builder(), c = { vale: 0xc8b070, coast: 0xd9c8a0, jungle: 0x6f7a5c, desert: 0xbfe6dc, crag: 0x8a807a, frost: 0xb9c6d6, reef: 0x9fe6d6, volcano: 0x3a3644 }[t.style];
-        for (let i = 0; i < 10; i++) { const a = i / 10 * TAU, x = t.x + Math.cos(a) * 26, z = t.z + Math.sin(a) * 26; b.add(G.cyl(1, 1.3, 6 + (i * 7 % 5), 7), c, { x, y: height(x, z) + 3, z }); }
-        if (t.id === 'a_desert') b.add(G.tor(15, 1.2, 30), 0xd9b45a, { x: t.x, y: t.h + 3, z: t.z - 8, rx: -1.2 });
-        if (t.id === 'a_graves') for (let i = 0; i < 14; i++) { const x = t.x + Math.cos(i * 2.4) * (6 + i), z = t.z + Math.sin(i * 2.4) * (6 + i); b.add(G.box(0.9, 1.5, 0.3), 0x8d8a96, { x, y: height(x, z) + 0.6, z, ry: i }); }
-        o.mesh = b.mesh(); o.mesh.frustumCulled = false; o.col = []; scene.add(o.mesh);
       }
       for (const c of o.col) c.sky = !!t.sky;
       loaded.set(t.id, o); changed = true;
     } else if (on && d > t.r + 700) {
-      const o = loaded.get(t.id); scene.remove(o.mesh); o.mesh.geometry.dispose(); for (const th of o.things) dropThing(th);
+      const o = loaded.get(t.id); scene.remove(o.mesh); o.mesh.geometry.dispose(); for (const T of o.tiles) for (const m of [T.hi, T.lo]) { scene.remove(m); m.geometry.dispose(); } for (const th of o.things) dropThing(th);
       loaded.delete(t.id); changed = true;
     }
   }
+  /* full-detail buildings only near the player */
+  for (const o of loaded.values()) for (const T of o.tiles) { const near = dist(p.x, p.z, T.x, T.z) < 115; T.hi.visible = near; T.lo.visible = !near; }
   if (changed) { const c = [{ x: REG.volcano.x, z: REG.volcano.z, r: 41 }]; for (const o of loaded.values()) c.push(...o.col); g.world.colliders = c; }
 }
 
@@ -325,7 +325,7 @@ function spawnCell(cx, cz) {
     o.things.push(addThing({ type: 'minute', x: c.x, z: c.z, wet: c.wet, id: c.id, auto: 2, make: E.minute }));
   } else if (c.type === 'ruin') {
     if (S.cells[c.id] || Object.keys(S.pages).length >= PAGES.length) return;
-    o.things.push(addThing({ type: 'page', x: c.x, z: c.z, id: c.id, auto: 2, make: () => { const m = E.page(); m.add(new Builder().add(G.cyl(0.5, 0.6, 3, 7), 0x8d8a9a, { x: 1.6, y: 1.5 }).add(G.cyl(0.5, 0.6, 1.6, 7), 0x8d8a9a, { x: -1.5, y: 0.8, z: 0.6 }).add(G.box(3.6, 0.5, 0.9), 0x77728a, { y: 0.25, z: -1.4 }).mesh()); return m; } }));
+    o.things.push(addThing({ type: 'page', x: c.x, z: c.z, id: c.id, auto: 2, make: E.page }));
   } else if (c.type === 'herb' || c.type === 'ore') {
     const id = c.type === 'ore' ? (R() < 0.12 && lvl > 16 ? 'starmetal' : 'ore') : c.reg === 'jungle' ? 'duskcap' : c.reg === 'frost' || c.reg === 'crag' ? 'frostbloom' : R() < 0.8 ? 'sunpetal' : 'duskcap';
     for (let i = 0; i < (c.type === 'ore' ? 2 : 3); i++) o.things.push(addThing({ type: 'herb', x: c.x + (R() - 0.5) * 9, z: c.z + (R() - 0.5) * 9, id, auto: 1.8, t: 0, make: () => (c.type === 'ore' ? E.ore(id === 'starmetal' ? 0xfff0a0 : 0xc8a070) : E.herb(HERB_COLOR[id])) }));
@@ -376,6 +376,7 @@ function startCombat(e) {
   const mx = p.x + dx * 2.1, mz = p.z + dz * 2.1, kx = mx - dz * camD, kz = mz + dx * camD;
   g.world.hideScenery(b => { if (dist(b.x, b.z, mx, mz) > camD + 14) return false; const t = clamp(((b.x - kx) * (mx - kx) + (b.z - kz) * (mz - kz)) / (camD * camD), -0.1, 1.5); return Math.hypot(b.x - (kx + (mx - kx) * t), b.z - (kz + (mz - kz) * t)) < 3 + Math.max(0, t) * 4.5; });
   list.forEach((f, i) => { const side = i === 0 ? 0 : i === 1 ? 1 : -1; f.state = 'fight'; f.fx = p.x + dx * (big + Math.abs(side) * 1.6) - dz * side * 2.3; f.fz = p.z + dz * (big + Math.abs(side) * 1.6) + dx * side * 2.3; foeModel(f).visible = true; });
+  dismount(); p.air = false; p.glide = false; p.vy = 0; p.y = groundY(p.x, p.z);
   fight = { foes: list, dx, dz, camD };
   p.rot = Math.atan2(dx, dz); p.moving = false; stick.on = false; $('stick').style.display = 'none';
   g.combat.start(list);
@@ -443,7 +444,8 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   keys[k] = true;
   if (!started || g.ui.crawlOpen) { if (g.ui.crawlNext && (k === ' ' || k === 'enter')) g.ui.crawlNext(); return; }
-  if (k === ' ' || k === 'enter') { e.preventDefault(); tapAction(); }
+  if (k === ' ' || k === 'enter') { e.preventDefault(); if (g.combat.active || g.ui.dialogOpen || cine || k === 'enter') tapAction(); else jump(); }
+  else if (k === 'h') mount();
   else if (k === 'e') { if (g.ui.dialogOpen) g.ui.advance(); else g.interact(); }
   else if (k === 'f') g.combat.flow();
   else if (k === 'q') g.combat.potion();
@@ -485,30 +487,64 @@ addEventListener('contextmenu', e => e.preventDefault());
 
 /* ---- per-frame updates ---- */
 let stepT = 0;
+/* Movement: walking, swimming, riding the strider, jumping, and gliding with the wind-sail. */
 function updatePlayer(dt) {
-  const p = g.player;
+  const p = g.player, S = g.S;
   let ix = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0) + stick.x;
   let iy = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0) - stick.y;
-  const mag = Math.hypot(ix, iy);
+  let mag = Math.hypot(ix, iy);
+  if (p.glide && mag < 0.15) { ix = 0; iy = 1; mag = 1; }   // a glider always drifts forward
   p.moving = mag > 0.15;
+  if (p.mounted && (p.swim || p.under || sky())) dismount();
   if (p.moving) {
     const k = Math.min(1, mag) / mag; ix *= k; iy *= k;
     const fxx = -Math.sin(camYaw), fzz = -Math.cos(camYaw), rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
-    const mx = fxx * iy + rx * ix, mz = fzz * iy + rz * ix, speed = (p.swim ? 5.5 : p.under ? 8.5 : 10.5) * (g.has('r_boots') && !p.swim ? 1.45 : 1);
+    const mx = fxx * iy + rx * ix, mz = fzz * iy + rz * ix, boots = g.has('r_boots') ? 1.45 : 1;
+    const speed = p.glide ? 19 : p.mounted ? (roadDist(p.x, p.z) < 8 ? 34 : 27) : p.swim ? 5.5 : p.under ? 8.5 : (keys.shift ? 15 : 10.5) * boots;
     let nx = p.x + mx * speed * dt, nz = p.z + mz * speed * dt;
-    for (const c of g.world.colliders) { if (!!c.sky !== sky()) continue; const d = dist(nx, nz, c.x, c.z), r = c.r + 0.5; if (d < r && d > 0.001) { nx = c.x + (nx - c.x) / d * r; nz = c.z + (nz - c.z) / d * r; } }
+    if (!p.air || p.y < groundY(p.x, p.z) + 6) for (const c of g.world.colliders) { if (!!c.sky !== sky()) continue; const d = dist(nx, nz, c.x, c.z), r = c.r + (p.mounted ? 1.2 : 0.5); if (d < r && d > 0.001) { nx = c.x + (nx - c.x) / d * r; nz = c.z + (nz - c.z) / d * r; } }
     const rad = Math.hypot(nx, nz); if (rad > EDGE) { nx *= EDGE / rad; nz *= EDGE / rad; }
     if (!sky() || skyGround(nx, nz) !== null) { p.x = nx; p.z = nz; }
-    p.rot += angDiff(Math.atan2(mx, mz), p.rot) * Math.min(1, dt * 12);
-    if (time - lastLook > 1.2) { const d = angDiff(p.rot + Math.PI, camYaw); camYaw += d * (1 + Math.cos(d)) * 0.5 * Math.min(1, dt * 1.6); }
-    if ((stepT -= dt) <= 0) { stepT = 0.3; g.sfx.step(p.swim || p.under); }
+    else if (g.has('r_glider')) { /* step off the edge of the Aerie */ p.x = nx; p.z = nz; S.layer = 'ground'; p.air = true; p.vy = 2; p.glide = true; g.ui.toast('The wind-sail opens!', 2); g.sfx.glide(); }
+    p.rot += angDiff(Math.atan2(mx, mz), p.rot) * Math.min(1, dt * (p.glide ? 3 : 12));
+    if (time - lastLook > 1.2) { const d = angDiff(p.rot + Math.PI, camYaw); camYaw += d * (1 + Math.cos(d)) * 0.5 * Math.min(1, dt * (p.mounted ? 2.4 : 1.6)); }
+    if (!p.air && (stepT -= dt) <= 0) { stepT = p.mounted ? 0.16 : keys.shift ? 0.22 : 0.3; g.sfx.step(p.swim || p.under); }
   }
   const gh = groundY(p.x, p.z), tide = g.has('r_tide') > 0;
   p.swim = !sky() && !tide && gh < WATER - 0.75;
   p.under = !sky() && tide && gh < WATER - 2.2;
   const ty = p.swim ? WATER - 1.05 : gh;
-  p.y = camSnap ? ty : lerp(p.y, ty, Math.min(1, dt * 14));
+  if (camSnap) { p.y = ty; p.air = false; p.vy = 0; return; }
+  if (!p.air && ty < p.y - 1.6 && !p.swim && !p.under) { p.air = true; p.vy = 0; }    // walked off a ledge
+  if (p.air) {
+    const hold = keys[' '] || jumpHeld;
+    if (hold && p.vy < -1 && g.has('r_glider') && !p.glide && p.y - ty > 3) { p.glide = true; g.sfx.glide(); }
+    if (!hold && p.glide) p.glide = false;
+    p.vy = p.glide ? Math.max(p.vy - 8 * dt, -3) : Math.max(p.vy - 30 * dt, -55);
+    p.y += p.vy * dt;
+    if (p.y <= ty) { p.y = ty; p.air = false; p.glide = false; if (p.vy < -26 && !p.mounted) g.shake(0.4); p.vy = 0; g.sfx.step(false); }
+  } else { p.glide = false; p.y = lerp(p.y, ty, Math.min(1, dt * 14)); }
 }
+let jumpHeld = false;
+function jump() {
+  const p = g.player;
+  if (!started || g.combat.active || g.ui.blocking || g.busy || cine) return;
+  if (p.air) { if (g.has('r_glider') && !p.glide && p.y - groundY(p.x, p.z) > 3) { p.glide = true; g.sfx.glide(); } return; }
+  if (p.swim || p.under) return;
+  p.air = true; p.vy = p.mounted ? 12 : 10; g.sfx.jump();
+}
+function mount() {
+  const p = g.player;
+  if (!started || g.combat.active || g.ui.blocking || g.busy || cine) return;
+  if (p.mounted) return dismount();
+  if (!g.has('r_strider')) return g.ui.toast('You have no mount yet.');
+  if (p.swim || p.under || sky() || p.air) return g.ui.toast('Your strider cannot reach you here.');
+  p.mounted = true; g.sfx.whistle();
+  if (!g.strider) { g.strider = E.strider(); scene.add(g.strider); }
+  g.strider.visible = true;
+}
+function dismount() { const p = g.player; p.mounted = false; if (g.strider) g.strider.visible = false; }
+g.jump = jump; g.mount = mount; g.setJumpHeld = v => { jumpHeld = v; if (v) jump(); };
 function updateFoes(dt) {
   const p = g.player, inFight = g.combat.active, calm = g.ui.blocking || g.busy || !!cine, safe = !!townAt(p.x, p.z, 10) && !sky();
   for (const e of [...foes]) {
@@ -573,7 +609,7 @@ function updateThings(dt) {
       }
     }
     if (t.type === 'npc' && d < 9 && free) m.rotation.y += angDiff(Math.atan2(p.x - t.x, p.z - t.z), m.rotation.y) * Math.min(1, dt * 4);
-    if (t.type === 'way' && S.way[t.id]) { const a = time * 1.4; u.dot.position.set(Math.cos(a) * 1.15, 3.2 + Math.sin(a) * 1.15, 0); }
+    if (t.type === 'way' && S.way[t.id]) { const a = time * 1.4; u.dot.position.set(Math.cos(a) * 1.15, 3.4 + Math.sin(a) * 1.15, 0); }
     if (t.swing > 0) { t.swing = Math.max(0, t.swing - dt * 0.4); if (u.bell) u.bell.rotation.z = Math.sin(time * 9) * 0.5 * t.swing; }
     if (!free || !!t.sky !== sky()) continue;
     if (t.auto && d < t.auto) {
@@ -582,7 +618,8 @@ function updateThings(dt) {
       else if (t.type === 'herb') { t.t = 240; hideThing(t); g.give(t.id, 1); }
       continue;
     }
-    if (t.label && d < t.r && d < bd) { best = t; bd = d; }
+    const dd = d + (t.type === 'amb' ? 2 : 0);   // named people and quest objects win over passing townsfolk
+    if (t.label && d < t.r && dd < bd) { best = t; bd = dd; }
   }
   g.nearest = best;
 }
@@ -602,9 +639,9 @@ function updateCamera(dt) {
     tmpB.set(p.x + fight.dx * reach, p.y + 1.7 + (fight.foes[0].base > 1.6 ? 1 : 0), p.z + fight.dz * reach);
     tmpA.set(tmpB.x - fight.dz * d, tmpB.y + 1.2 + d * 0.1, tmpB.z + fight.dx * d);
   } else {
-    const c = Math.cos(camPitch) * camDist;
+    const cd = camDist * (g.player.glide ? 1.6 : g.player.mounted ? 1.3 : 1), c = Math.cos(camPitch) * cd;
     tmpB.set(p.x, p.y + 1.9, p.z);
-    tmpA.set(p.x + Math.sin(camYaw) * c, p.y + 1.9 + Math.sin(camPitch) * camDist, p.z + Math.cos(camYaw) * c);
+    tmpA.set(p.x + Math.sin(camYaw) * c, p.y + 1.9 + Math.sin(camPitch) * cd, p.z + Math.cos(camYaw) * c);
     if (!sky()) for (let i = 1; i <= 5; i++) {
       const t = i / 5, x = lerp(tmpB.x, tmpA.x, t), z = lerp(tmpB.z, tmpA.z, t), y = lerp(tmpB.y, tmpA.y, t);
       if (height(x, z) + 0.5 > y) { tmpA.lerpVectors(tmpB, tmpA, Math.max(0.22, t - 0.2)); tmpA.y += 1.5; break; }
@@ -620,17 +657,35 @@ function updateCamera(dt) {
   const k = camSnap ? 1 : Math.min(1, dt * (fight ? 4 : 12));
   camPos.lerp(tmpA, k); camLook.lerp(tmpB, camSnap ? 1 : Math.min(1, dt * (fight ? 5 : 16)));
   camSnap = false;
+  if (!Number.isFinite(camPos.x + camPos.y + camPos.z + camLook.x + camLook.y + camLook.z) || camPos.distanceTo(camLook) < 0.01) { camPos.copy(tmpA); camLook.copy(tmpB); if (!Number.isFinite(camPos.x)) camPos.set(p.x, p.y + 8, p.z + 10); }
   camera.position.copy(camPos);
   if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; shake *= Math.exp(-dt * 8); }
   camera.lookAt(camLook);
 }
 function updatePlayerModel(dt) {
-  const p = g.player, m = p.model;
+  const p = g.player, m = p.model, u = m.userData;
   p.swing = Math.max(0, p.swing - dt * 4);
   m.position.set(p.x, p.y, p.z); m.rotation.y = p.rot;
   if (fight) { const l = Math.sin(p.swing * Math.PI) * 1.3; m.position.x += fight.dx * l; m.position.z += fight.dz * l; }
-  E.animate(m, time, p.moving, p.swing);
-  m.rotation.x = p.swim ? 0.9 : 0;
+  if (p.mounted && g.strider) {
+    const st = g.strider, gait = Math.sin(time * 14) * (p.moving ? 0.12 : 0);
+    st.position.set(p.x, p.y + Math.abs(gait) * 0.6, p.z); st.rotation.y = p.rot;
+    E.animate(st, time, p.moving, 0, 14);
+    m.position.y = p.y + 1.62 + Math.abs(gait) * 0.6;
+    E.animate(m, time, false, p.swing);
+    u.legs.forEach((l, i) => { l.rotation.x = -1.35; l.rotation.z = (i ? 1 : -1) * 0.35; });
+    u.arms.forEach(a => { a.rotation.x = -0.7; });
+  } else {
+    E.animate(m, time, p.moving && !p.air, p.swing, keys.shift ? 15 : 11);
+    u.legs.forEach(l => { l.rotation.z = 0; });
+    if (p.air && !p.glide) { u.legs[0].rotation.x = -0.6; u.legs[1].rotation.x = 0.4; u.arms[0].rotation.x = -2.4; u.arms[1].rotation.x = -2.4; }
+  }
+  if (p.glide) {
+    if (!g.gliderModel) { g.gliderModel = E.glider(E.DYES[g.S.look.cape]); m.add(g.gliderModel); }
+    g.gliderModel.visible = true; u.arms.forEach(a => { a.rotation.x = -2.9; }); u.legs.forEach((l, i) => { l.rotation.x = i ? 0.25 : -0.15; });
+    m.rotation.z = Math.sin(time * 1.3) * 0.06;
+  } else if (g.gliderModel) { g.gliderModel.visible = false; m.rotation.z = 0; }
+  m.rotation.x = p.swim ? 0.9 : p.glide ? 0.25 : 0;
 }
 
 /* Minimap picture of the land around the player, redrawn only when they have moved a fair way. */
@@ -697,6 +752,7 @@ async function boot() {
   g.combat = new Combat(g); g.ui = new UI(g);
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { saved = null; }
+  await loadAssets('models/assets.glb', k => { $('loading').textContent = 'Building the continent… ' + Math.round(k * 100) + '%'; });
   g.world = buildWorld(scene);
   for (let cx = -20; cx < 20; cx++) for (let cz = -20; cz < 20; cz++) if (cellInfo(cx, cz, 'minute')) g.minuteTotal++;
   beacon = new THREE.Group(); beacon.add(E.marker());
@@ -721,7 +777,7 @@ async function boot() {
       camDist = 13; camPitch = 0.42; camYaw = p.rot + Math.PI;
       await g.ui.crawl(INTRO);
       $('hud').classList.remove('hidden');
-      await g.cine.look([START[0] - 30, 60, START[1] + 60], [0, 900, 0], 6, 'The Great Dial');
+      await g.cine.look([START[0] - 30, 60, START[1] + 60], [TOWN.highmark.x, 900, TOWN.highmark.z], 6, 'The Great Dial');
       g.S.quests.main = { step: 0, k0: {} };
     }
     $('hud').classList.remove('hidden');
@@ -732,7 +788,7 @@ async function boot() {
   if (has) { $('btnContinue').classList.remove('hidden'); $('btnContinue').onclick = () => begin(false); }
   const bn = $('btnNew');
   bn.onclick = () => { if (has && !bn.dataset.sure) { bn.dataset.sure = 1; bn.textContent = 'Erase save and start over?'; } else begin(true); };
-  window.HF = g; g._tick = tick; g._foes = foes; g._things = things; g._place = placePlayer;
+  window.HF = g; g._renderer = renderer; g._camera = camera; g._tick = tick; g._foes = foes; g._things = things; g._place = placePlayer;
   requestAnimationFrame(frame);
 }
 setTimeout(boot, 30);
