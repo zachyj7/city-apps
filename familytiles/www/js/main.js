@@ -31,13 +31,14 @@ const pid = (() => {
   try { let p = sessionStorage.getItem('ft-pid'); if (!p) { p = make(); sessionStorage.setItem('ft-pid', p); } return p; }
   catch (e) { return make(); }
 })();
+const ic = n => `<svg class="ic" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const cleanCode = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
 
 const A = {
   S: null, net: null, video: null, name: '', code: '',
   W: null,            // my turn in progress: { turnNo, table: [{k, ids}], rack: [ids], startTable, startRack }
   hist: [], sel: new Set(), order: [], seen: new Set(), fresh: new Set(),
-  nope: null, sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
+  nope: null, sound: store.get('sound', true), sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
   status: 'connecting',
 };
 window.FT = A;   // for testing from the console
@@ -135,6 +136,7 @@ function setState(S) {
     A.W = null; A.hist = []; A.nope = null;
   }
   if (S.phase === 'play' && was && was.turn !== S.turn && S.turn === pid) beep(660, 0.15, 880);
+  if (S.phase === 'over' && was && was.phase === 'play') { confetti(); [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.22), i * 120)); }
   if (S.fx && S.fx.k !== A.lastFx) { if (A.lastFx !== null || (was && was.v < S.fx.k)) showMJ(S.fx.name); A.lastFx = S.fx.k; }
   else if (A.lastFx === null) A.lastFx = S.fx ? S.fx.k : 0;
   A.video.sync(S.players.filter(p => p.on && p.peer && p.pid !== pid).map(p => p.peer));
@@ -242,13 +244,18 @@ function renderAll() { renderStatus(); renderSeats(); renderCenter(); renderMe()
 function renderStatus() {
   const labels = { host: 'Connected', client: 'Connected', joining: 'Joining…', reconnecting: 'Reconnecting…', connecting: 'Connecting…', offline: 'No connection, retrying…' };
   const el = $('#status');
-  el.textContent = labels[A.status] || A.status;
-  el.className = 'pill ' + (A.status === 'host' || A.status === 'client' ? 'good' : 'warn');
-  $('#camBtn').textContent = A.camOn ? '📷 Camera off' : '📷 Camera on';
-  $('#camBtn').classList.toggle('on', A.camOn);
-  $('#micBtn').hidden = !A.camOn || !A.video || !A.video.hasMic();
-  $('#micBtn').textContent = A.micOn ? '🎤 Mute' : '🔇 Unmute';
-  $('#micBtn').classList.toggle('muted', !A.micOn);
+  const good = A.status === 'host' || A.status === 'client';
+  el.className = 'status' + (good ? ' good' : '');
+  el.title = labels[A.status] || A.status;
+  el.querySelector('span').textContent = labels[A.status] || A.status;
+  const cam = $('#camBtn');
+  cam.innerHTML = A.camOn ? `${ic('cam')}<span>Camera on</span>` : `${ic('camoff')}<span>Camera</span>`;
+  cam.classList.toggle('on', A.camOn);
+  cam.setAttribute('aria-pressed', A.camOn);
+  const mic = $('#micBtn');
+  mic.hidden = !A.camOn || !A.video || !A.video.hasMic();
+  mic.innerHTML = A.micOn ? `${ic('mic')}<span>Mute</span>` : `${ic('micoff')}<span>Unmute</span>`;
+  mic.classList.toggle('muted', !A.micOn);
 }
 
 /* Seats: one card per person, kept between updates so videos keep playing. */
@@ -370,11 +377,10 @@ function renderBanner() {
   if (S.phase === 'play') {
     const cur = S.players.find(p => p.pid === S.turn);
     // A wide bar in the player's own rack color with their name, so whose turn it is reads at a glance.
-    if (cur) html = `<div class="turnbar ${myTurn() ? 'you' : ''}" style="${rackStyle(cur.rc)}">▶ ${myTurn() ? 'YOUR TURN!' : `${esc(cur.name)}'s turn`}</div>`;
+    if (cur) html = `<div class="turnbar ${myTurn() ? 'you' : ''}" style="${rackStyle(cur.rc)}">${myTurn() ? 'Your turn!' : `${esc(cur.name)}'s turn`}</div>`;
     const last = S.log[S.log.length - 1];
-    if (cur && !cur.on && !myTurn()) html += `<div class="lost">${esc(cur.name)} lost connection. <button class="btn small" data-act="skip">Skip their turn</button></div>`;
-    if (last) html += `<div class="last">${esc(last)}</div>`;
-    html += `<div class="pool">Tiles left to draw: <b>${S.pool.length}</b></div>`;
+    if (cur && !cur.on && !myTurn()) html += `<div class="lost">${ic('alert')}${esc(cur.name)} lost connection <button class="btn small" data-act="skip">${ic('skip')}Skip their turn</button></div>`;
+    html += `<div class="bannerline">${last ? `<span class="last">${esc(last)}</span>` : ''}<span class="pool">Tiles left to draw: <b>${S.pool.length}</b></span></div>`;
   }
   b.innerHTML = html;
   b.className = myTurn() ? 'mine' : '';
@@ -387,17 +393,22 @@ function renderLobby(box) {
   const here = S.players.filter(p => p.on);
   const sets = here.length > 4 ? 2 : 1;
   const link = location.origin + location.pathname + '?room=' + A.code;
-  box.innerHTML = `<div class="panel lobby">
-    <h2>Table “${esc(A.code)}”</h2>
-    <p>Send this link to your family so they join the same table:</p>
-    <div class="linkrow"><input readonly value="${esc(link)}" aria-label="Table link"><button class="btn" data-act="copy">Copy link</button>${navigator.share ? '<button class="btn" data-act="share">Share</button>' : ''}</div>
-    <h3>At the table (${here.length} of 8)</h3>
-    <ol class="who">${here.map((p, i) => `<li>${esc(p.name)}${p.pid === pid ? ' (you)' : ''}${i >= 8 ? ' — watching, table is full' : ''}</li>`).join('')}</ol>
-    <p class="hint">${here.length < 2 ? 'Waiting for at least one more player…' : `${Math.min(here.length, 8)} players: ${sets === 2 ? 'two sets of tiles (5 or more players)' : 'one set of tiles'}.`}</p>
-    <h3>Your rack color</h3>
-    <div class="swatches">${swatches(A.rc, 'setrc')}</div>
-    <button class="btn go huge" data-act="start" ${here.length < 2 ? 'disabled' : ''}>Start the game</button>
-    <p class="hint">Tip: press <b>📷 Camera on</b> at the top so everyone can see your face.</p>
+  const chips = here.map((p, i) => `<div class="pchip" style="${rackStyle(p.rc)}"><span class="av">${esc((p.name || '?').slice(0, 1).toUpperCase())}</span>
+      <span class="pn">${esc(p.name)}<span class="pt">${p.pid === pid ? 'You' : i >= 8 ? 'Watching (table full)' : 'Ready'}</span></span></div>`).join('');
+  const open = Math.max(0, Math.min(8, Math.max(2, here.length + 1)) - here.length);
+  const empties = Array.from({ length: open }, () => `<div class="pchip empty-seat">Open seat</div>`).join('');
+  box.innerHTML = `<div class="card lobby">
+    <div class="panelhead"><span class="badge">${ic('users')}</span><div><h2>Table “${esc(A.code)}”</h2><p>Waiting for everyone to sit down</p></div></div>
+    <div class="section"><h3>Invite your family</h3>
+      <div class="linkrow"><input readonly value="${esc(link)}" aria-label="Table link"><button class="btn" data-act="copy">${ic('link')}Copy link</button>${navigator.share ? `<button class="btn" data-act="share">${ic('share')}Share</button>` : ''}</div>
+    </div>
+    <div class="section"><h3>At the table · ${here.length} of 8</h3>
+      <div class="players">${chips}${empties}</div>
+      <p class="hint">${here.length < 2 ? 'Waiting for at least one more player…' : `${Math.min(here.length, 8)} players, ${sets === 2 ? 'two sets of tiles (5 or more players)' : 'one set of tiles'}.`}</p>
+    </div>
+    <div class="section"><h3>Your rack color</h3><div class="swatches">${swatches(A.rc, 'setrc')}</div></div>
+    <button class="btn go huge" data-act="start" ${here.length < 2 ? 'disabled' : ''}>Start the game ${ic('arrow')}</button>
+    <p class="tip">${ic('cam')}Press <b>Camera</b> at the top so everyone can see your face.</p>
   </div>`;
 }
 
@@ -405,13 +416,28 @@ function renderOver(box) {
   const S = A.S;
   const rows = (S.result || []).slice().sort((a, b) => b.delta - a.delta);
   const win = rows.find(r => r.win);
-  box.innerHTML = `<div class="panel over">
-    <h2>🏆 ${esc(win ? win.name : '')} wins!</h2>
+  const sign = n => (n > 0 ? `<span class="plus">+${n}</span>` : n < 0 ? `<span class="minus">${n}</span>` : '0');
+  box.innerHTML = `<div class="card over">
+    <div class="winner"><span class="cup">${ic('trophy')}</span><h2>${esc(win ? win.name : '')} wins!</h2></div>
     <table class="scores"><tr><th>Player</th><th>Left on rack</th><th>This game</th><th>Total</th></tr>
-    ${rows.map(r => { const p = S.players.find(q => q.pid === r.pid); return `<tr class="${r.win ? 'win' : ''}"><td>${esc(r.name)}</td><td>${r.left}</td><td>${r.delta > 0 ? '+' : ''}${r.delta}</td><td>${p ? p.total : ''}</td></tr>`; }).join('')}
+    ${rows.map((r, i) => { const p = S.players.find(q => q.pid === r.pid); return `<tr class="${r.win ? 'win' : ''}"><td><span class="rank">${i + 1}</span>${esc(r.name)}</td><td>${r.left}</td><td>${sign(r.delta)}</td><td>${p ? sign(p.total) : ''}</td></tr>`; }).join('')}
     </table>
-    <button class="btn go huge" data-act="newgame">Play again</button>
+    <button class="btn go huge" data-act="newgame">Play again ${ic('arrow')}</button>
   </div>`;
+}
+
+// A burst of confetti in the rack colors when a game is won.
+function confetti() {
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const box = $('#confetti');
+  const colors = ['#ffcf33', '#e3262a', '#2472e6', '#25a84e', '#ff6eb6', '#9257ff', '#ffffff'];
+  let html = '';
+  for (let i = 0; i < 110; i++) {
+    const d = 2.4 + Math.random() * 2.2;
+    html += `<i style="left:${Math.random() * 100}%;background:${colors[i % colors.length]};--dx:${Math.round(Math.random() * 240 - 120)}px;--rot:${Math.round(Math.random() * 900 - 450)}deg;animation-duration:${d}s;animation-delay:${(Math.random() * .6).toFixed(2)}s;width:${8 + Math.random() * 6}px"></i>`;
+  }
+  box.innerHTML = html;
+  setTimeout(() => { box.innerHTML = ''; }, 5500);
 }
 
 function boardSets() {
@@ -429,12 +455,13 @@ function renderBoard(box) {
   const showMarks = !!S.work || live;
   const selecting = A.sel.size > 0;
   let html = '';
-  if (A.nope) html += `<div class="nope" role="alert">✋ ${esc(A.nope)}</div>`;
+  if (A.nope) html += `<div class="nope" role="alert">${ic('alert')}${esc(A.nope)}</div>`;
   if (live && !me().opened) {
     const pts = openingPoints(A.W.startTable, A.W.startRack, A.W.table.map(s => s.ids));
-    html += `<div class="meter ${pts >= OPEN_POINTS ? 'ok' : ''}">First play: <b>${pts}</b> of ${OPEN_POINTS} points ${pts >= OPEN_POINTS ? '✓' : ''}</div>`;
+    const ok = pts >= OPEN_POINTS;
+    html += `<div class="meter ${ok ? 'ok' : ''}"><span>First play</span><span class="bar"><i style="width:${Math.min(100, pts / OPEN_POINTS * 100)}%"></i></span><span><b>${pts}</b> / ${OPEN_POINTS}</span>${ok ? ic('check') : ''}</div>`;
   }
-  if (live && !selecting && !A.W.table.length) html += `<div class="help">Tap tiles on your rack to pick them up, then tap <b>＋ New set</b>. Or drag them onto the table.</div>`;
+  if (live && !selecting && !A.W.table.length) html += `<div class="help">${ic('plus')}<span>Tap tiles on your rack to pick them up, then tap <b>New set</b>. Or drag them onto the table.</span></div>`;
   html += `<div class="sets ${live ? 'live' : ''} ${selecting ? 'selecting' : ''}">`;
   for (const s of sets) {
     const a = analyze(s.ids);
@@ -442,12 +469,12 @@ function renderBoard(box) {
     const bad = showMarks && !a.ok;
     html += `<div class="set ${bad ? 'bad' : ''}" ${live ? `data-drop="set:${s.k}"` : ''}>
       <div class="tiles">${order.map(id => tileHTML(id, before.has(id) ? '' : 'placed')).join('')}</div>
-      ${live ? `<button class="slot" data-drop="set:${s.k}" aria-label="Add picked tiles to this set">＋</button>` : ''}
-      ${bad ? `<div class="why">✗ ${esc(a.why)}</div>` : ''}
+      ${live ? `<button class="slot" data-drop="set:${s.k}" aria-label="Add picked tiles to this set">${ic('plus')}</button>` : ''}
+      ${bad ? `<div class="why">${esc(a.why)}</div>` : ''}
     </div>`;
   }
-  if (live) html += `<button class="set newset" data-drop="new">＋ New set</button>`;
-  if (!sets.length && !live) html += `<div class="empty">The table is empty. Sets will appear here.</div>`;
+  if (live) html += `<button class="set newset" data-drop="new">${ic('plus')}New set</button>`;
+  if (!sets.length && !live) html += `<div class="empty"><span class="ghosttiles"><i></i><i></i><i></i></span>The table is empty. Sets will appear here.</div>`;
   html += '</div>';
   box.innerHTML = html;
 }
@@ -455,15 +482,17 @@ function renderBoard(box) {
 function renderMe() {
   const S = A.S, m = me();
   const c = $('#controls');
+  // The rack only shows during a game, so the lobby and results get the whole screen.
+  document.querySelector('footer').hidden = !(S && S.phase === 'play');
   if (!S || !m) { c.innerHTML = ''; renderRack(); return; }
   let html = '';
   if (myTurn()) {
     const placed = A.W && A.W.rack.length < A.W.startRack.length;
-    html += `<button class="btn go" data-act="done">✓ Done</button>`;
-    html += `<button class="btn draw" data-act="draw">${S.pool.length ? '⬇ Draw<span class="long"> a tile</span>' : 'Pass'}</button>`;
-    html += `<button class="btn" data-act="undo" aria-label="Undo" ${A.hist.length ? '' : 'disabled'}>↶<span class="long"> Undo</span></button>`;
-    html += `<button class="btn" data-act="reset" aria-label="Reset" ${placed || (A.W && A.hist.length) ? '' : 'disabled'}>⟲<span class="long"> Reset</span></button>`;
-    html += `<button class="btn" data-act="torack" ${A.sel.size ? '' : 'disabled'}>↩<span class="long"> Back to</span> rack</button>`;
+    html += `<button class="btn go" data-act="done">${ic('check')}Done</button>`;
+    html += `<button class="btn draw" data-act="draw">${S.pool.length ? `${ic('draw')}<span>Draw<span class="long"> a tile</span></span>` : `${ic('skip')}Pass`}</button>`;
+    html += `<button class="btn" data-act="undo" aria-label="Undo" ${A.hist.length ? '' : 'disabled'}>${ic('undo')}<span class="long">Undo</span></button>`;
+    html += `<button class="btn" data-act="reset" aria-label="Reset" ${placed || (A.W && A.hist.length) ? '' : 'disabled'}>${ic('reset')}<span class="long">Reset</span></button>`;
+    html += `<button class="btn" data-act="torack" aria-label="Back to rack" ${A.sel.size ? '' : 'disabled'}>${ic('torack')}<span><span class="long">Back to </span>rack</span></button>`;
   }
   c.innerHTML = html;
   $('#sorts').hidden = !(m.seat && S.phase === 'play');
@@ -582,7 +611,8 @@ function renderRack() {
   for (const b of document.querySelectorAll('.sortbtn')) {
     const by = b.dataset.act === 'sortnum' ? 'num' : 'col';
     const undo = canUndoSort(by);
-    b.textContent = undo ? '↶ Undo sort' : SORT_LABELS[by];
+    const html = undo ? `${ic('undo')}<span class="lbl">Undo sort</span>` : `${ic(by === 'num' ? 'sortnum' : 'sortcol')}<span class="lbl">${SORT_LABELS[by]}</span>`;
+    if (b.innerHTML !== html) b.innerHTML = html;
     b.classList.toggle('undo', undo);
   }
 }
@@ -838,6 +868,7 @@ function toggleMic() {
 function applyZoom() {
   A.zoom = Math.min(1.8, Math.max(0.7, Math.round(A.zoom * 10) / 10));
   document.documentElement.style.setProperty('--zoom', A.zoom);
+  $('#zoomVal').textContent = Math.round(A.zoom * 100) + '%';
   if (A.S) renderRack();
   store.set('zoom', A.zoom);
 }
@@ -846,7 +877,19 @@ $('#camBtn').addEventListener('click', toggleCam);
 $('#micBtn').addEventListener('click', toggleMic);
 $('#bigger').addEventListener('click', () => { A.zoom += 0.1; applyZoom(); });
 $('#smaller').addEventListener('click', () => { A.zoom -= 0.1; applyZoom(); });
-$('#shapesBtn').addEventListener('click', () => { A.shapes = !A.shapes; store.set('shapes', A.shapes); renderCenter(); renderRack(); });
+$('#shapesOn').checked = A.shapes;
+$('#shapesOn').addEventListener('change', e => { A.shapes = e.target.checked; store.set('shapes', A.shapes); renderCenter(); renderRack(); });
+$('#soundOn').checked = A.sound;
+$('#soundOn').addEventListener('change', e => { A.sound = e.target.checked; store.set('sound', A.sound); if (A.sound) beep(660, 0.12); });
+function showSettings(open) {
+  $('#settings').hidden = !open;
+  $('#setBtn').setAttribute('aria-expanded', open);
+  $('#setBtn').classList.toggle('on', open);
+}
+$('#setBtn').addEventListener('click', e => { e.stopPropagation(); showSettings($('#settings').hidden); });
+$('#setClose').addEventListener('click', () => showSettings(false));
+document.addEventListener('pointerdown', e => { if (!$('#settings').hidden && !(e.target.closest && e.target.closest('#settings, #setBtn'))) showSettings(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') showSettings(false); });
 let rz = 0;
 window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { renderSeats(); renderRack(); }, 150); });
 
@@ -865,12 +908,13 @@ window.FT.showMJ = showMJ;
 let toastT = 0;
 function toast(text, ms = 4000) {
   const t = $('#toast');
-  t.textContent = text; t.hidden = false;
+  t.innerHTML = `${ic('alert')}<span>${esc(text)}</span>`; t.hidden = false;
   clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, ms);
 }
 
 let ac = null;
 function beep(f, dur, f2) {
+  if (!A.sound) return;
   try {
     ac = ac || new (window.AudioContext || window.webkitAudioContext)();
     const o = ac.createOscillator(), g = ac.createGain();

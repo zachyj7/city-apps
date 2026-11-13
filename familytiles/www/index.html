@@ -5,44 +5,85 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Family Tiles</title>
 <meta name="description" content="Play number tiles online with your family, with everyone's face around the table.">
-<meta name="theme-color" content="#0c3b26">
+<meta name="theme-color" content="#06231a">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,700&family=Yellowtail&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,700&family=Fredoka:wght@500;600;700&family=Yellowtail&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+<!-- Icons, drawn once and reused everywhere with <use href="#i-name">. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-cam" viewBox="0 0 24 24"><path d="M3 8h3.5L8.5 5h7l2 3H21v11H3z"/><circle cx="12" cy="13.5" r="3.6"/></symbol>
+    <symbol id="i-camoff" viewBox="0 0 24 24"><path d="M3 8h3.5L8.5 5h7l2 3H21v11H3z"/><circle cx="12" cy="13.5" r="3.6"/><path d="M3 3l18 18"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+    <symbol id="i-micoff" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M3 3l18 18"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="15" cy="6" r="2.4"/><circle cx="8" cy="12" r="2.4"/><circle cx="16" cy="18" r="2.4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
+    <symbol id="i-draw" viewBox="0 0 24 24"><rect x="6.5" y="9" width="11" height="12" rx="2"/><path d="M12 2v5M9.5 4.6L12 7l2.5-2.4"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 5L4 10l5 5"/><path d="M4 10h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M19.5 13a7.5 7.5 0 1 1-2.2-6.3"/><path d="M19.5 3.5V8H15"/></symbol>
+    <symbol id="i-torack" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5"/><path d="M4 16v4h16v-4"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M7.5 7.5L12 3l4.5 4.5"/><path d="M5 12v8h14v-8"/></symbol>
+    <symbol id="i-sortnum" viewBox="0 0 24 24"><path d="M5 20v-5M10 20v-9M15 20V7M20 20V3"/></symbol>
+    <symbol id="i-sortcol" viewBox="0 0 24 24"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><circle cx="17" cy="17" r="3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.8"/><path d="M15.8 14.3A5 5 0 0 1 21.5 19"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 21h8"/></symbol>
+    <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9a4 4 0 0 1 0 6M19.5 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 19L9 5l5 14M6 14h6M15 19l3-8 3 8M16 16.5h4"/></symbol>
+    <symbol id="i-shapes" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7"/><circle cx="17" cy="7" r="3.5"/><path d="M7 13.5l3.8 7H3.2z"/><path d="M17 13.5l3.5 3.5-3.5 3.5-3.5-3.5z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5L2.5 20h19z"/><path d="M12 10v4.5M12 17.2v.3"/></symbol>
+    <symbol id="i-skip" viewBox="0 0 24 24"><path d="M5 5l9 7-9 7zM18 5v14"/></symbol>
+  </defs>
+</svg>
+
 <section id="join">
-  <form id="joinForm" class="panel joinbox">
-    <div class="logo" aria-hidden="true"><span class="tile c1"><span class="num">7</span></span><span class="tile c2"><span class="num">8</span></span><span class="tile c3"><span class="num">9</span></span></div>
-    <h1>Family Tiles</h1>
-    <p>Play number tiles together, with everyone's face around the table.</p>
+  <form id="joinForm" class="card joinbox">
+    <div class="logo" aria-hidden="true">
+      <span class="tile c1"><span class="num">7</span></span><span class="tile c2"><span class="num">8</span></span><span class="tile c3"><span class="num">9</span></span>
+    </div>
+    <h1 class="title">Family Tiles</h1>
+    <p class="tagline">Number tiles with the whole family, faces all around the table.</p>
     <label for="name">Your name</label>
     <input id="name" autocomplete="nickname" maxlength="18" placeholder="Grandma">
-    <label for="code">Table name <small>(everyone types the same one)</small></label>
+    <label for="code">Table name</label>
     <input id="code" autocomplete="off" autocapitalize="none" maxlength="20" placeholder="family">
+    <p class="fieldhint">Everyone types the same table name to sit together.</p>
     <label>Your rack color</label>
     <div id="rcPick" class="swatches"></div>
     <p id="joinErr" class="err" role="alert"></p>
-    <button class="btn go huge" type="submit">Join the table</button>
+    <button class="btn go huge" type="submit">Join the table <svg class="ic"><use href="#i-arrow"/></svg></button>
   </form>
+  <p class="joinfoot">Works on phones, tablets and computers. Up to 8 players.</p>
 </section>
 
 <section id="game" hidden>
   <header>
-    <span class="brand">Family Tiles</span>
-    <span class="tname">Table: <b id="tableName"></b></span>
-    <span id="status" class="pill">Connecting…</span>
+    <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="brandname">Family Tiles</span></div>
+    <span class="chip tname"><svg class="ic"><use href="#i-users"/></svg><b id="tableName"></b></span>
+    <span id="status" class="status"><i></i><span></span></span>
     <span class="spacer"></span>
-    <button id="camBtn" class="btn small">📷 Camera on</button>
-    <button id="micBtn" class="btn small" hidden>🎤 Mute</button>
-    <button id="shapesBtn" class="btn small" title="Show or hide the color shapes on tiles">■●▲◆</button>
-    <button id="smaller" class="btn small" aria-label="Smaller">A−</button>
-    <button id="bigger" class="btn small" aria-label="Bigger">A+</button>
+    <button id="camBtn" class="btn hbtn"></button>
+    <button id="micBtn" class="btn hbtn" hidden></button>
+    <button id="setBtn" class="btn hbtn" aria-label="Settings" aria-expanded="false"><svg class="ic"><use href="#i-settings"/></svg><span class="hlabel">Settings</span></button>
   </header>
+  <div id="settings" class="card popover" hidden>
+    <div class="pophead"><b>Settings</b><button class="iconbtn" id="setClose" aria-label="Close settings"><svg class="ic"><use href="#i-close"/></svg></button></div>
+    <div class="setrow">
+      <span class="setlabel"><svg class="ic"><use href="#i-text"/></svg>Text and tile size</span>
+      <span class="stepper"><button class="btn" id="smaller" aria-label="Smaller">A−</button><b id="zoomVal">100%</b><button class="btn" id="bigger" aria-label="Bigger">A+</button></span>
+    </div>
+    <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-shapes"/></svg>Shapes on tiles for each color</span><input type="checkbox" class="switch" id="shapesOn"></label>
+    <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-sound"/></svg>Sounds</span><input type="checkbox" class="switch" id="soundOn"></label>
+  </div>
   <aside id="seatsL" class="seats"></aside>
   <main>
     <div id="banner"></div>
@@ -55,13 +96,18 @@
     <div class="mine">
       <div id="rack" class="rack">
         <div class="grooves" data-drop="rack"></div>
-        <div class="edge"><span id="rackInfo"></span><span id="sorts" hidden><button class="sortbtn" data-act="sortnum">Sort 1-2-3</button><button class="sortbtn" data-act="sortcol">Sort colors</button></span><span id="rackName" class="engr"></span></div>
+        <div class="edge">
+          <span id="rackInfo"></span>
+          <span id="sorts" hidden><button class="sortbtn" data-act="sortnum"></button><button class="sortbtn" data-act="sortcol"></button></span>
+          <span id="rackName" class="engr"></span>
+        </div>
       </div>
     </div>
   </footer>
 </section>
 
 <div id="toast" role="status" hidden></div>
+<div id="confetti" aria-hidden="true"></div>
 <div id="mj" role="status" hidden>
   <div class="sig">MJ!</div>
   <svg class="swoosh" viewBox="0 0 300 60" aria-hidden="true"><path d="M10 40 C 70 10, 120 58, 170 34 S 260 12, 292 26"/></svg>
