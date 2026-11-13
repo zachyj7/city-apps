@@ -347,7 +347,7 @@ function renderSeats() {
   const fill = (p, isMe) => {
     const el = seatEl(p);
     const work = playing && S.turn === p.pid && S.work;
-    const count = isMe && A.W ? A.W.rack.length : work ? work.rack.length : p.rack.length;
+    const count = isMe && A.W ? A.W.rack.length : work ? work.rack.length : (p.rack || []).length;
     el.classList.toggle('turn', playing && S.turn === p.pid);
     el.classList.toggle('idle', playing && S.turn !== p.pid);
     el.classList.toggle('off', !p.on);
