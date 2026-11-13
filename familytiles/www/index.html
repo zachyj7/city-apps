@@ -60,7 +60,7 @@
     <input id="code" autocomplete="off" autocapitalize="none" maxlength="20" placeholder="family">
     <p class="fieldhint">Everyone types the same table name to sit together.</p>
     <label>Your rack color</label>
-    <div id="rcPick" class="swatches"></div>
+    <div id="rcPick" class="swatches row8"></div>
     <p id="joinErr" class="err" role="alert"></p>
     <button class="btn go huge" type="submit">Join the table <svg class="ic"><use href="#i-arrow"/></svg></button>
   </form>
@@ -80,15 +80,18 @@
   <div id="settings" class="card popover" hidden>
     <div class="pophead"><b>Settings</b><button class="iconbtn" id="setClose" aria-label="Close settings"><svg class="ic"><use href="#i-close"/></svg></button></div>
     <div class="setrow">
-      <span class="setlabel"><svg class="ic"><use href="#i-text"/></svg>Text and tile size</span>
+      <span class="setlabel"><svg class="ic"><use href="#i-text"/></svg>Text size</span>
       <span class="stepper"><button class="btn" id="smaller" aria-label="Smaller">A−</button><b id="zoomVal">100%</b><button class="btn" id="bigger" aria-label="Bigger">A+</button></span>
     </div>
-    <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-shapes"/></svg>Shapes on tiles for each color</span><input type="checkbox" class="switch" id="shapesOn"></label>
-    <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-sound"/></svg>Sounds</span><input type="checkbox" class="switch" id="soundOn"></label>
+    <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-shapes"/></svg>Color shapes on tiles</span><input type="checkbox" class="switch" id="shapesOn"></label>
+    <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-sound"/></svg>Game sounds</span><input type="checkbox" class="switch" id="soundOn"></label>
+    <div class="setgroup">
+      <span class="setlabel"><svg class="ic"><use href="#i-users"/></svg>Volume of each person</span>
+      <div id="volList"></div>
+    </div>
     <div class="setactions">
       <button class="btn" id="leaveBtn"><svg class="ic"><use href="#i-logout"/></svg><span>Leave table</span></button>
-      <button class="btn muted" id="closeAllBtn"><svg class="ic"><use href="#i-close"/></svg><span>Close table for everyone</span></button>
-      <p class="fieldhint">Leave takes you back to the start so you can join again. Close sends everyone back and clears the game.</p>
+      <button class="btn muted" id="closeAllBtn"><svg class="ic"><use href="#i-close"/></svg><span>Close for everyone</span></button>
     </div>
   </div>
   <aside id="seatsL" class="seats"></aside>

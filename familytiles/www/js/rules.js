@@ -137,3 +137,66 @@ export function isMJ(startTable, startRack, table) {
   }
   return false;
 }
+
+// ---- the table as a row of spaces ----
+// The table is laid out like words in a sentence: a list of spaces, each holding a tile or empty (null).
+// Tiles next to each other form a set; an empty space separates sets. Long lists wrap onto more rows.
+
+export function segments(cells) {
+  const out = [];
+  let cur = [];
+  for (const x of cells || []) {
+    if (x == null) { if (cur.length) out.push(cur); cur = []; } else cur.push(x);
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+export function cellsFromSets(sets) {
+  const out = [];
+  for (const s of sets) { if (out.length) out.push(null); out.push(...s); }
+  return out;
+}
+
+const trim = cells => { const c = cells.slice(); while (c.length && c[c.length - 1] == null) c.pop(); return c; };
+
+// At the end of a turn, each valid set is put in order (runs low to high, groups by color).
+export function tidyCells(cells) {
+  const c = trim(cells);
+  let i = 0;
+  while (i < c.length) {
+    if (c[i] == null) { i++; continue; }
+    let j = i;
+    while (j < c.length && c[j] != null) j++;
+    const a = analyze(c.slice(i, j));
+    if (a.ok) c.splice(i, j - i, ...a.order);
+    i = j;
+  }
+  return c;
+}
+
+// Lay new sets onto the table (for computer players): sets that did not change stay where they were,
+// the rest go into the first empty stretch that fits them with a space on each side, or at the end.
+export function layoutSets(cells, sets) {
+  const key = s => [...s].sort((a, b) => a - b).join(',');
+  const want = new Map(sets.map(s => [key(s), s]));
+  const c = (cells || []).slice();
+  let i = 0;
+  while (i < c.length) {
+    if (c[i] == null) { i++; continue; }
+    let j = i;
+    while (j < c.length && c[j] != null) j++;
+    const k = key(c.slice(i, j));
+    if (want.has(k)) want.delete(k); else for (let x = i; x < j; x++) c[x] = null;
+    i = j;
+  }
+  for (const s of want.values()) {
+    let at = -1;
+    for (let p = 0; p + s.length <= c.length; p++) {
+      if ((p === 0 || c[p - 1] == null) && (p + s.length >= c.length || c[p + s.length] == null) && c.slice(p, p + s.length).every(x => x == null)) { at = p; break; }
+    }
+    if (at < 0) { const t = trim(c); c.length = 0; c.push(...t); if (c.length) c.push(null); at = c.length; }
+    for (let x = 0; x < s.length; x++) c[at + x] = s[x];
+  }
+  return tidyCells(c);
+}

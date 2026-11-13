@@ -1,7 +1,7 @@
 // The referee. It runs in one player's browser (the host) and holds the true game.
 // Every change is sent to everyone as one full snapshot, so if the host leaves, whoever takes over
 // carries on from their last snapshot.
-import { makePool, checkTurn, rackPoints, openingPoints, isMJ, OPEN_POINTS, DEAL } from './rules.js';
+import { makePool, checkTurn, rackPoints, openingPoints, isMJ, OPEN_POINTS, DEAL, segments, cellsFromSets, tidyCells, layoutSets } from './rules.js';
 import { aiTurn } from './ai.js';
 
 const CPU_NAMES = ['Ruby', 'Otto', 'Pip', 'Juno', 'Ziggy', 'Nova', 'Bolt', 'Echo'];
@@ -11,7 +11,7 @@ const RACK_COLORS = ['red', 'blue', 'green', 'pink', 'purple', 'black', 'white',
 const MAX_SEATS = 8;
 
 export function emptyState() {
-  return { v: 0, phase: 'lobby', players: [], pool: [], table: [], turn: null, turnNo: 0, work: null, passes: 0, sets: 1, log: [], result: null, round: 0 };
+  return { v: 0, phase: 'lobby', players: [], pool: [], table: [], cells: [], turn: null, turnNo: 0, work: null, passes: 0, sets: 1, log: [], result: null, round: 0 };
 }
 
 export class Room {
@@ -19,6 +19,7 @@ export class Room {
     this.s = snapshot ? JSON.parse(JSON.stringify(snapshot)) : emptyState();
     for (const p of this.s.players) p.on = !!p.cpu;        // people have to say hello again; computers are always here
     this.cpuT = null;
+    if (!Array.isArray(this.s.cells)) this.s.cells = cellsFromSets(this.s.table || []);
     this.conns = new Set();
     this.ping = setInterval(() => this.each(c => c.send({ t: 'ping' })), 3000);
   }
@@ -69,14 +70,14 @@ export class Room {
     try { plan = aiTurn(p.cpu, s.table, p.rack, p.opened); } catch (e) { console.error(e); }
     if (!plan || checkTurn(s.table, p.rack, plan.table, plan.rack, p.opened)) return this.draw(p);
     // Show the move on the table for a moment, then make it final.
-    s.work = plan;
+    s.work = { cells: layoutSets(s.cells, plan.table), table: plan.table, rack: plan.rack };
     this.s.v++; this.s.at = Date.now();
     const m = { t: 'state', s: this.s };
     this.each(c => c.send(m));
     this.cpuT = setTimeout(() => {
       this.cpuT = null;
       if (this.closed || s !== this.s || s.turnNo !== turnNo) return;
-      this.commit(p, plan);
+      this.commit(p, s.work);
     }, 1400);
   }
 
@@ -150,7 +151,7 @@ export class Room {
       s.pool = makePool(s.sets);
       for (const q of s.players) { q.seat = seats.includes(q); q.rack = []; q.opened = false; }
       for (const q of seats) q.rack = s.pool.splice(0, DEAL);
-      s.table = []; s.work = null; s.passes = 0; s.result = null; s.round++;
+      s.table = []; s.cells = []; s.work = null; s.passes = 0; s.result = null; s.round++;
       s.phase = 'play';
       s.log = [];
       // Take turns starting with a different player each game.
@@ -161,7 +162,7 @@ export class Room {
 
     if (m.t === 'newgame') {
       if (s.phase !== 'over') return;
-      s.phase = 'lobby'; s.table = []; s.work = null; s.result = null;
+      s.phase = 'lobby'; s.table = []; s.cells = []; s.work = null; s.result = null;
       s.players = s.players.filter(q => q.on);
       for (const q of s.players) { q.seat = false; q.rack = []; }
       return this.push();
@@ -179,20 +180,21 @@ export class Room {
     if (s.turn !== p.pid) return;
 
     if (m.t === 'work') {
-      const table = Array.isArray(m.table) ? m.table.filter(a => Array.isArray(a) && a.length).map(a => a.map(Number)) : null;
+      const cells = Array.isArray(m.cells) ? m.cells.slice(0, 600).map(x => (x == null ? null : Number(x))) : null;
       const rack = Array.isArray(m.rack) ? m.rack.map(Number) : null;
-      if (!table || !rack) return;
+      if (!cells || !rack) return;
+      const table = segments(cells);
       const want = [...s.table.flat(), ...p.rack].sort((a, b) => a - b).join(',');
       const got = [...table.flat(), ...rack].sort((a, b) => a - b).join(',');
       if (want !== got) return;
-      s.work = { table, rack };
+      s.work = { cells, table, rack };
       return this.push();
     }
 
     if (m.t === 'draw') return this.draw(p);
 
     if (m.t === 'done') {
-      const w = s.work || { table: s.table, rack: p.rack };
+      const w = s.work || { cells: s.cells, table: s.table, rack: p.rack };
       const why = checkTurn(s.table, p.rack, w.table, w.rack, p.opened);
       if (why) return c.send({ t: 'nope', why });
       return this.commit(p, w);
@@ -212,7 +214,8 @@ export class Room {
         p.opened = true;
         this.note(`${p.name} made a first play worth ${openingPoints(s.table, p.rack, w.table)} points (${OPEN_POINTS} needed)`);
       } else this.note(`${p.name} played ${played} tile${played === 1 ? '' : 's'}`);
-      s.table = w.table; p.rack = w.rack; s.work = null; s.passes = 0;
+      s.cells = tidyCells(w.cells || layoutSets(s.cells, w.table)); s.table = segments(s.cells);
+      p.rack = w.rack; s.work = null; s.passes = 0;
       if (!p.rack.length) return this.finish(p);
       return this.next();
     }

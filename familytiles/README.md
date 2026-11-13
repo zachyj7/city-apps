@@ -17,6 +17,10 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
 - The rack has 3 rows of slots, and each tile stands in a groove. Tiles stay where you put them, so you can
   leave gaps. Drag a tile onto another and that one slides aside; or tap a tile, then tap an empty slot.
   Pressing the same sort button twice undoes the sort.
+- The table works like the rack: put tiles anywhere. Tiles side by side make a set and a space separates sets,
+  like words in a sentence. Everyone sees the same layout; finished sets are put in order at the end of a turn.
+- Settings has a volume slider for each person, plus text size, color shapes and game sounds.
+- Every menu (join, waiting room, results, settings) fits on one screen without scrolling, on phones and computers.
 - Whose turn it is shows as a big bar in that player's rack color, a flag and glowing frame on their face,
   and in the browser tab's title.
 - Split a run on the table and play your own tile into one of the halves, and everyone sees a signed **MJ!**

@@ -1,7 +1,7 @@
 // Family Tiles: what each player sees and touches.
 import { Net } from './net.js';
 import { Video } from './video.js';
-import { tile, analyze, rackPoints, openingPoints, checkTurn, SYMBOLS, COLOR_NAMES, OPEN_POINTS } from './rules.js';
+import { tile, analyze, rackPoints, openingPoints, checkTurn, segments, SYMBOLS, COLOR_NAMES, OPEN_POINTS } from './rules.js';
 
 // Rack colors to pick from. hi/base/lo/deep shade the plastic, ink is the pressed-in name, text is printing on it.
 const RACKS = {
@@ -39,7 +39,7 @@ const A = {
   S: null, net: null, video: null, name: '', code: '',
   W: null,            // my turn in progress: { turnNo, table: [{k, ids}], rack: [ids], startTable, startRack }
   hist: [], sel: new Set(), order: [], seen: new Set(), fresh: new Set(),
-  nope: null, sound: store.get('sound', true), sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
+  nope: null, vol: store.get('vol', {}), sound: store.get('sound', true), sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
   status: 'connecting',
 };
 window.FT = A;   // for testing from the console
@@ -157,8 +157,9 @@ function beginTurn() {
   A.W = {
     turnNo: S.turnNo,
     startTable: S.table.map(a => a.slice()),
+    startCells: (S.cells || []).slice(),
     startRack: m.rack.slice(),
-    table: (w ? w.table : S.table).map(ids => ({ k: setKey++, ids: ids.slice() })),
+    cells: ((w ? w.cells : S.cells) || []).slice(),
     rack: orderLike(w ? w.rack : m.rack),
     startGrid: cloneGrid(A.grid),
   };
@@ -171,12 +172,12 @@ function orderLike(ids) {
   return keep.concat(ids.filter(id => !keep.includes(id)));
 }
 
-function snapshotW() { return JSON.stringify({ table: A.W.table, rack: A.W.rack, grid: A.grid }); }
+function snapshotW() { return JSON.stringify({ cells: A.W.cells, rack: A.W.rack, grid: A.grid }); }
 function commit() {
   A.nope = null;
-  A.W.table = A.W.table.filter(s => s.ids.length);
+  while (A.W.cells.length && A.W.cells[A.W.cells.length - 1] == null) A.W.cells.pop();
   A.order = A.W.rack.slice();
-  send({ t: 'work', table: A.W.table.map(s => s.ids), rack: A.W.rack });
+  send({ t: 'work', cells: A.W.cells, rack: A.W.rack });
   renderAll();
 }
 
@@ -201,13 +202,11 @@ function moveSelected(target) {
   A.hist.push(snapshotW());
   const mv = new Set(moving);
   const rackRest = W.rack.filter(id => !mv.has(id));
-  for (const s of W.table) s.ids = s.ids.filter(id => !mv.has(id));
-  if (target === 'new') { W.rack = rackRest; W.table.push({ k: setKey++, ids: moving }); }
-  else if (target.startsWith('set:')) {
-    const s = W.table.find(x => x.k === +target.slice(4));
-    W.rack = rackRest;
-    if (s) s.ids.push(...moving); else W.table.push({ k: setKey++, ids: moving });
-  } else { W.rack = rackRest.concat(moving); toRack(moving, target); }
+  // Lifting tiles off the table leaves empty spaces where they were (just like a real table).
+  W.cells = W.cells.map(x => (mv.has(x) ? null : x));
+  if (target.startsWith('tcell:')) { W.rack = rackRest; W.cells = placeCells(W.cells, moving, +target.slice(6)); }
+  else if (target === 'new') { W.rack = rackRest; W.cells = placeCells(W.cells, moving, endGap(W.cells)); }
+  else { W.rack = rackRest.concat(moving); toRack(moving, target); }
   A.sel.clear();
   commit();
 }
@@ -215,12 +214,12 @@ function moveSelected(target) {
 function undo() {
   if (!A.W || !A.hist.length) return;
   const h = JSON.parse(A.hist.pop());
-  A.W.table = h.table; A.W.rack = h.rack; A.grid = h.grid; A.sel.clear(); commit();
+  A.W.cells = h.cells; A.W.rack = h.rack; A.grid = h.grid; A.sel.clear(); commit();
 }
 function resetTurn() {
   if (!A.W) return;
-  if (A.W.table.length || A.hist.length) A.hist.push(snapshotW());
-  A.W.table = A.W.startTable.map(ids => ({ k: setKey++, ids: ids.slice() }));
+  A.hist.push(snapshotW());
+  A.W.cells = A.W.startCells.slice();
   A.W.rack = orderLike(A.W.startRack);
   A.grid = cloneGrid(A.W.startGrid);
   A.sel.clear(); commit();
@@ -232,7 +231,7 @@ function draw() {
 }
 function done() {
   if (!A.W) return;
-  const why = checkTurn(A.W.startTable, A.W.startRack, A.W.table.map(s => s.ids), A.W.rack, me().opened);
+  const why = checkTurn(A.W.startTable, A.W.startRack, segments(A.W.cells), A.W.rack, me().opened);
   if (why) { A.nope = why; renderCenter(); beep(220, 0.25); return; }
   send({ t: 'done' });
 }
@@ -264,6 +263,47 @@ function renderStatus() {
   mic.hidden = !A.camOn || !A.video || !A.video.hasMic();
   mic.innerHTML = A.micOn ? `${ic('mic')}<span>Mute</span>` : `${ic('micoff')}<span>Unmute</span>`;
   mic.classList.toggle('muted', !A.micOn);
+}
+
+/* Each person's voice has its own volume. Most browsers let a video's volume be set directly; iPhones and
+   iPads don't, so there the sound goes through a volume control (Web Audio) and the video itself stays muted. */
+const VOL_DIRECT = (() => { try { const v = document.createElement('video'); v.volume = 0.5; return Math.abs(v.volume - 0.5) < 0.01; } catch (e) { return false; } })();
+const gains = new Map();
+let vac = null;
+function volumeOf(p) { const v = A.vol[p.pid]; return typeof v === 'number' ? v : 1; }
+function applyVolume(p, v, stream) {
+  const vol = volumeOf(p);
+  if (VOL_DIRECT) { v.muted = false; v.volume = vol; return; }
+  v.muted = true;
+  try {
+    vac = vac || new (window.AudioContext || window.webkitAudioContext)();
+    if (vac.state === 'suspended') vac.resume();
+    let g = gains.get(p.pid);
+    if (!g || g.stream !== stream) {
+      if (g) try { g.src.disconnect(); } catch (e) { /* ignore */ }
+      const src = vac.createMediaStreamSource(stream);
+      const gain = vac.createGain();
+      src.connect(gain).connect(vac.destination);
+      g = { src, gain, stream };
+      gains.set(p.pid, g);
+    }
+    g.gain.gain.value = vol;
+  } catch (e) { v.muted = false; }
+}
+
+// The list of volume sliders in Settings: one for each other person at the table.
+let volKey = '';
+function renderVolumes(force) {
+  const box = $('#volList');
+  if (!box) return;
+  const people = A.S ? A.S.players.filter(p => p.on && !p.cpu && p.pid !== pid) : [];
+  const key = people.map(p => p.pid + p.name).join('|');
+  if (!force && key === volKey) return;
+  volKey = key;
+  box.innerHTML = people.length ? people.map(p => {
+    const v = Math.round(volumeOf(p) * 100);
+    return `<label class="volrow"><span class="vname">${esc(p.name)}</span><input type="range" min="0" max="100" step="5" value="${v}" data-volpid="${esc(p.pid)}" aria-label="Volume for ${esc(p.name)}"><b>${v}%</b></label>`;
+  }).join('') : '<p class="fieldhint">No one else is here yet. Their volume sliders will show up here.</p>';
 }
 
 /* Seats: one card per person, kept between updates so videos keep playing. */
@@ -339,6 +379,7 @@ function renderSeats() {
     if (stream) {
       const v = videoFor(key, stream, isMe, isMe);
       if (old !== v) { if (old) old.remove(); face.appendChild(v); v.play().catch(() => {}); }
+      if (!isMe) applyVolume(p, v, stream);
     } else if (old) old.remove();
     // A remote person whose camera is on but whose picture has not arrived yet.
     face.classList.toggle('waiting', !!(!isMe && p.cam && p.on && !stream));
@@ -366,6 +407,7 @@ function renderSeats() {
   left.dataset.n = left.children.length;
   right.dataset.n = right.children.length;
   for (const [k, el] of seatEls) if (!list.some(p => p.pid === k)) { el.remove(); seatEls.delete(k); }
+  renderVolumes();
 }
 
 function syncChildren(parent, kids) {
@@ -404,33 +446,35 @@ function renderLobby(box) {
   const here = S.players.filter(p => p.on);
   const sets = here.length > 4 ? 2 : 1;
   const link = location.origin + location.pathname + '?room=' + A.code;
-  const chips = here.map((p, i) => `<div class="pchip ${p.cpu ? 'cpu' : ''}" style="${rackStyle(p.rc)}"><span class="av">${p.cpu ? ic('bot') : esc((p.name || '?').slice(0, 1).toUpperCase())}</span>
+  const chips = here.map((p, i) => `<div class="pchip ${p.cpu ? 'cpu' : ''}" style="${rackStyle(p.rc)}"><span class="av">${p.cpu ? `${ic('bot')}<i class="lvl">${LEVEL_NAMES[p.cpu][0]}</i>` : esc((p.name || '?').slice(0, 1).toUpperCase())}</span>
       <span class="pn">${esc(p.name)}<span class="pt">${p.pid === pid ? 'You' : p.cpu ? `Computer · ${LEVEL_NAMES[p.cpu]}` : i >= 8 ? 'Watching (table full)' : 'Ready'}</span></span>
       ${p.cpu ? `<button class="iconbtn rm" data-act="rmcpu" data-pid="${esc(p.pid)}" aria-label="Remove ${esc(p.name)}">${ic('close')}</button>` : ''}</div>`).join('');
   const full = here.length >= 8;
-  const open = Math.max(0, Math.min(8, Math.max(2, here.length + 1)) - here.length);
+  const open = here.length < 8 ? 1 : 0;
   const empties = Array.from({ length: open }, () => `<div class="pchip empty-seat">Open seat</div>`).join('');
   box.innerHTML = `<div class="card lobby">
-    <div class="panelhead"><span class="badge">${ic('users')}</span><div><h2>Table “${esc(A.code)}”</h2><p>Waiting for everyone to sit down</p></div></div>
-    <div class="section"><h3>Invite your family</h3>
-      <div class="linkrow"><input readonly value="${esc(link)}" aria-label="Table link"><button class="btn" data-act="copy">${ic('link')}Copy link</button>${navigator.share ? `<button class="btn" data-act="share">${ic('share')}Share</button>` : ''}</div>
-    </div>
-    <div class="section"><h3>At the table · ${here.length} of 8</h3>
-      <div class="players">${chips}${empties}</div>
-      <p class="hint">${here.length < 2 ? 'Waiting for at least one more player…' : `${Math.min(here.length, 8)} players, ${sets === 2 ? 'two sets of tiles (5 or more players)' : 'one set of tiles'}.`}</p>
-    </div>
-    <div class="section"><h3>Computer players</h3>
-      <div class="cpuadd">
-        <button class="btn" data-act="addcpu" data-level="easy" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Easy</b><small>Learning the game</small></span></button>
-        <button class="btn" data-act="addcpu" data-level="medium" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Medium</b><small>A solid player</small></span></button>
-        <button class="btn" data-act="addcpu" data-level="hard" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Hard</b><small>Rearranges the table</small></span></button>
+    <div class="lcol">
+      <div class="panelhead"><span class="badge">${ic('users')}</span><div class="ph"><h2>Table “${esc(A.code)}”</h2><p>Waiting for everyone to sit down</p></div>
+        <span class="headact"><button class="btn small" data-act="${navigator.share ? 'share' : 'copy'}">${ic(navigator.share ? 'share' : 'link')}Invite</button><button class="btn small" data-act="leave" aria-label="Leave table">${ic('logout')}</button></span></div>
+      <div class="section invite"><h3>Invite your family</h3>
+        <div class="linkrow"><input readonly value="${esc(link)}" aria-label="Table link"><button class="btn" data-act="copy">${ic('link')}Copy link</button>${navigator.share ? `<button class="btn" data-act="share">${ic('share')}Share</button>` : ''}</div>
       </div>
-      <p class="hint">${full ? 'The table is full (8 players).' : 'Add as many as you like, up to 8 players in all. You can also play just you against the computers.'}</p>
+      <div class="section"><h3>At the table · ${here.length} of 8 · ${here.length < 2 ? 'need one more' : sets === 2 ? 'two sets of tiles' : 'one set of tiles'}</h3>
+        <div class="players">${chips}${empties}</div>
+      </div>
     </div>
-    <div class="section"><h3>Your rack color</h3><div class="swatches">${swatches(A.rc, 'setrc')}</div></div>
-    <button class="btn go huge" data-act="start" ${here.length < 2 ? 'disabled' : ''}>Start the game ${ic('arrow')}</button>
-    <p class="tip">${ic('cam')}Press <b>Camera</b> at the top so everyone can see your face.</p>
-    <button class="btn small leave" data-act="leave">${ic('logout')}Leave table</button>
+    <div class="lcol">
+      <div class="section cpusec ${full ? 'full' : ''}"><h3>Add a computer player</h3>
+        <div class="cpuadd">
+          <button class="btn" data-act="addcpu" data-level="easy" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Easy</b><small>Learning</small></span></button>
+          <button class="btn" data-act="addcpu" data-level="medium" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Medium</b><small>Solid</small></span></button>
+          <button class="btn" data-act="addcpu" data-level="hard" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Hard</b><small>Tricky</small></span></button>
+        </div>
+      </div>
+      <div class="section"><h3>Your rack color</h3><div class="swatches row8">${swatches(A.rc, 'setrc')}</div></div>
+      <button class="btn go huge" data-act="start" ${here.length < 2 ? 'disabled' : ''}>Start the game ${ic('arrow')}</button>
+      <div class="lobbyfoot"><span class="tip">${ic('cam')}Press <b>Camera</b> so everyone can see you.</span><button class="btn small leave" data-act="leave">${ic('logout')}Leave</button></div>
+    </div>
   </div>`;
 }
 
@@ -441,7 +485,7 @@ function renderOver(box) {
   const sign = n => (n > 0 ? `<span class="plus">+${n}</span>` : n < 0 ? `<span class="minus">${n}</span>` : '0');
   box.innerHTML = `<div class="card over">
     <div class="winner"><span class="cup">${ic('trophy')}</span><h2>${esc(win ? win.name : '')} wins!</h2></div>
-    <table class="scores"><tr><th>Player</th><th>Left on rack</th><th>This game</th><th>Total</th></tr>
+    <table class="scores"><tr><th>Player</th><th>Left</th><th>Game</th><th>Total</th></tr>
     ${rows.map((r, i) => { const p = S.players.find(q => q.pid === r.pid); return `<tr class="${r.win ? 'win' : ''}"><td><span class="rank">${i + 1}</span>${esc(r.name)}</td><td>${r.left}</td><td>${sign(r.delta)}</td><td>${p ? sign(p.total) : ''}</td></tr>`; }).join('')}
     </table>
     <button class="btn go huge" data-act="newgame">Play again ${ic('arrow')}</button>
@@ -462,42 +506,84 @@ function confetti() {
   setTimeout(() => { box.innerHTML = ''; }, 5500);
 }
 
-function boardSets() {
+// Put tiles into the table's row of spaces starting at space i. An empty space just takes the tile;
+// a taken one makes room (everything after it moves along one), so sets are never joined by accident.
+function placeCells(cells, ids, i) {
+  const c = cells.slice();
+  for (const id of ids) {
+    while (c.length < i) c.push(null);
+    if (i >= c.length) c.push(id);
+    else if (c[i] == null) c[i] = id;
+    else c.splice(i, 0, id);
+    i++;
+  }
+  while (c.length && c[c.length - 1] == null) c.pop();
+  return c;
+}
+// The first space after everything on the table, leaving one empty space as a separator.
+function endGap(cells) { let n = cells.length; while (n && cells[n - 1] == null) n--; return n ? n + 1 : 0; }
+
+function tableCells() {
   const S = A.S;
-  if (A.W) return A.W.table;
-  const t = (S.work ? S.work.table : S.table);
-  return t.map((ids, i) => ({ k: 'v' + i, ids }));
+  if (A.W) return A.drag && A.drag.tview ? A.drag.tview : A.W.cells;
+  return (S.work ? S.work.cells : S.cells) || [];
+}
+
+// How many tile spaces fit across the playing area.
+function measureTableCols(box) {
+  const probe = document.createElement('div');
+  probe.className = 'tablegrid';
+  probe.style.cssText = 'position:absolute;visibility:hidden';
+  probe.innerHTML = '<div class="tile"></div>';
+  box.appendChild(probe);
+  const tw = probe.firstChild.offsetWidth;
+  probe.remove();
+  const w = box.clientWidth;
+  return Math.max(6, Math.floor((w + 4) / (tw + 4)));
 }
 
 function renderBoard(box) {
   const S = A.S;
-  const sets = boardSets();
   const live = !!A.W;
-  const before = new Set(S.table.flat());
-  const showMarks = !!S.work || live;
-  const selecting = A.sel.size > 0;
+  const cells = tableCells();
+  const before = new Set((S.cells || []).filter(x => x != null));
+  const showMarks = live || !!S.work;
+  const landing = new Set(A.drag && A.drag.tview ? A.drag.ids : []);
+  // which set each tile belongs to, and whether that set is valid
+  const info = new Array(cells.length).fill(null);
+  const reasons = [];
+  for (let i = 0; i < cells.length;) {
+    if (cells[i] == null) { i++; continue; }
+    let j = i;
+    while (j < cells.length && cells[j] != null) j++;
+    const a = analyze(cells.slice(i, j));
+    if (!a.ok && !reasons.includes(a.why)) reasons.push(a.why);
+    for (let k = i; k < j; k++) info[k] = { ok: a.ok, start: k === i, end: k === j - 1 };
+    i = j;
+  }
   let html = '';
   if (A.nope) html += `<div class="nope" role="alert">${ic('alert')}${esc(A.nope)}</div>`;
   if (live && !me().opened) {
-    const pts = openingPoints(A.W.startTable, A.W.startRack, A.W.table.map(s => s.ids));
+    const pts = openingPoints(A.W.startTable, A.W.startRack, segments(A.W.cells));
     const ok = pts >= OPEN_POINTS;
     html += `<div class="meter ${ok ? 'ok' : ''}"><span>First play</span><span class="bar"><i style="width:${Math.min(100, pts / OPEN_POINTS * 100)}%"></i></span><span><b>${pts}</b> / ${OPEN_POINTS}</span>${ok ? ic('check') : ''}</div>`;
   }
-  if (live && !selecting && !A.W.table.length) html += `<div class="help">${ic('plus')}<span>Tap tiles on your rack to pick them up, then tap <b>New set</b>. Or drag them onto the table.</span></div>`;
-  html += `<div class="sets ${live ? 'live' : ''} ${selecting ? 'selecting' : ''}">`;
-  for (const s of sets) {
-    const a = analyze(s.ids);
-    const order = a.ok ? a.order : s.ids;
-    const bad = showMarks && !a.ok;
-    html += `<div class="set ${bad ? 'bad' : ''}" ${live ? `data-drop="set:${s.k}"` : ''}>
-      <div class="tiles">${order.map(id => tileHTML(id, before.has(id) ? '' : 'placed')).join('')}</div>
-      ${live ? `<button class="slot" data-drop="set:${s.k}" aria-label="Add picked tiles to this set">${ic('plus')}</button>` : ''}
-      ${bad ? `<div class="why">${esc(a.why)}</div>` : ''}
-    </div>`;
+  if (showMarks && reasons.length) html += `<div class="badsets">${ic('alert')}<span><b>Sets marked in red need fixing:</b> ${reasons.map(esc).join(' · ')}</span></div>`;
+  else if (live && !cells.some(x => x != null)) html += `<div class="help">${ic('plus')}<span>${A.sel.size ? 'Now tap an empty spot on the table to put them there.' : 'Tap tiles on your rack, then tap an empty spot on the table. Or drag them there.'} Tiles side by side make a set; leave a space between sets.</span></div>`;
+  const cols = A.tcols = measureTableCols(box);
+  const used = cells.length;
+  const rows = live ? Math.max(Math.ceil((used + 1) / cols) + 1, 3) : Math.max(1, Math.ceil(used / cols));
+  const total = rows * cols;
+  let grid = '';
+  for (let i = 0; i < total; i++) {
+    const x = cells[i];
+    if (x == null) { grid += `<div class="tcell" ${live ? `data-drop="tcell:${i}"` : ''}></div>`; continue; }
+    const f = info[i];
+    const cls = [before.has(x) ? '' : 'placed', landing.has(x) ? 'landing' : '', showMarks ? (f.ok ? 'seg-ok' : 'seg-bad') : 'seg', f.start ? 'seg-start' : '', f.end ? 'seg-end' : ''].join(' ');
+    grid += tileHTML(x, cls);
   }
-  if (live) html += `<button class="set newset" data-drop="new">${ic('plus')}New set</button>`;
-  if (!sets.length && !live) html += `<div class="empty"><span class="ghosttiles"><i></i><i></i><i></i></span>The table is empty. Sets will appear here.</div>`;
-  html += '</div>';
+  html += `<div class="tablegrid ${live ? 'live' : ''}" style="grid-template-columns:repeat(${cols}, var(--bw))">${grid}</div>`;
+  if (!used && !live) html += `<div class="empty"><span class="ghosttiles"><i></i><i></i><i></i></span>The table is empty. Sets will appear here.</div>`;
   box.innerHTML = html;
 }
 
@@ -699,10 +785,11 @@ function toRack(moving, target) {
 // Animate tiles from where they were to where they are now, so the rack slides instead of jumping.
 function flip(container, change) {
   const before = new Map();
-  for (const el of container.querySelectorAll('.tile[data-id]')) before.set(el.dataset.id, el.getBoundingClientRect());
+  const all = () => document.querySelectorAll('#rack .grooves .tile[data-id], #center .tablegrid .tile[data-id]');
+  for (const el of all()) before.set(el.dataset.id, el.getBoundingClientRect());
   change();
   const moved = [];
-  for (const el of container.querySelectorAll('.tile[data-id]')) {
+  for (const el of all()) {
     const b = before.get(el.dataset.id);
     if (!b) continue;
     const a = el.getBoundingClientRect();
@@ -713,7 +800,7 @@ function flip(container, change) {
     moved.push(el);
   }
   if (!moved.length) return;
-  container.offsetWidth;   // apply the starting positions before animating
+  document.body.offsetWidth;   // apply the starting positions before animating
   for (const el of moved) { el.style.transition = 'transform .18s ease-out'; el.style.transform = ''; }
 }
 
@@ -741,10 +828,11 @@ function startDrag(id) {
   ghost.innerHTML = [...A.sel].slice(0, 6).map(x => tileHTML(x)).join('');
   document.body.appendChild(ghost);
   document.body.classList.add('dragging');
-  A.drag = { ids: [...A.sel], slot: null, view: null };
+  A.drag = { ids: [...A.sel], slot: null, view: null, tslot: null, tview: null };
   // Start with the tiles shown where they already are, so nothing jumps.
   const at = slotOf(id);
   if (at) setDragSlot([...at, 0]);
+  else if (A.W && A.W.cells.includes(id)) setDragT(A.W.cells.indexOf(id));
   renderCenter(); renderMe();
 }
 
@@ -762,6 +850,30 @@ function setDragSlot(at) {
     d.view = dropInto(cloneGrid(A.grid).map(r => r.map(x => (mv.has(x) ? null : x))), d.ids, at[0], at[1], at[2]);
   } else d.view = null;
   return true;
+}
+
+function setDragT(i) {
+  const d = A.drag;
+  if (d.tslot === i) return false;
+  d.tslot = i;
+  if (i != null) {
+    const mv = new Set(d.ids);
+    d.tview = placeCells(A.W.cells.map(x => (mv.has(x) ? null : x)), d.ids, i);
+  } else d.tview = null;
+  return true;
+}
+
+// Which table space the pointer is over (worked out from the grid, like the rack).
+function tableSlotAt(x, y) {
+  const g = $('#center .tablegrid');
+  if (!g || !g.children.length) return 0;
+  const kids = g.children, cols = A.tcols, k0 = kids[0];
+  const pitchX = kids.length > 1 ? kids[1].offsetLeft - k0.offsetLeft : k0.offsetWidth + 4;
+  const pitchY = kids.length > cols ? kids[cols].offsetTop - k0.offsetTop : k0.offsetHeight + 16;
+  const box = g.getBoundingClientRect();
+  const c = Math.max(0, Math.min(cols - 1, Math.floor((x - box.left - k0.offsetLeft + 2) / pitchX)));
+  const r = Math.max(0, Math.floor((y - box.top - k0.offsetTop + 8) / pitchY));
+  return Math.min(r * cols + c, Math.ceil(kids.length / cols) * cols - 1);
 }
 
 // Which slot the pointer is over, from the rack's fixed grid (never from tiles that are mid-slide).
@@ -794,8 +906,11 @@ document.addEventListener('pointermove', e => {
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const overRack = el && el.closest('#rack');
   const canRack = !A.W || A.drag.ids.every(id => A.W.startRack.includes(id));
-  if (setDragSlot(overRack && canRack ? slotAt(e.clientX, e.clientY) : null)) flip($('#rack .grooves'), renderRack);
-  const d = overRack ? null : el && el.closest('[data-drop]');
+  const overTable = !overRack && A.W && el && el.closest('main');
+  const rackChanged = setDragSlot(overRack && canRack ? slotAt(e.clientX, e.clientY) : null);
+  const tableChanged = setDragT(overTable ? tableSlotAt(e.clientX, e.clientY) : null);
+  if (rackChanged || tableChanged) flip(null, () => { if (tableChanged) renderCenter(); if (rackChanged) renderRack(); });
+  const d = overRack || overTable ? null : el && el.closest('[data-drop]');
   if (hover !== d) { if (hover) hover.classList.remove('hover'); hover = d; if (d) d.classList.add('hover'); }
 }, { passive: false });
 
@@ -816,6 +931,7 @@ document.addEventListener('pointerup', () => {
   const d = endDrag();
   const g = $('#rack .grooves');
   if (d.slot) flip(g, () => moveSelected('rackslot:' + d.slot));
+  else if (d.tslot != null) flip(g, () => moveSelected('tcell:' + d.tslot));
   else if (target) moveSelected(target.dataset.drop);
   else { A.sel.clear(); flip(g, renderAll); }
 });
@@ -906,7 +1022,16 @@ $('#shapesOn').checked = A.shapes;
 $('#shapesOn').addEventListener('change', e => { A.shapes = e.target.checked; store.set('shapes', A.shapes); renderCenter(); renderRack(); });
 $('#soundOn').checked = A.sound;
 $('#soundOn').addEventListener('change', e => { A.sound = e.target.checked; store.set('sound', A.sound); if (A.sound) beep(660, 0.12); });
+$('#volList').addEventListener('input', e => {
+  const r = e.target.closest('[data-volpid]');
+  if (!r) return;
+  A.vol[r.dataset.volpid] = r.value / 100;
+  store.set('vol', A.vol);
+  r.nextElementSibling.textContent = r.value + '%';
+  renderSeats();
+});
 function showSettings(open) {
+  if (open) renderVolumes(true);
   $('#settings').hidden = !open;
   $('#setBtn').setAttribute('aria-expanded', open);
   $('#setBtn').classList.toggle('on', open);
@@ -928,6 +1053,8 @@ function leaveTable(msg) {
   A.S = null; A.W = null; A.hist = []; A.sel.clear(); A.drag = null; A.nope = null; A.sortUndo = null; A.status = 'off';
   for (const el of seatEls.values()) el.remove();
   seatEls.clear(); videoEls.clear();
+  for (const g of gains.values()) try { g.src.disconnect(); } catch (e) { /* ignore */ }
+  gains.clear();
   showSettings(false);
   $('#game').hidden = true; $('#join').hidden = false;
   document.title = 'Family Tiles';
@@ -943,13 +1070,13 @@ $('#closeAllBtn').addEventListener('click', () => {
   const b = $('#closeAllBtn');
   if (!b.classList.contains('armed')) {
     b.classList.add('armed');
-    b.querySelector('span').textContent = 'Tap again to close it for everyone';
+    b.querySelector('span').textContent = 'Tap again to close';
     clearTimeout(closeArm);
-    closeArm = setTimeout(() => { b.classList.remove('armed'); b.querySelector('span').textContent = 'Close table for everyone'; }, 4000);
+    closeArm = setTimeout(() => { b.classList.remove('armed'); b.querySelector('span').textContent = 'Close for everyone'; }, 4000);
     return;
   }
   clearTimeout(closeArm);
-  b.classList.remove('armed'); b.querySelector('span').textContent = 'Close table for everyone';
+  b.classList.remove('armed'); b.querySelector('span').textContent = 'Close for everyone';
   send({ t: 'closeall' });
 });
 
