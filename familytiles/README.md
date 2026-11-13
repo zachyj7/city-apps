@@ -9,8 +9,11 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
   (■ black, ● red, ▲ blue, ◆ orange). **A− / A+** makes everything bigger or smaller.
 - Each player's rack is a wedge rack with their name pressed into the edge, in the color they pick
   (yellow, red, blue, green, pink, purple, black or white).
-- The rack has 3 rows of slots. Tiles stay where you put them, so you can leave gaps. Drag a tile (or tap it,
-  then tap an empty slot) and the others slide over to make room.
+- The rack has 3 rows of slots, and each tile stands in a groove. Tiles stay where you put them, so you can
+  leave gaps. Drag a tile onto another and that one slides aside; or tap a tile, then tap an empty slot.
+  Pressing the same sort button twice undoes the sort.
+- Whose turn it is shows as a big bar in that player's rack color, a flag and glowing frame on their face,
+  and in the browser tab's title.
 - Split a run on the table and play your own tile into one of the halves, and everyone sees a signed **MJ!**
 
 ## Rules

@@ -37,7 +37,7 @@ const A = {
   S: null, net: null, video: null, name: '', code: '',
   W: null,            // my turn in progress: { turnNo, table: [{k, ids}], rack: [ids], startTable, startRack }
   hist: [], sel: new Set(), order: [], seen: new Set(), fresh: new Set(),
-  nope: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
+  nope: null, sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
   status: 'connecting',
 };
 window.FT = A;   // for testing from the console
@@ -273,7 +273,7 @@ function seatEl(p) {
   if (!el) {
     el = document.createElement('div');
     el.className = 'seat';
-    el.innerHTML = `<div class="face"><div class="avatar"></div><div class="nm"></div></div>
+    el.innerHTML = `<div class="face"><div class="avatar"></div><div class="nm"></div><div class="flag">▶ TURN</div></div>
       <div class="minirack"><div class="ridges"></div><div class="mini-edge"><span class="engr"></span></div><div class="count"></div></div>
       <div class="tag"></div>`;
     seatEls.set(p.pid, el);
@@ -294,6 +294,7 @@ function renderSeats() {
     const work = playing && S.turn === p.pid && S.work;
     const count = isMe && A.W ? A.W.rack.length : work ? work.rack.length : p.rack.length;
     el.classList.toggle('turn', playing && S.turn === p.pid);
+    el.classList.toggle('idle', playing && S.turn !== p.pid);
     el.classList.toggle('off', !p.on);
     el.classList.toggle('me', !!isMe);
     el.querySelector('.engr').textContent = p.name;
@@ -368,8 +369,8 @@ function renderBanner() {
   let html = '';
   if (S.phase === 'play') {
     const cur = S.players.find(p => p.pid === S.turn);
-    if (myTurn()) html = `<div class="big you">Your turn!</div>`;
-    else if (cur) html = `<div class="big">${esc(cur.name)} is playing…</div>`;
+    // A wide bar in the player's own rack color with their name, so whose turn it is reads at a glance.
+    if (cur) html = `<div class="turnbar ${myTurn() ? 'you' : ''}" style="${rackStyle(cur.rc)}">▶ ${myTurn() ? 'YOUR TURN!' : `${esc(cur.name)}'s turn`}</div>`;
     const last = S.log[S.log.length - 1];
     if (cur && !cur.on && !myTurn()) html += `<div class="lost">${esc(cur.name)} lost connection. <button class="btn small" data-act="skip">Skip their turn</button></div>`;
     if (last) html += `<div class="last">${esc(last)}</div>`;
@@ -377,6 +378,8 @@ function renderBanner() {
   }
   b.innerHTML = html;
   b.className = myTurn() ? 'mine' : '';
+  const cur = S.phase === 'play' && S.players.find(p => p.pid === S.turn);
+  document.title = !cur ? 'Family Tiles' : myTurn() ? '▶ Your turn! · Family Tiles' : `${cur.name}'s turn · Family Tiles`;
 }
 
 function renderLobby(box) {
@@ -501,25 +504,33 @@ function fitGrid(g, ids, cols) {
   return g;
 }
 
-// Put a tile into slot (r, c). If it is taken, the neighbours slide over into the nearest gap in that row.
-function insertAt(g, id, r, c) {
+// Put a tile into slot (r, c). If it is taken, the tiles from there on slide right into the next gap
+// (or, with nothing free on that side, the tiles before it slide left).
+function insertAt(g, id, r, c, leftFirst) {
   const row = g[r], n = row.length;
-  if (row[c] == null) { row[c] = id; return; }
-  let k = row.indexOf(null, c);
-  if (k >= 0) { for (let i = k; i > c; i--) row[i] = row[i - 1]; row[c] = id; return; }
-  k = row.lastIndexOf(null, c);
-  if (k >= 0) { for (let i = k; i < c; i++) row[i] = row[i + 1]; row[c] = id; return; }
+  if (row[c] == null) { row[c] = id; return c; }
+  const right = () => { const k = row.indexOf(null, c); if (k < 0) return false; for (let i = k; i > c; i--) row[i] = row[i - 1]; row[c] = id; return true; };
+  const left = () => { const k = row.lastIndexOf(null, c); if (k < 0) return false; for (let i = k; i < c; i++) row[i] = row[i + 1]; row[c] = id; return true; };
+  if (leftFirst ? left() || right() : right() || left()) return c;
   const out = row[n - 1];
   for (let i = n - 1; i > c; i--) row[i] = row[i - 1];
   row[c] = id;
   putFirstEmpty(g, out, n);
+  return c;
 }
-function dropInto(g, ids, r, c) {
+
+// Drop tiles at a slot. "after" means the pointer was on the right half of a tile: go after it.
+function dropInto(g, ids, r, c, after) {
   const cols = g[0].length;
+  let leftFirst = false;
+  if (after && g[r][c] != null) {
+    if (c + 1 < cols) c++;
+    else leftFirst = true;   // after the last tile in a full row: the row slides left instead
+  }
   for (const id of ids) {
     while (r >= g.length) g.push(Array(cols).fill(null));
-    insertAt(g, id, r, c);
-    if (++c >= cols) { c = 0; r++; }
+    insertAt(g, id, r, c, leftFirst);
+    if (++c >= cols) { c = 0; r++; leftFirst = false; }
   }
   return g;
 }
@@ -568,25 +579,59 @@ function renderRack() {
     return tileHTML(x, d && d.view && d.ids.includes(x) ? 'landing' : '');
   }).join('')).join('');
   $('#rackInfo').innerHTML = `${ids.length} tiles<span class="pts"> · ${rackPoints(ids)} points</span>`;
+  for (const b of document.querySelectorAll('.sortbtn')) {
+    const by = b.dataset.act === 'sortnum' ? 'num' : 'col';
+    const undo = canUndoSort(by);
+    b.textContent = undo ? '↶ Undo sort' : SORT_LABELS[by];
+    b.classList.toggle('undo', undo);
+  }
 }
 
 const rackIds = () => (A.W ? A.W.rack : A.order);
 
+// Pressing the same sort button again puts the rack back how it was (as long as nothing changed since).
+const SORT_LABELS = { num: 'Sort 1-2-3', col: 'Sort colors' };
+const canUndoSort = by => !!(A.sortUndo && A.sortUndo.by === by && JSON.stringify(A.grid) === A.sortUndo.after);
 function sortRack(by) {
+  if (canUndoSort(by)) {
+    const back = A.sortUndo.before;
+    A.sortUndo = null;
+    flip($('#rack .grooves'), () => { A.grid = back; renderRack(); });
+    return;
+  }
+  const before = cloneGrid(A.grid);
   const ids = rackIds().slice();
   const cmp = by === 'num'
     ? (a, b) => { const x = tile(a), y = tile(b); return x.j - y.j || x.n - y.n || x.c - y.c || a - b; }
     : (a, b) => { const x = tile(a), y = tile(b); return x.c - y.c || x.n - y.n || a - b; };
   ids.sort(cmp);
   const cols = A.cols || 7;
-  // Colors get a gap between them when there is room.
   const groups = by === 'num' ? [ids] : [0, 1, 2, 3, 4].map(c => ids.filter(id => tile(id).c === c)).filter(a => a.length);
-  const room = ROWS * cols - ids.length >= groups.length - 1;
-  const flat = [];
-  groups.forEach((grp, i) => { if (i && room) flat.push(null); flat.push(...grp); });
-  const g = [];
-  for (let i = 0; i < Math.max(flat.length, ROWS * cols); i += cols) { const r = flat.slice(i, i + cols); while (r.length < cols) r.push(null); g.push(r); }
-  flip($('#rack .grooves'), () => { A.grid = g; renderRack(); });
+  const blank = () => Array(cols).fill(null);
+  let g = null;
+  if (by === 'col') {
+    // Keep each color together on one row, with a gap between colors, when they fit in 3 rows.
+    g = [blank()];
+    let col = 0;
+    for (const grp of groups) {
+      const need = grp.length + (col ? 1 : 0);
+      if (grp.length > cols) { g = null; break; }
+      if (col + need > cols) { if (g.length >= ROWS) { g = null; break; } g.push(blank()); col = 0; }
+      else if (col) col++;
+      for (const id of grp) g[g.length - 1][col++] = id;
+    }
+  }
+  if (!g) {   // otherwise, in reading order
+    const flat = groups.flat();
+    g = [];
+    for (let i = 0; i < Math.max(flat.length, ROWS * cols); i += cols) { const r = flat.slice(i, i + cols); while (r.length < cols) r.push(null); g.push(r); }
+  }
+  while (g.length < ROWS) g.push(blank());
+  flip($('#rack .grooves'), () => {
+    A.grid = g;
+    A.sortUndo = { by, before, after: JSON.stringify(fitGrid(cloneGrid(g), rackIds(), A.cols)) };
+    renderRack();
+  });
 }
 
 // Put tiles onto the rack: into a chosen slot (neighbours slide over), or the first empty slots.
@@ -594,8 +639,8 @@ function toRack(moving, target) {
   const mv = new Set(moving);
   const g = cloneGrid(A.grid).map(r => r.map(x => (mv.has(x) ? null : x)));
   if (target.startsWith('rackslot:')) {
-    const [r, c] = target.slice(9).split(',').map(Number);
-    A.grid = dropInto(g, moving, r, c);
+    const [r, c, after] = target.slice(9).split(',').map(Number);
+    A.grid = dropInto(g, moving, r, c, !!after);
   } else A.grid = g;   // renderRack puts them in the first gaps
 }
 
@@ -647,7 +692,7 @@ function startDrag(id) {
   A.drag = { ids: [...A.sel], slot: null, view: null };
   // Start with the tiles shown where they already are, so nothing jumps.
   const at = slotOf(id);
-  if (at) setDragSlot(at);
+  if (at) setDragSlot([...at, 0]);
   renderCenter(); renderMe();
 }
 
@@ -662,22 +707,27 @@ function setDragSlot(at) {
   d.slot = key;
   if (at) {
     const mv = new Set(d.ids);
-    d.view = dropInto(cloneGrid(A.grid).map(r => r.map(x => (mv.has(x) ? null : x))), d.ids, at[0], at[1]);
+    d.view = dropInto(cloneGrid(A.grid).map(r => r.map(x => (mv.has(x) ? null : x))), d.ids, at[0], at[1], at[2]);
   } else d.view = null;
   return true;
 }
 
-// The rack slot nearest the pointer.
+// Which slot the pointer is over, from the rack's fixed grid (never from tiles that are mid-slide).
+// It only changes when the pointer crosses the gap into the next slot, so nothing twitches.
+// Pointing at a tile puts yours in its place and slides it (and the ones after it) aside.
 function slotAt(x, y) {
-  const kids = [...document.querySelectorAll('#rack .grooves > .tile, #rack .grooves > .cell')];
-  let best = null, bd = Infinity;
-  kids.forEach((el, i) => {
-    const r = el.getBoundingClientRect();
-    const dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2);
-    const dist = dx * dx + dy * dy * 1.5;
-    if (dist < bd) { bd = dist; best = i; }
-  });
-  return best == null ? null : [Math.floor(best / A.cols), best % A.cols];
+  const g = $('#rack .grooves'), kids = g.children, cols = A.cols;
+  if (!kids.length || !cols) return null;
+  const k0 = kids[0];
+  const pitchX = kids.length > 1 && cols > 1 ? kids[1].offsetLeft - k0.offsetLeft : k0.offsetWidth + GAP;
+  const pitchY = kids.length > cols ? kids[cols].offsetTop - k0.offsetTop : k0.offsetHeight + 12;
+  const box = g.getBoundingClientRect();
+  const fx = (x - box.left - k0.offsetLeft + GAP / 2) / pitchX;
+  const fy = (y - box.top - k0.offsetTop) / pitchY;
+  const rows = Math.ceil(kids.length / cols);
+  const r = Math.max(0, Math.min(rows - 1, Math.floor(fy)));
+  const c = Math.max(0, Math.min(cols - 1, Math.floor(fx)));
+  return [r, c, 0];
 }
 
 document.addEventListener('pointermove', e => {
