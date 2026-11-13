@@ -18,7 +18,8 @@ export function makeAudio() {
     o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
   }
   const SCALE = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
-  const note = n => 261.6 * Math.pow(2, n / 12);
+  let root = 0;
+  const note = n => 261.6 * Math.pow(2, (n + root) / 12);
   /* A slow, sparse music box over a low drone. */
   function music() {
     const chords = [[-12, -5, 4], [-15, -8, 0], [-17, -10, -1], [-14, -7, 2]];
@@ -54,5 +55,20 @@ export function makeAudio() {
     click() { tone(660, 0.05, 'sine', 0.06); },
     bell() { tone(392, 2.2, 'sine', 0.25); tone(784, 1.6, 'sine', 0.1); tone(1180, 1, 'sine', 0.05); },
     quest() { [7, 12, 16].forEach((n, i) => tone(note(n), 0.5, 'triangle', 0.12, 0, i * 0.14)); },
+    roar() { tone(90, 0.7, 'sawtooth', 0.22, 0.5); tone(60, 0.8, 'square', 0.16, 0.7, 0.05); },
+    finisher() { [0, 7, 12, 19, 24].forEach((n, i) => tone(note(n), 0.3, 'sawtooth', 0.12, 0, i * 0.03)); tone(80, 0.4, 'square', 0.2, 0.4); },
+    gadget() { tone(520, 0.08, 'square', 0.1); tone(780, 0.08, 'square', 0.1, 0, 0.07); tone(1040, 0.16, 'triangle', 0.12, 0, 0.14); },
+    rare() { [0, 4, 7, 11, 14, 19].forEach((n, i) => tone(note(n + 12), 0.6, 'sine', 0.12, 0, i * 0.08)); },
+    drink() { [0, 2, 4].forEach((n, i) => tone(note(n + 5), 0.1, 'sine', 0.1, 1.2, i * 0.09)); },
+    chest() { tone(200, 0.15, 'square', 0.08, 1.6); tone(880, 0.3, 'triangle', 0.12, 0, 0.12); tone(1320, 0.4, 'sine', 0.1, 0, 0.2); },
+    horn() { tone(147, 1.6, 'sawtooth', 0.2); tone(220, 1.6, 'sawtooth', 0.12, 0, 0.05); },
+    forge() { [0, 1, 2].forEach(i => { tone(1400, 0.12, 'square', 0.12, 0.6, i * 0.3); tone(300, 0.1, 'triangle', 0.14, 0.5, i * 0.3); }); },
+    equip() { tone(440, 0.06, 'triangle', 0.1); tone(660, 0.1, 'triangle', 0.1, 0, 0.05); },
+    step(wet) { tone(wet ? 300 : 110, 0.05, wet ? 'sine' : 'triangle', 0.035, wet ? 1.8 : 0.6); },
+    talk() { tone(380 + Math.random() * 160, 0.03, 'square', 0.018); },
+    tickSound() { tone(900, 0.03, 'square', 0.05); },
+    card() { tone(600, 0.04, 'triangle', 0.08, 0.5); },
+    /* Each country plays the music box in its own key. */
+    setRegion(id) { root = { vale: 0, plains: 0, coast: 5, jungle: -3, desert: 2, crag: -5, frost: -7, heath: 7, reef: -2, volcano: -9 }[id] ?? 0; },
   };
 }
