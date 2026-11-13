@@ -1,0 +1,1 @@
+{ "name": "Big Money", "short_name": "Big Money", "start_url": ".", "display": "fullscreen", "orientation": "landscape", "background_color": "#12060c", "theme_color": "#12060c", "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }] }

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#12060c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Big Money</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="title">
+  <div class="card0">
+    <h1>BIG <span>MONEY</span></h1>
+    <p class="tag">Slots · Blackjack · Poker · Bar · Style · Quickscope Range · Fishing</p>
+    <label>Your name<input id="name" maxlength="16" placeholder="High Roller" autocomplete="off"></label>
+    <label>Room <small>(friends who type the same room play together)</small><input id="room" maxlength="20" autocomplete="off" autocapitalize="off"></label>
+    <button id="play" class="big gold">ENTER THE CASINO</button>
+    <p id="load" class="dim">Play money only. Nothing here costs or pays real money.</p>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div id="moneywrap"><div id="money">$0</div><div id="buffs"></div></div>
+  <div id="net"></div>
+  <div id="btns">
+    <button id="bMenu" aria-label="Menu">☰</button>
+    <button id="bChat" aria-label="Chat">💬</button>
+    <button id="bWave" aria-label="Wave">👋</button>
+    <button id="bDance" aria-label="Dance">💃</button>
+  </div>
+  <div id="chatlog"></div>
+  <form id="chatform"><input id="chatin" maxlength="140" placeholder="Say something…" autocomplete="off"></form>
+  <button id="prompt" class="hidden"></button>
+  <div id="stick"><div id="knob"></div></div>
+  <div id="toasts"></div>
+</div>
+
+<div id="tablep" class="hidden"></div>
+<div id="panel" class="panel hidden"></div>
+
+<div id="scope" class="hidden"><i></i></div>
+<div id="rangeui" class="hidden">
+  <div id="rInfo"></div>
+  <div class="cross"></div>
+  <button id="rStart" class="big gold">Start 45s round <kbd>R</kbd></button>
+  <button id="rExit" class="x">Leave range</button>
+  <button id="rScope" class="rb">SCOPE</button>
+  <button id="rFire" class="rb fire">FIRE</button>
+</div>
+
+<div id="fishui" class="hidden">
+  <div id="fMsg"></div>
+  <div id="fBars" class="hidden"><div class="bar"><i id="fProg"></i><span>catch</span></div><div class="bar ten"><i id="fTen"></i><span>line tension</span></div></div>
+  <button id="fAct" class="big gold">CAST</button>
+  <button id="fExit" class="x">Stop fishing</button>
+</div>
+
+<script src="js/vendor/peerjs.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

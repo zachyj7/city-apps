@@ -24,12 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-      # Clock Rate is served at the site root, Hourfall under /hourfall/.
+      # Clock Rate is served at the site root, Hourfall under /hourfall/, Big Money under /bigmoney/.
       - name: Assemble site
         run: |
           mkdir _site
           cp -r www/. _site/
           cp -r hourfall/www _site/hourfall
+          cp -r bigmoney/www _site/bigmoney
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
