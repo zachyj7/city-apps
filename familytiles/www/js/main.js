@@ -1,7 +1,7 @@
 // Family Tiles: what each player sees and touches.
 import { Net } from './net.js';
 import { Video } from './video.js';
-import { tile, analyze, openingPoints, checkTurn, groupsOf, tidyPos, SYMBOLS, COLOR_NAMES, OPEN_POINTS, BOARD_W } from './rules.js';
+import { tile, analyze, openingPoints, checkTurn, groupsOf, tidyPos, autoSplit, SYMBOLS, COLOR_NAMES, OPEN_POINTS, BOARD_W } from './rules.js';
 
 // Rack colors to pick from. hi/base/lo/deep shade the plastic, ink is the pressed-in name, text is printing on it.
 const RACKS = {
@@ -210,7 +210,10 @@ function moveSelected(target, pt) {
     W.rack = rackRest;
     const x = Math.min(Math.max(pt[0], 0), Math.max(0, BOARD_W - moving.length)), y = Math.max(pt[1], 0);
     moving.forEach((id, i) => { W.pos[id] = [r2(x + i), r2(y)]; A.loose.add(id); });
-    settleSoon();
+    // A tile played into the middle of a run splits it straight away; otherwise things straighten after a pause.
+    // Tiles put onto a set already on the table slot in at once (their neighbours shift over).
+    const joins = groupsOf(W.pos).some(g => g.some(id => mv.has(id)) && g.some(id => !A.loose.has(id)));
+    settleSoon(joins || autoSplit(W.pos, A.loose) ? 150 : 900);
   } else {
     for (const id of moving) delete W.pos[id];
     W.rack = rackRest.concat(moving);
@@ -223,12 +226,13 @@ function moveSelected(target, pt) {
 // A moment after tiles are put down, each set is straightened into a level, evenly spaced row.
 // Sets stay where they were put: nothing snaps to a grid.
 let settleT = 0;
-function settleSoon() { clearTimeout(settleT); settleT = setTimeout(settleNow, 900); }
+function settleSoon(ms = 900) { clearTimeout(settleT); settleT = setTimeout(settleNow, ms); }
 function settleNow() {
   clearTimeout(settleT);
   if (!A.W) { A.loose.clear(); return; }
   if (A.drag) return settleSoon();
-  const next = tidyPos(A.W.pos, A.loose);
+  const split = autoSplit(A.W.pos, A.loose);
+  const next = split ? tidyPos(split.pos, split.moved) : tidyPos(A.W.pos, A.loose);
   A.loose.clear();
   const ids = Object.keys(next);
   if (ids.every(id => A.W.pos[id] && A.W.pos[id][0] === next[id][0] && A.W.pos[id][1] === next[id][1])) return;

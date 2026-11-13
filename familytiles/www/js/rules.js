@@ -145,7 +145,7 @@ export function isMJ(startTable, startRack, table) {
 
 export const BOARD_W = 15;      // wide enough for the longest run (13 tiles)
 const JOIN_X = 1.6;             // tiles whose left edges are this close (1 = touching) belong together...
-const JOIN_Y = 0.5;             // ...when they are also within half a row of the same height
+const JOIN_Y = 0.6;             // ...when they also overlap in height (a tile is about 0.7 of a row tall)
 const GAP = 0.8;                // the clear space kept between two sets on one row, so they never read as one
 const r2 = v => Math.round(v * 100) / 100;
 
@@ -194,13 +194,35 @@ function firstFree(placed, n) {
   for (let y = 0; ; y++) for (let x = 0; x <= maxX(n); x += 0.5) if (freeAt(placed, n, x, y)) return [x, y];
 }
 
+// The sets on the table when some tiles ("moved") have just been put down. Tiles put onto or beside a set
+// join that set only: the nearest one, so a tile dropped on the end of one set never ties it to its neighbour.
+function joinMoved(pos, mv) {
+  const stillPos = {}, movedPos = {};
+  for (const k of Object.keys(pos)) (mv.has(Number(k)) ? movedPos : stillPos)[k] = pos[k];
+  const sets = groupsOf(stillPos);
+  if (!Object.keys(movedPos).length) return sets;
+  const out = sets.map(g => g.slice()), alone = [];
+  for (const c of groupsOf(movedPos)) {
+    let best = -1, bd = Infinity;
+    sets.forEach((g, gi) => {
+      for (const a of g) for (const b of c) {
+        const dx = Math.abs(pos[a][0] - pos[b][0]);
+        if (dx <= JOIN_X && Math.abs(pos[a][1] - pos[b][1]) <= JOIN_Y && dx < bd) { bd = dx; best = gi; }
+      }
+    });
+    if (best < 0) alone.push(c); else out[best].push(...c);
+  }
+  for (const g of out) g.sort((a, b) => pos[a][0] - pos[b][0] || pos[a][1] - pos[b][1] || a - b);
+  return [...out, ...alone];
+}
+
 // Straighten the table up: each set becomes a level, evenly spaced row, staying where it was put.
 // "moved" are the tiles just put down: the tiles that were already there stay still and the new ones line up
 // with them. A set that would crowd another is nudged to the nearest clear spot. With "reorder" (the end of
 // a turn) each valid set is also put in order (runs low to high, groups by color).
 export function tidyPos(pos, moved, reorder) {
   const mv = moved || new Set();
-  const groups = groupsOf(pos).map(g => {
+  const groups = joinMoved(pos, mv).map(g => {
     const still = g.filter(id => !mv.has(id));
     const base = still.length ? still : g;
     const y = base.reduce((s, id) => s + pos[id][1], 0) / base.length;
@@ -208,15 +230,77 @@ export function tidyPos(pos, moved, reorder) {
     const x = k < 0 ? pos[g[0]][0] : pos[g[k]][0] - k;
     let ids = g;
     if (reorder) { const a = analyze(g); if (a.ok) ids = a.order; }
-    return { ids, n: g.length, x: r2(Math.min(Math.max(x, 0), maxX(g.length))), y: r2(Math.max(0, y)), loose: still.length < g.length };
+    return { ids, n: g.length, x: r2(Math.min(Math.max(x, 0), maxX(g.length))), y: r2(Math.max(0, y)), loose: still.length < g.length, grown: still.length > 0 && still.length < g.length,
+      sx: still.length ? Math.min(...still.map(id => pos[id][0])) : 0 };
   });
   const placed = [], out = {};
-  for (const g of [...groups.filter(g => !g.loose), ...groups.filter(g => g.loose)]) {
-    const [x, y] = nearestFree(placed, g.n, g.x, g.y);
+  const put = (g, x0, y0) => {
+    const [x, y] = nearestFree(placed, g.n, r2(Math.min(Math.max(x0, 0), maxX(g.n))), y0);
     placed.push({ x, y, n: g.n });
     g.ids.forEach((id, i) => { out[id] = [r2(x + i), r2(y)]; });
+  };
+  // A set that just had tiles added to it stays put and takes the room it needs...
+  // A tile added on its left end would push into a close neighbour on that side: the set grows rightwards instead.
+  const mid = g => g.x + g.n / 2;
+  const grown = groups.filter(g => g.grown);
+  for (const g of grown) {
+    if (groups.some(o => !o.loose && mid(o) < mid(g) && hits(g, o))) g.x = r2(Math.min(g.sx, maxX(g.n)));
+    put(g, g.x, g.y);
   }
+  // ...and untouched sets beside it on the same row slide along to make that room (nearest ones first).
+  const rest = groups.filter(g => !g.loose);
+  for (const g of rest) {
+    const near = grown.filter(a => Math.abs(a.y - g.y) < 1).sort((a, b) => Math.abs(mid(a) - mid(g)) - Math.abs(mid(b) - mid(g)))[0];
+    g.side = near ? (mid(g) >= mid(near) ? 1 : -1) : 0;
+  }
+  const ordered = [...rest.filter(g => g.side < 0).sort((a, b) => b.x - a.x), ...rest.filter(g => g.side >= 0).sort((a, b) => a.x - b.x)];
+  for (const g of ordered) {
+    let x = g.x;
+    if (g.side) for (let n = 0; n < 30; n++) {
+      const p = placed.find(q => hits({ x, y: g.y, n: g.n }, q));
+      if (!p) break;
+      x = r2(g.side > 0 ? p.x + p.n + GAP : p.x - g.n - GAP);
+    }
+    put(g, x, g.y);
+  }
+  // Brand new sets go last: they are the ones that give way.
+  for (const g of groups.filter(g => g.loose && !g.grown)) put(g, g.x, g.y);
   return out;
+}
+
+// The MJ, done for the player: a tile dropped into a run that it does not simply extend. If the run can be
+// split in two so that both halves are valid with the new tile in one of them, the tiles shift apart and a
+// space opens between the halves. Example: a red 6 dropped onto red 3-4-5-6-7-8-9 gives 3-4-5-6 and 6-7-8-9.
+// Returns { pos, moved } (the new places, and the tiles that moved), or null when there is nothing to split.
+export function autoSplit(pos, moved) {
+  const mv = moved || new Set();
+  let out = null;
+  const shifted = new Set(mv);
+  for (const g of groupsOf(pos)) {
+    const mine = g.filter(id => mv.has(id)), rest = g.filter(id => !mv.has(id));
+    if (mine.length !== 1 || rest.length < 3 || analyze(g).ok) continue;
+    const a = analyze(rest);
+    if (!a.ok || a.kind !== 'run') continue;
+    const t = mine[0], order = a.order;
+    const at = rest.filter(id => pos[id][0] < pos[t][0]).length;   // where along the run it was dropped
+    let best = null;
+    for (let k = 1; k < order.length; k++) {
+      const L = order.slice(0, k), R = order.slice(k);
+      for (const [x, y] of [[[...L, t], R], [L, [t, ...R]]]) {
+        const ax = analyze(x), ay = analyze(y);
+        if (!ax.ok || !ay.ok) continue;
+        if (!best || Math.abs(k - at) < best.d) best = { d: Math.abs(k - at), x: ax.order, y: ay.order };
+      }
+    }
+    if (!best) continue;
+    out = out || { ...pos };
+    const x0 = Math.min(...rest.map(id => pos[id][0]));
+    const y0 = r2(rest.reduce((s, id) => s + pos[id][1], 0) / rest.length);
+    best.x.forEach((id, i) => { out[id] = [r2(x0 + i), y0]; });
+    // the second half sits one tile's width further along, and is the half that gives way if space is tight
+    best.y.forEach((id, i) => { out[id] = [r2(x0 + best.x.length + 1 + i), y0]; shifted.add(id); });
+  }
+  return out && { pos: out, moved: shifted };
 }
 
 // Lay a new list of sets onto the table (for computer players, and for games saved by an older version):

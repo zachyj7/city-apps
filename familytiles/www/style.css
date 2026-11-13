@@ -47,7 +47,7 @@
   --tile-side-dark: #b6a47a;
   --t0: #111111;   /* black */
   --t1: #d4001a;   /* red */
-  --t2: #0043d6;   /* blue */
+  --t2: #2f9be6;   /* baby blue, a little darker so it reads well */
   --t3: #e05a00;   /* orange */
 
   /* rack plastic; each rack overrides these with its owner's chosen color */
@@ -485,7 +485,7 @@ footer {
 #rackInfo { color: var(--rk-text); font-family: var(--display); font-weight: 600; font-size: .92em; white-space: nowrap; }
 #sorts { display: flex; gap: 8px; }
 .sortbtn {
-  display: inline-flex; align-items: center; gap: .35em;
+  display: inline-flex; align-items: center; gap: .35em; white-space: nowrap;
   font-family: var(--display); font-weight: 600; font-size: .85em; color: var(--rk-text); cursor: pointer;
   background: linear-gradient(var(--rk-hi), var(--rk)); border: 0; border-radius: 10px; padding: .2em .75em; min-height: 34px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 2px 0 var(--rk-deep);
