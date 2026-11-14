@@ -457,11 +457,10 @@ function renderSeats() {
     if (el.querySelector('.tag').innerHTML !== tag) el.querySelector('.tag').innerHTML = tag;
     const face = el.querySelector('.face');
     const av = face.querySelector('.avatar');
-    const avHtml = p.cpu ? `${ic('bot')}<small>${LEVEL_NAMES[p.cpu]}</small>` : esc((p.name || '?').slice(0, 1).toUpperCase());
+    const avHtml = p.cpu ? `<b class="mono">${ic('bot')}</b><small>${LEVEL_NAMES[p.cpu]}</small>` : `<b class="mono">${esc((p.name || '?').slice(0, 1).toUpperCase())}</b>`;
     if (av.innerHTML !== avHtml) av.innerHTML = avHtml;
     av.classList.toggle('bot', !!p.cpu);
-    av.style.background = p.cpu ? '' : `hsl(${hash(p.pid) % 360},55%,38%)`;
-    if (p.cpu) av.setAttribute('style', rackStyle(p.rc));
+    if (av.getAttribute('style') !== st) av.setAttribute('style', st);
     let stream = null, key = p.peer;
     if (isMe) { stream = A.camOn && A.video.cam; key = 'me'; }
     else if (p.cam && p.on) stream = A.video.streams.get(p.peer);
@@ -478,7 +477,7 @@ function renderSeats() {
     return el;
   };
 
-  const wide = window.innerWidth >= 900;
+  const wide = window.innerWidth >= 1100;
   const left = $('#seatsL'), right = $('#seatsR');
   const els = others.map(p => fill(p, false));
   const m = me();
@@ -507,6 +506,7 @@ function syncChildren(parent, kids) {
 
 function renderCenter() {
   const S = A.S, box = $('#center');
+  box.parentElement.classList.toggle('mat', !!S && S.phase === 'play');
   if (!S) { box.innerHTML = '<div class="panel"><h2>Finding your table…</h2></div>'; return; }
   const cur = S.phase === 'play' && S.players.find(p => p.pid === S.turn);
   document.title = !cur ? 'Family Tiles' : myTurn() ? '▶ Your turn! · Family Tiles' : `${cur.name}'s turn · Family Tiles`;
@@ -627,9 +627,10 @@ function renderBoard(box) {
     });
   }
   const mainEl = box.parentElement, cs = getComputedStyle(mainEl);
-  const room = mainEl.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 2;
+  const wpx = Math.ceil(maxX * u.ux - 4);
+  const room = mainEl.offsetHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 2 - (wpx > box.clientWidth ? 9 : 0);
   const h = Math.max(html ? (maxY + (live ? 2.4 : 1.2)) * u.uy : 0, room);
-  box.innerHTML = `<div id="board" class="board ${live ? 'live' : ''}" style="--tw:${u.bw}px;--th:${u.bh}px;width:${Math.ceil(maxX * u.ux - 4)}px;height:${Math.floor(h)}px">${html}</div>`;
+  box.innerHTML = `<div id="board" class="board ${live ? 'live' : ''}" style="--tw:${u.bw}px;--th:${u.bh}px;width:${wpx}px;height:${Math.floor(h)}px">${html}</div>`;
 }
 
 // The "first 30" badge: a green tick once a player has made their opening play, a grey padlock until then.
@@ -647,11 +648,6 @@ function renderMe() {
   let html = '';
   if (myTurn()) {
     const placed = A.W && A.W.rack.length < A.W.startRack.length;
-    if (A.W && !m.opened) {
-      const pts = openingPoints(A.W.startTable, A.W.startRack, groupsOf(A.W.pos));
-      const ok = pts >= OPEN_POINTS;
-      html += `<span class="meter ${ok ? 'ok' : ''}" title="Your first play has to add up to ${OPEN_POINTS}"><span class="bar"><i style="width:${Math.min(100, pts / OPEN_POINTS * 100)}%"></i></span><span><b>${pts}</b>/${OPEN_POINTS}</span>${ok ? ic('check') : ''}</span>`;
-    }
     html += `<button class="btn go" data-act="done">${ic('check')}Done</button>`;
     html += `<button class="btn draw" data-act="draw" title="Tiles left to draw: ${S.pool.length}">${S.pool.length ? `${ic('draw')}Draw<b class="cnt">${S.pool.length}</b>` : `${ic('skip')}Pass`}</button>`;
     html += `<button class="btn" data-act="undo" aria-label="Undo" title="Undo" ${A.hist.length ? '' : 'disabled'}>${ic('undo')}<span class="long">Undo</span></button>`;
@@ -779,7 +775,13 @@ function renderRack() {
     if (x == null || (d && !d.view && d.ids.includes(x))) return `<div class="cell" data-drop="rackslot:${r},${c}"></div>`;
     return tileHTML(x, d && d.view && d.ids.includes(x) ? 'landing' : '');
   }).join('')).join('');
-  $('#rackInfo').innerHTML = `${S.phase === 'play' ? openBadge(m.opened) : ''}${ids.length} tiles`;
+  let badge = S.phase === 'play' ? openBadge(m.opened) : '';
+  if (A.W && !m.opened) {
+    // My first play: the badge fills up as the tiles I have put down add up towards 30.
+    const pts = openingPoints(A.W.startTable, A.W.startRack, groupsOf(A.W.pos)), ok = pts >= OPEN_POINTS;
+    badge = `<span class="open30 show meter ${ok ? 'yes' : ''}" style="--p:${Math.min(100, Math.round(pts / OPEN_POINTS * 100))}%" title="Your first play has to add up to ${OPEN_POINTS}">${ic(ok ? 'check' : 'lock')}<b>${pts}</b>/${OPEN_POINTS}</span>`;
+  }
+  $('#rackInfo').innerHTML = `${badge}<span>${ids.length}<span class="long"> tiles</span></span>`;
   for (const b of document.querySelectorAll('.sortbtn')) {
     const by = b.dataset.act === 'sortnum' ? 'num' : 'col';
     const undo = canUndoSort(by);
@@ -1169,7 +1171,5 @@ function beep(f, dur, f2) {
     o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + dur);
   } catch (e) { /* no sound */ }
 }
-
-function hash(s) { let h = 7; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; }
 
 setupJoin();
