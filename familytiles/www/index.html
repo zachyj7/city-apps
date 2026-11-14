@@ -11,6 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,700&family=Fredoka:wght@500;600;700&family=Yellowtail&display=swap" rel="stylesheet">
+<!-- just the digit 0 from Inter, which draws it as a plain oval (the tile font puts a slash through it) -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@700&text=0&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -45,6 +47,7 @@
     <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3.5"/><path d="M12 4v4M9 13.5v.5M15 13.5v.5M9.5 17h5M2 13v3M22 13v3"/><circle cx="12" cy="3" r="1.2"/></symbol>
     <symbol id="i-space" viewBox="0 0 24 24"><path d="M4 5v14M20 5v14M8 12h8M10.5 9.5L8 12l2.5 2.5M13.5 9.5L16 12l-2.5 2.5"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5M8 8l3 3M16 8l-3 3M8 16l3-3M16 16l-3-3"/></symbol>
     <symbol id="i-skip" viewBox="0 0 24 24"><path d="M5 5l9 7-9 7zM18 5v14"/></symbol>
   </defs>
 </svg>
@@ -81,6 +84,7 @@
   </header>
   <div id="settings" class="card popover" hidden>
     <div class="pophead"><b>Settings</b><button class="iconbtn" id="setClose" aria-label="Close settings"><svg class="ic"><use href="#i-close"/></svg></button></div>
+    <button type="button" class="setrow setlink" id="statsBtn"><span class="setlabel"><svg class="ic"><use href="#i-trophy"/></svg>Statistics and coach</span><svg class="ic"><use href="#i-arrow"/></svg></button>
     <div class="setrow">
       <span class="setlabel"><svg class="ic"><use href="#i-text"/></svg>Text size</span>
       <span class="stepper"><button class="btn" id="smaller" aria-label="Smaller">A−</button><b id="zoomVal">100%</b><button class="btn" id="bigger" aria-label="Bigger">A+</button></span>

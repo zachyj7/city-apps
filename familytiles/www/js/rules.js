@@ -4,7 +4,7 @@
 
 export const PER_SET = 106;
 export const COLOR_NAMES = ['black', 'red', 'blue', 'orange'];
-export const SYMBOLS = ['■', '●', '▲', '◆'];
+export const SYMBOLS = ['♣', '♥', '♠', '◆'];
 export const JOKER_POINTS = 30;
 export const OPEN_POINTS = 30;
 export const DEAL = 14;
@@ -265,6 +265,22 @@ export function tidyPos(pos, moved, reorder) {
   }
   // Brand new sets go last: they are the ones that give way.
   for (const g of groups.filter(g => g.loose && !g.grown)) put(g, g.x, g.y);
+  return out;
+}
+
+// The end of a turn: the sets are packed up tidily in reading order (top row first, left to right), one tile's
+// space apart, onto as few rows as they need. Each set keeps its own order.
+export function packPos(pos) {
+  const sets = groupsOf(pos).map(g => ({ ids: g, x: Math.min(...g.map(id => pos[id][0])), y: Math.round(g.reduce((s, id) => s + pos[id][1], 0) / g.length) }));
+  sets.sort((a, b) => a.y - b.y || a.x - b.x);
+  const out = {};
+  let x = 0, y = 0;
+  for (const s of sets) {
+    const n = s.ids.length;
+    if (x > 0 && x + n > BOARD_W) { x = 0; y++; }
+    s.ids.forEach((id, i) => { out[id] = [x + i, y]; });
+    x += n + 1;
+  }
   return out;
 }
 

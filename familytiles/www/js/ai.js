@@ -215,3 +215,83 @@ export function aiTurn(level, startTable, startRack, opened) {
   if (rack.length === startRack.length) return null;
   return { table, rack };
 }
+
+// ---- the coach: the best play there is ----
+// Looks for the turn that puts down the most rack tiles (then the most points), rearranging the table any way
+// the rules allow: every tile already on the table must end up in a valid set, and any rack tiles may join
+// them or make sets of their own. Before a player's first 30 only new sets from their own rack count.
+// Returns { table, played, value, complete } - the table after the play, the rack tiles put down, their points,
+// and whether the search looked at every possibility (false when it ran out of time and gives its best find).
+export function bestPlay(startTable, startRack, opened, budget = {}) {
+  const ms = budget.ms || 1500, limit = budget.nodes || 600000;
+  const pts = ids => ids.reduce((s, id) => s + (tile(id).j ? 0 : tile(id).n), 0);
+  const same = () => startTable.map(s => s.slice());
+  if (!opened) {
+    const pack = bestPacking(startRack, true, true, limit);
+    if (!pack.tiles || pack.value < OPEN_POINTS) return { table: same(), played: [], value: 0, complete: true };
+    const made = realize(pack.sets, startRack);
+    return { table: [...same(), ...made.sets], played: made.sets.flat(), value: pts(made.sets.flat()), complete: true };
+  }
+
+  // Start from what the hard computer player would do, so the answer is never worse than that.
+  let best = { tiles: 0, value: 0, table: same() };
+  try {
+    const h = aiTurn('hard', startTable, startRack, true);
+    if (h) { const used = startRack.filter(id => !h.rack.includes(id)); best = { tiles: used.length, value: pts(used), table: h.table }; }
+  } catch (e) { /* fall back to the search alone */ }
+
+  const tableIds = startTable.flat();
+  const cands = candidateSets([...tableIds, ...startRack], true);
+  const byKey = new Map();
+  cands.forEach((keys, i) => { for (const k of new Set(keys)) { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(i); } });
+  const pool = ids => { const m = new Map(); for (const id of ids) { const k = keyOf(id); if (!m.has(k)) m.set(k, []); m.get(k).push(id); } return m; };
+  const must = pool(tableIds), may = pool(startRack);
+  const have = k => (must.get(k) || []).length + (may.get(k) || []).length;
+  const fits = keys => { const need = new Map(); for (const k of keys) need.set(k, (need.get(k) || 0) + 1); for (const [k, n] of need) if (have(k) < n) return false; return true; };
+  const total = startRack.length, deadline = Date.now() + ms;
+  let nodes = 0, complete = true, used = 0, usedVal = 0;
+  const chosen = [];
+
+  (function dfs() {
+    if (best.tiles === total) return;
+    if (++nodes > limit || (nodes % 256 === 0 && Date.now() > deadline)) { complete = false; return; }
+    // the table tile with the fewest ways to be covered goes first
+    let key = null, opts = null;
+    for (const [k, ids] of must) {
+      if (!ids.length) continue;
+      const o = (byKey.get(k) || []).filter(i => fits(cands[i]));
+      if (!o.length) return;                       // this table tile can no longer go anywhere
+      if (!opts || o.length < opts.length) { key = k; opts = o; if (o.length === 1) break; }
+    }
+    if (!key) {
+      // every table tile is in a set: the rack tiles that are left may still make new sets of their own
+      const rest = [...may.values()].flat();
+      const pack = rest.length >= 3 ? bestPacking(rest, true, false, 4000) : { tiles: 0, value: 0, sets: [] };
+      const tiles = used + pack.tiles;
+      const made = realize(pack.sets, rest);
+      const value = usedVal + pts(made.sets.flat());
+      if (tiles > best.tiles || (tiles === best.tiles && value > best.value)) best = { tiles, value, table: [...chosen.map(s => s.slice()), ...made.sets] };
+      return;
+    }
+    if (used + [...may.values()].reduce((s, a) => s + a.length, 0) <= best.tiles && best.tiles) return;   // can't beat it
+    for (const i of opts) {
+      const keys = cands[i], set = [], fromRack = [];
+      for (const k of keys) {
+        const m = must.get(k);
+        if (m && m.length) set.push(m.pop());
+        else { const id = may.get(k).pop(); set.push(id); fromRack.push(id); }
+      }
+      used += fromRack.length; usedVal += pts(fromRack);
+      chosen.push(set);
+      dfs();
+      chosen.pop();
+      used -= fromRack.length; usedVal -= pts(fromRack);
+      for (const id of set) (fromRack.includes(id) ? may : must).get(keyOf(id)).push(id);
+      if (!complete || best.tiles === total) return;
+    }
+  })();
+
+  const after = new Set(best.table.flat());
+  const played = startRack.filter(id => after.has(id));
+  return { table: best.table.map(s => { const a = analyze(s); return a.ok ? a.order : s; }), played, value: pts(played), complete: complete || best.tiles === total };
+}

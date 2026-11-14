@@ -1,8 +1,9 @@
 // The referee. It runs in one player's browser (the host) and holds the true game.
 // Every change is sent to everyone as one full snapshot, so if the host leaves, whoever takes over
 // carries on from their last snapshot.
-import { makePool, checkTurn, isMJ, DEAL, groupsOf, tidyPos, layoutPos } from './rules.js';
+import { makePool, checkTurn, isMJ, DEAL, groupsOf, tidyPos, layoutPos, packPos } from './rules.js';
 import { aiTurn } from './ai.js';
+import { check } from './help.js';
 
 const CPU_NAMES = ['Ruby', 'Otto', 'Pip', 'Juno', 'Ziggy', 'Nova', 'Bolt', 'Echo'];
 const LEVELS = ['easy', 'medium', 'hard'];
@@ -136,6 +137,51 @@ export class Room {
 
     if (m.t === 'cam') { p.cam = !!m.cam; p.mic = !!m.mic; return this.push(); }
     if (m.t === 'rc') { p.rc = cleanColor(m.rc); return this.push(); }
+    // They switched the best-play helper on: marked as a cheater, and everyone is told. Switched off, the mark
+    // stays until they have played one whole turn without it (see cleanTurn).
+    if (m.t === 'cheat') {
+      if (s.phase !== 'play' || !p.seat) return;
+      if (m.on === false) {
+        if (!p.cheat || p.cheatOffAt != null) return;
+        // switched off partway through their own turn: that turn doesn't count (they saw the best play for it)
+        p.cheatOffAt = ((p.st && p.st.turns) || 0) + (s.turn === p.pid ? 1 : 0);
+        return this.push();
+      }
+      if (s.statsOff) return;   // the page is locked: no best-play card to switch on
+      if (p.cheat) { if (p.cheatOffAt != null) { p.cheatOffAt = null; return this.push(); } return; }
+      p.cheat = true; p.cheatOffAt = null;
+      s.shame = { name: p.name, pid: p.pid, k: s.v + 1 };
+      this.note(p.name + ' turned on the best-play helper');
+      return this.push();
+    }
+    // The helper locks (or opens) the Statistics and coach page for the whole table. The sign-in is checked
+    // here too, one check at a time and not in quick succession.
+    if (m.t === 'statslock') {
+      if (this.checking || Date.now() - (this.lastCheck || 0) < 1500) return;
+      this.checking = true;
+      check(m.u, m.p).then(role => {
+        this.checking = false; this.lastCheck = Date.now();
+        if (role !== 'helper' || this.closed || this.s !== s) return;
+        const off = !!m.off;
+        if (!!s.statsOff === off) return this.push();
+        s.statsOff = off;
+        if (off) for (const q of s.players) {
+          // the best-play card goes away with the page: the cheater mark comes off after their next clean turn
+          if (q.cheat && q.cheatOffAt == null) q.cheatOffAt = ((q.st && q.st.turns) || 0) + (s.turn === q.pid ? 1 : 0);
+        }
+        this.note(off ? 'Statistics and coach were locked' : 'Statistics and coach were opened again');
+        this.push();
+      });
+      return;
+    }
+
+    // The shape of their rack (which slots hold a tile), shown on their little rack for everyone.
+    if (m.t === 'layout') {
+      if (!Array.isArray(m.rows) || !m.rows.length || m.rows.length > 8 || !m.rows.every(x => typeof x === 'string' && /^[01]{1,30}$/.test(x))) return;
+      if (p.lay && p.lay.join('/') === m.rows.join('/')) return;
+      p.lay = m.rows;
+      return this.push();
+    }
 
     // A private note from one player to another (the helper view uses it). Nothing in the game changes.
     if (m.t === 'relay') {
@@ -159,7 +205,8 @@ export class Room {
       const seats = ready.slice(0, MAX_SEATS);
       s.sets = seats.length > 4 ? 2 : 1;
       s.pool = makePool(s.sets);
-      for (const q of s.players) { q.seat = seats.includes(q); q.rack = []; q.opened = false; }
+      for (const q of s.players) { q.seat = seats.includes(q); q.rack = []; q.opened = false; q.st = { turns: 0, played: 0, drew: 0, best: 0 }; q.cheat = false; q.cheatOffAt = null; }
+      s.startedAt = Date.now();
       for (const q of seats) q.rack = s.pool.splice(0, DEAL);
       s.table = []; s.pos = {}; s.work = null; s.passes = 0; s.result = null; s.round++;
       s.phase = 'play';
@@ -216,6 +263,9 @@ export class Room {
     const s = this.s;
     {
       const played = p.rack.length - w.rack.length;
+      const st = p.st || (p.st = { turns: 0, played: 0, drew: 0, best: 0 });
+      st.turns++; st.played += played; st.best = Math.max(st.best, played);
+      this.cleanTurn(p);
       if (p.opened && isMJ(s.table, p.rack, w.table)) {
         s.fx = { t: 'mj', name: p.name, k: s.v + 1 };
         this.note(`MJ! ${p.name} split a run and played in the middle`);
@@ -224,18 +274,34 @@ export class Room {
         p.opened = true;
         this.note(`${p.name} made their first play`);
       } else this.note(`${p.name} played ${played} tile${played === 1 ? '' : 's'}`);
-      // Straighten the table up and put each set in order.
-      s.pos = tidyPos(w.pos || layoutPos(s.pos, w.table), null, true); s.table = groupsOf(s.pos);
+      // Straighten the table up, put each set in order, and pack the sets up tidily.
+      s.pos = packPos(tidyPos(w.pos || layoutPos(s.pos, w.table), null, true)); s.table = groupsOf(s.pos);
+      const before = p.rack.length, left = w.rack.length;
+      if (left === 1 && before > 1 || left > 1 && left <= 3 && before > 3) {
+        s.alert = { name: p.name, pid: p.pid, rc: p.rc, n: left, k: s.v + 1 };
+        this.note(left === 1 ? `${p.name} is down to their last tile` : `${p.name} is down to ${left} tiles`);
+      }
       p.rack = w.rack; s.work = null; s.passes = 0;
       if (!p.rack.length) return this.finish(p);
       return this.next();
     }
   }
 
+  // A whole turn played with the best-play helper switched off: the cheater mark comes off.
+  cleanTurn(p) {
+    if (p.cheat && p.cheatOffAt != null && p.st && p.st.turns > p.cheatOffAt) {
+      p.cheat = false; p.cheatOffAt = null;
+      this.note(p.name + ' played a turn without the best-play helper');
+    }
+  }
+
   draw(p) {
     const s = this.s;
     s.work = null;
-    if (s.pool.length) { p.rack.push(s.pool.pop()); s.passes = 0; this.note(`${p.name} drew a tile`); }
+    const st = p.st || (p.st = { turns: 0, played: 0, drew: 0, best: 0 });
+    st.turns++;
+    this.cleanTurn(p);
+    if (s.pool.length) { p.rack.push(s.pool.pop()); s.passes = 0; st.drew++; this.note(`${p.name} drew a tile`); }
     else {
       s.passes++;
       this.note(`${p.name} passed (no tiles left to draw)`);

@@ -5,19 +5,21 @@
 // The sign-in is checked in each browser against a scrambled copy of the username and password, so the
 // plain text is not in this file. It keeps casual visitors out; it is not strong security.
 const SALT = 'familytiles-helper-v1', ROUNDS = 200000;
-const KEY = 'b4aae67e89a11d10fd56e57824caa3de0fffb64f94ef938241ad387bb79c8603';
+const KEYS = { helper: 'ed5ea437a688e4ea739c93fd156211d6e1b537c4ca62320fa177fa8faeb98969' };
 const CHUNK = 12000;        // one message stays well under what a data channel will carry
 const FRAME_MS = 600;       // at most this often
 const KEEP_MS = 6000;       // the helper says "still here" this often
 const DROP_MS = 20000;      // and is forgotten after this long without it
 
-async function check(u, p) {
+// Which login this is ('helper'), or null. (The referee uses it too, for the coach switch.)
+export async function check(u, p) {
   try {
     const enc = new TextEncoder();
     const k = await crypto.subtle.importKey('raw', enc.encode(String(u).trim().toLowerCase() + '\n' + String(p)), 'PBKDF2', false, ['deriveBits']);
     const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(SALT), iterations: ROUNDS }, k, 256);
-    return [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('') === KEY;
-  } catch (e) { return false; }
+    const hex = [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
+    return Object.keys(KEYS).find(r => KEYS[r] === hex) || null;
+  } catch (e) { return null; }
 }
 
 function device(ua) {
@@ -32,7 +34,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
   const relay = (to, m) => send({ t: 'relay', to, m });
   const nameOf = id => { const p = A.S && A.S.players.find(q => q.pid === id); return p ? p.name : 'Someone'; };
 
-  let cred = null;                 // { u, p } once signed in as the helper
+  let cred = null;                 // { u, p, role } once signed in
   let viewing = null;              // the screen I am looking at: { pid, name, parts, got }
   const watchers = new Map();      // people looking at my screen: pid -> { tok, at }
   const errors = [];
@@ -43,14 +45,15 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
   let boxKey = null;
   function renderBox() {
     const people = cred && A.S ? A.S.players.filter(p => p.on && !p.cpu && p.pid !== pid) : [];
-    const key = cred ? 'in|' + people.map(p => p.pid + p.name).join('|') : 'out';
+    const statsOn = !(A.S && A.S.statsOff);
+    const key = cred ? cred.role + '|' + statsOn + '|' + people.map(p => p.pid + p.name).join('|') : 'out';
     if (key === boxKey) return;
     boxKey = key;
     if (!cred) {
       box.innerHTML = `<details class="helpin"><summary>${ic('lock')}Helper sign-in</summary>
         <form id="helpForm" autocomplete="off">
-          <input id="helpUser" aria-label="Helper username" placeholder="Username" autocapitalize="none" spellcheck="false" maxlength="40">
-          <input id="helpPass" type="password" aria-label="Helper password" placeholder="Password" maxlength="60">
+          <input id="helpUser" aria-label="Username" placeholder="Username" autocapitalize="none" spellcheck="false" maxlength="40">
+          <input id="helpPass" type="password" aria-label="Password" placeholder="Password" maxlength="60">
           <button class="btn" type="submit">Sign in</button>
         </form></details>`;
       return;
@@ -58,18 +61,28 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     box.innerHTML = `<span class="setlabel">${ic('users')}Helper: view a screen<button type="button" class="linkbtn" data-help="out">Sign out</button></span>
       <div class="helplist">${people.length
         ? people.map(p => `<button type="button" class="btn" data-view="${esc(p.pid)}">${esc(p.name)}</button>`).join('')
-        : '<span class="helpnone">Nobody else is at the table yet.</span>'}</div>`;
+        : '<span class="helpnone">Nobody else is at the table yet.</span>'}</div>
+      <label class="setrow helpstats"><span class="setlabel">${ic('trophy')}Statistics and coach for everyone</span>
+        <input type="checkbox" class="switch" id="helpStats" ${statsOn ? 'checked' : ''}></label>`;
   }
+
+  // The helper can lock the Statistics and coach page for the whole table (and open it again).
+  // The referee checks the sign-in too.
+  box.addEventListener('change', e => {
+    if (e.target.id !== 'helpStats' || !cred) return;
+    send({ t: 'statslock', off: !e.target.checked, u: cred.u, p: cred.p });
+    toast(e.target.checked ? 'Statistics and coach are open to everyone again.' : 'Statistics and coach are now locked for everyone.');
+  });
 
   box.addEventListener('submit', async e => {
     e.preventDefault();
     const u = $('#helpUser').value, p = $('#helpPass').value;
     const btn = box.querySelector('button[type=submit]');
     btn.disabled = true;
-    const ok = await check(u, p);
+    const role = await check(u, p);
     btn.disabled = false;
-    if (!ok) { $('#helpPass').value = ''; return toast('That helper username or password is not right.'); }
-    cred = { u, p };
+    if (!role) { $('#helpPass').value = ''; return toast('That username or password is not right.'); }
+    cred = { u, p, role };
     renderBox();
   });
   box.addEventListener('click', e => {
@@ -92,7 +105,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
   function note(text) { const n = viewer.querySelector('.vnote'); n.textContent = text; n.hidden = !text; }
 
   function view(id) {
-    if (!cred) return;
+    if (!cred || cred.role !== 'helper') return;
     closeViewer();
     viewing = { pid: id, name: nameOf(id), parts: null };
     last = null; frameReady = false;
@@ -237,7 +250,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     // One sign-in check at a time, and not in quick succession, so nobody can sit there guessing.
     if (checking || Date.now() - lastCheck < 2000) return;
     checking = true;
-    const ok = await check(m.u, m.p);
+    const ok = (await check(m.u, m.p)) === 'helper';
     checking = false; lastCheck = Date.now();
     if (!ok) return relay(from, { k: 'deny' });
     watchers.set(from, { tok, at: Date.now() });
