@@ -709,7 +709,7 @@ function renderLobby(box) {
   if (!g) {
     right = `<div class="section"><h3>${host ? 'Choose a game' : `${hostName} is choosing a game`}</h3>
       <div class="gamepick">${GAME_IDS.map(id => { const x = GAMES[id]; return `<button class="gcard" data-act="pick" data-game="${id}" ${host ? '' : 'disabled'}>
-        ${gameArt(id)}<span class="gtxt"><b>${x.name}</b><small>${x.blurb}</small><i>${players(x)}${id === 'tiles' ? '' : ' · computers welcome'}</i></span></button>`; }).join('')}</div>
+        ${gameArt(id)}<span class="gtxt"><b>${x.name}</b><small>${x.blurb}</small><i>${players(x)}</i></span></button>`; }).join('')}</div>
       ${host ? '' : `<p class="tip">${ic('crown')}<span>Only the host picks the game. Pick your color while you wait.</span></p>`}</div>`;
   } else {
     const cfg = cfgFor(S.game, S.cfg && S.cfg[S.game]);
