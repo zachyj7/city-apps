@@ -117,7 +117,7 @@ export function initStats({ A, pid, esc, ic, send }) {
       const n = p.pid === S.turn && S.work ? S.work.rack.length : (p.rack || []).length;
       return `<tr class="${p.pid === pid ? 'me' : ''}"><th>${esc(p.name)}${p.pid === S.turn && S.phase === 'play' ? ' <i class="sturn">▶</i>' : ''}</th>
         <td>${n}</td><td>${st.turns || 0}</td><td>${st.played || 0}</td><td>${st.drew || 0}</td><td>${st.best || 0}</td>
-        <td>${p.opened ? ic('check') : '–'}</td><td>${p.wins || 0}</td></tr>`;
+        <td>${p.opened ? ic('check') : '–'}</td><td>${(p.w && p.w.tiles) || 0}</td></tr>`;
     }).join('');
     body.innerHTML = `
       ${coachHTML()}

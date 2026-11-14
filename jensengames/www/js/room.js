@@ -4,15 +4,20 @@
 import { makePool, checkTurn, isMJ, DEAL, groupsOf, tidyPos, layoutPos, packPos } from './rules.js';
 import { aiTurn } from './ai.js';
 import { check } from './help.js';
+import { GAMES, cfgFor, COLORS } from './games.js';
+import { BJ } from './bj.js';
+import { UNO } from './uno.js';
 
 const CPU_NAMES = ['Ruby', 'Otto', 'Pip', 'Juno', 'Ziggy', 'Nova', 'Bolt', 'Echo'];
 const LEVELS = ['easy', 'medium', 'hard'];
-const RACK_COLORS = ['red', 'blue', 'green', 'pink', 'purple', 'black', 'white', 'yellow'];
+// The card games' referees (Number Tiles is the code in this file).
+const MODS = { bj: BJ, uno: UNO };
 
 const MAX_SEATS = 8;
 
 export function emptyState() {
-  return { v: 0, phase: 'lobby', players: [], pool: [], table: [], pos: {}, turn: null, turnNo: 0, work: null, passes: 0, sets: 1, log: [], result: null, round: 0 };
+  // game: which game the host picked (null until they pick one); cfg: the host's settings for each game.
+  return { v: 0, phase: 'lobby', game: null, cfg: {}, host: null, players: [], pool: [], table: [], pos: {}, turn: null, turnNo: 0, work: null, passes: 0, sets: 1, log: [], result: null, round: 0 };
 }
 
 export class Room {
@@ -25,7 +30,7 @@ export class Room {
     this.ping = setInterval(() => this.each(c => c.send({ t: 'ping' })), 3000);
   }
 
-  close() { clearInterval(this.ping); clearTimeout(this.cpuT); this.cpuT = null; this.closed = true; }
+  close() { clearInterval(this.ping); clearTimeout(this.cpuT); this.cpuT = null; clearTimeout(this.gT); this.gT = null; this.closed = true; }
   each(f) { for (const c of this.conns) f(c); }
   player(pid) { return this.s.players.find(p => p.pid === pid); }
   seated() { return this.s.players.filter(p => p.seat); }
@@ -45,7 +50,24 @@ export class Room {
     fixState(this.s);
   }
 
+  // The host is the person who picks the game and starts it: the first person to sit down, and if they
+  // leave, the next person still here.
+  fixHost() {
+    const s = this.s, h = this.player(s.host);
+    if (h && h.on && !h.cpu) return;
+    const next = s.players.find(p => p.on && !p.cpu);
+    s.host = next ? next.pid : null;
+  }
+
+  // A color nobody else at the table has (their own choice if it's free).
+  freeColor(want, pid) {
+    const taken = new Set(this.s.players.filter(q => q.pid !== pid && (q.on || q.seat)).map(q => q.rc));
+    if (COLORS.includes(want) && !taken.has(want)) return want;
+    return COLORS.find(c => !taken.has(c)) || (COLORS.includes(want) ? want : 'yellow');
+  }
+
   push() {
+    this.fixHost();
     this.s.v++;
     this.s.at = Date.now();
     const m = { t: 'state', s: this.s };
@@ -56,12 +78,30 @@ export class Room {
   // ---- computer players ----
   schedule() {
     const s = this.s;
+    const mod = MODS[s.game];
+    if (mod) return this.scheduleMod(mod);
     if (this.closed || this.cpuT || s.phase !== 'play') return;
     const p = this.player(s.turn);
     if (!p || !p.cpu) return;
     const turnNo = s.turnNo;
     // a short pause to "think", so people can follow along
     this.cpuT = setTimeout(() => { this.cpuT = null; this.cpuTurn(turnNo); }, 1500 + Math.random() * 1300);
+  }
+
+  // The card games say what should happen by itself next (a computer's turn, the dealer, the next hand) as a
+  // key; it runs after a pause, if the game is still waiting for that same thing.
+  scheduleMod(mod) {
+    const s = this.s;
+    const t = !this.closed && s.phase === 'play' ? mod.auto(s) : null;
+    if (!t) { clearTimeout(this.gT); this.gT = null; this.gKey = null; return; }
+    if (this.gT && this.gKey === t.key) return;
+    clearTimeout(this.gT);
+    this.gKey = t.key;
+    this.gT = setTimeout(() => {
+      this.gT = null; this.gKey = null;
+      if (this.closed || this.s !== s || s.phase !== 'play') return;
+      try { mod.run(this, t.key); } catch (e) { console.error(e); }
+    }, t.ms);
   }
 
   cpuTurn(turnNo) {
@@ -90,9 +130,10 @@ export class Room {
     if (s.players.filter(q => q.on).length >= 8) return;
     const used = new Set(s.players.map(q => q.name));
     const name = CPU_NAMES.find(n => !used.has(n)) || 'Robot ' + (s.players.length + 1);
-    const usedColors = new Set(s.players.map(q => q.rc));
-    const rc = RACK_COLORS.find(c => !usedColors.has(c)) || 'yellow';
-    s.players.push({ pid: 'cpu-' + Math.random().toString(36).slice(2, 8), name, cpu: level, rc, on: true, seat: false, rack: [], opened: false, wins: 0 });
+    const pid = 'cpu-' + Math.random().toString(36).slice(2, 8);
+    // computers take colors from the end of the list, leaving the popular ones for people
+    const rc = this.freeColor(COLORS.slice().reverse().find(c => !s.players.some(q => q.on && q.rc === c)), pid);
+    s.players.push({ pid, name, cpu: level, rc, on: true, seat: false, rack: [], opened: false, w: {} });
     this.note(`${name} (computer, ${level}) sat down`);
   }
 
@@ -117,30 +158,66 @@ export class Room {
       if (m.snap) this.adopt(m.snap);
       let p = this.player(m.pid);
       if (!p) {
-        p = { pid: m.pid, name: '', seat: false, rack: [], opened: false, wins: 0 };
+        p = { pid: m.pid, name: '', seat: false, rack: [], opened: false, w: {} };
         s.players.push(p);
         if (s.phase === 'lobby') this.note(`${clean(m.name)} sat down`);
         else this.note(`${clean(m.name)} is watching`);
       }
-      p.name = clean(m.name); p.rc = cleanColor(m.rc); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true;
+      p.name = clean(m.name); p.rc = this.freeColor(cleanColor(m.rc), p.pid); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true;
       return this.push();
     }
     const p = c.pid && this.player(c.pid);
     if (!p) return;
 
-    if (m.t === 'addcpu') { this.addCpu(m.level); return this.push(); }
+    const isHost = p.pid === s.host;
+    if (m.t === 'addcpu') { if (!isHost) return; this.addCpu(m.level); return this.push(); }
     if (m.t === 'rmcpu') {
-      if (s.phase === 'play') return;
+      if (s.phase === 'play' || !isHost) return;
       s.players = s.players.filter(q => !(q.cpu && q.pid === m.pid));
       return this.push();
     }
 
     if (m.t === 'cam') { p.cam = !!m.cam; p.mic = !!m.mic; return this.push(); }
-    if (m.t === 'rc') { p.rc = cleanColor(m.rc); return this.push(); }
+    if (m.t === 'rc') {
+      const want = cleanColor(m.rc);
+      if (this.freeColor(want, p.pid) === want) p.rc = want;   // otherwise someone else has it
+      return this.push();
+    }
+
+    // The host picks the game (null: back to choosing), changes its settings, or hands being host on.
+    if (m.t === 'pick') {
+      if (!isHost || s.phase === 'play' || (m.game !== null && !GAMES[m.game])) return;
+      s.game = m.game;
+      if (m.game) { s.cfg[m.game] = cfgFor(m.game, s.cfg[m.game]); this.note(`${p.name} picked ${GAMES[m.game].name}`); }
+      s.phase = 'lobby'; s.result = null;
+      return this.push();
+    }
+    if (m.t === 'cfg') {
+      const g = GAMES[s.game];
+      if (!isHost || !g || s.phase === 'play') return;
+      const st = g.settings.find(x => x.key === m.key);
+      if (!st || !st.options.some(o => o[0] === m.value)) return;
+      s.cfg[s.game] = { ...cfgFor(s.game, s.cfg[s.game]), [m.key]: m.value };
+      return this.push();
+    }
+    if (m.t === 'host') {
+      const to = this.player(m.pid);
+      if (!isHost || !to || to.cpu || !to.on) return;
+      s.host = to.pid;
+      this.note(`${to.name} is the host now`);
+      return this.push();
+    }
+    // The host ends the game in progress for everyone.
+    if (m.t === 'end') {
+      if (!isHost || s.phase !== 'play') return;
+      this.note(`${p.name} ended the game`);
+      if (MODS[s.game]) return MODS[s.game].end(this);
+      return this.finish(null);
+    }
     // They switched the best-play helper on: marked as a cheater, and everyone is told. Switched off, the mark
     // comes off straight away. Each time it is switched on is counted, for the end of the game.
     if (m.t === 'cheat') {
-      if (s.phase !== 'play' || !p.seat) return;
+      if (s.phase !== 'play' || !p.seat || s.game !== 'tiles') return;
       if (m.on === false) {
         if (!p.cheat) return;
         p.cheat = false;
@@ -194,11 +271,23 @@ export class Room {
     }
 
     if (m.t === 'start') {
-      if (s.phase === 'play') return;
+      const g = GAMES[s.game];
+      if (s.phase === 'play' || !isHost || !g) return;
       const ready = s.players.filter(q => q.on);
-      if (ready.length < 2) return;
-      const seats = ready.slice(0, MAX_SEATS);
-      s.sets = seats.length > 4 ? 2 : 1;
+      if (ready.length < g.min) return;
+      const seats = ready.slice(0, Math.min(MAX_SEATS, g.max));
+      const cfg = s.cfg[s.game] = cfgFor(s.game, s.cfg[s.game]);
+      const mod = MODS[s.game];
+      if (mod) {
+        for (const q of s.players) { q.seat = seats.includes(q); q.rack = []; q.hand = []; q.cheat = false; }
+        s.round++; s.turnNo++; s.result = null; s.log = []; s.bjEnd = null; s.ann = null; s.drew = null;
+        s.table = []; s.pos = {}; s.work = null; s.played = null;
+        s.startedAt = Date.now();
+        s.phase = 'play';
+        mod.start(this, seats, cfg);
+        return this.push();
+      }
+      s.sets = cfg.sets === '1' ? 1 : cfg.sets === '2' ? 2 : seats.length > 4 ? 2 : 1;
       s.pool = makePool(s.sets);
       for (const q of s.players) { q.seat = seats.includes(q); q.rack = []; q.opened = false; q.st = { turns: 0, played: 0, drew: 0, best: 0 }; q.cheat = false; q.cheats = 0; }
       s.startedAt = Date.now();
@@ -214,9 +303,9 @@ export class Room {
 
     if (m.t === 'newgame') {
       if (s.phase !== 'over') return;
-      s.phase = 'lobby'; s.table = []; s.pos = {}; s.work = null; s.result = null;
+      s.phase = 'lobby'; s.table = []; s.pos = {}; s.work = null; s.result = null; s.bj = null; s.uno = null; s.bjEnd = null;
       s.players = s.players.filter(q => q.on);
-      for (const q of s.players) { q.seat = false; q.rack = []; }
+      for (const q of s.players) { q.seat = false; q.rack = []; q.hand = []; }
       return this.push();
     }
 
@@ -226,8 +315,17 @@ export class Room {
       const cur = this.player(s.turn);
       if (!cur || cur.on) return;
       this.note(`${p.name} skipped ${cur.name}'s turn`);
+      if (MODS[s.game]) return MODS[s.game].skip(this, cur);
       return this.draw(cur);
     }
+
+    // A move in one of the card games.
+    if (m.t === 'g') {
+      const mod = MODS[s.game];
+      if (mod) mod.act(this, p, m);
+      return;
+    }
+    if (s.game !== 'tiles') return;
 
     if (s.turn !== p.pid) return;
 
@@ -319,16 +417,16 @@ export class Room {
 
   finish(winner) {
     const s = this.s;
-    // No points: the first player to play all their tiles wins, and only wins are counted.
-    if (winner) winner.wins = (winner.wins || 0) + 1;
+    // No points: the first player to play all their tiles (or cards) wins, and only wins are counted.
+    if (winner) { winner.w = winner.w || {}; winner.w[s.game] = (winner.w[s.game] || 0) + 1; }
     s.result = winner ? { pid: winner.pid, name: winner.name } : { pid: null, name: '' };
     s.phase = 'over'; s.turn = null; s.work = null;
-    this.note(winner ? `${winner.name} wins!` : 'Nobody could play: no winner this time');
+    this.note(winner ? `${winner.name} wins!` : 'No winner this time');
     this.push();
   }
 }
 
-function cleanColor(c) { return /^[a-z]{2,8}$/.test(c || '') ? c : 'yellow'; }
+function cleanColor(c) { return COLORS.includes(c) ? c : 'yellow'; }
 function clean(n) { return String(n || 'Player').replace(/[<>&"]/g, '').trim().slice(0, 18) || 'Player'; }
 
 // A table position sent by a player: { tileId: [x, y] } with sensible numbers only.
@@ -347,9 +445,17 @@ function cleanPos(o) {
 
 // Bring a game saved by an older version up to date (tile positions on the table, wins instead of scores).
 function fixState(s) {
+  // from before there were several games: a game in progress is Number Tiles
+  if (!s.cfg || typeof s.cfg !== 'object') s.cfg = {};
+  if (s.game === undefined) s.game = s.phase === 'lobby' ? null : 'tiles';
+  if (s.game && !GAMES[s.game]) s.game = null;
   if (!s.pos || typeof s.pos !== 'object' || Array.isArray(s.pos)) s.pos = layoutPos({}, s.table || []);
   if (s.work && !s.work.pos) s.work = null;
   if (Array.isArray(s.result)) { const w = s.result.find(x => x.win); s.result = w ? { pid: w.pid, name: w.name } : { pid: null, name: '' }; }
   delete s.cells;
-  for (const p of s.players) { if (typeof p.wins !== 'number') p.wins = 0; delete p.total; }
+  for (const p of s.players) {
+    if (!p.w || typeof p.w !== 'object') p.w = {};
+    if (typeof p.wins === 'number') { p.w.tiles = (p.w.tiles || 0) + p.wins; delete p.wins; }
+    delete p.total;
+  }
 }

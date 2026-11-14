@@ -1,9 +1,12 @@
-// Family Tiles: what each player sees and touches.
+// Jensen Games: what each player sees and touches. Everyone meets in the lobby, the host picks a game
+// (Number Tiles, Blackjack or Color Clash), and the faces stay around the table whatever is being played.
 import { Net } from './net.js';
 import { Video } from './video.js';
 import { initHelp } from './help.js';
 import { initStats } from './stats.js';
 import { tile, analyze, openingPoints, checkTurn, groupsOf, tidyPos, autoSplit, COLOR_NAMES, OPEN_POINTS, BOARD_W } from './rules.js';
+import { GAMES, GAME_IDS, COLORS, cfgFor, winsOf } from './games.js';
+import { renderBJ, bjControls, renderUno, unoHand, unoControls, pcard, ccard, money, isWild } from './cardview.js';
 
 // Rack colors to pick from. hi/base/lo/deep shade the plastic, ink is the pressed-in name, text is printing on it.
 const RACKS = {
@@ -17,20 +20,31 @@ const RACKS = {
   white:  { label: 'White',  hi: '#ffffff', base: '#ebebeb', lo: '#cfcfcf', deep: '#9a9a9a', ink: '#9a9a9a', text: '#1a1a1a' },
 };
 const rackStyle = rc => { const r = RACKS[rc] || RACKS.yellow; return `--rk-hi:${r.hi};--rk:${r.base};--rk-lo:${r.lo};--rk-deep:${r.deep};--rk-ink:${r.ink};--rk-text:${r.text}`; };
-const swatches = (cur, act) => Object.entries(RACKS).map(([k, r]) =>
-  `<button type="button" class="swatch ${k === cur ? 'on' : ''}" data-${act}="${k}" style="${rackStyle(k)}" aria-pressed="${k === cur}" aria-label="${r.label} rack"><span class="sw-top"></span><span class="sw-edge">${r.label}</span></button>`).join('');
+// taken: color -> the name of whoever has it (those can't be picked)
+const swatches = (cur, act, taken = {}) => COLORS.map(k => {
+  const r = RACKS[k], who = taken[k];
+  return `<button type="button" class="swatch ${k === cur ? 'on' : ''} ${who ? 'taken' : ''}" data-${act}="${k}" style="${rackStyle(k)}" aria-pressed="${k === cur}" ${who ? `disabled title="${esc(who)} has this color"` : ''} aria-label="${r.label}${who ? ` (${esc(who)})` : ''}"><span class="sw-top">${who ? esc(who.slice(0, 1).toUpperCase()) : ''}</span><span class="sw-edge">${r.label}</span></button>`;
+}).join('');
 
 const $ = s => document.querySelector(s);
 const qs = new URLSearchParams(location.search);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Saved settings start with "jg-". Ones saved under the old name (Family Tiles, "ft-") are carried over once.
+for (const st of [(() => { try { return localStorage; } catch (e) { return null; } })(), (() => { try { return sessionStorage; } catch (e) { return null; } })()]) {
+  try {
+    if (!st || st.getItem('jg-moved')) continue;
+    for (let i = 0; i < st.length; i++) { const k = st.key(i); if (k && k.startsWith('ft-') && st.getItem('jg-' + k.slice(3)) == null) st.setItem('jg-' + k.slice(3), st.getItem(k)); }
+    st.setItem('jg-moved', '1');
+  } catch (e) { /* private window */ }
+}
 const store = {
-  get(k, d) { try { const v = localStorage.getItem('ft-' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('ft-' + k, JSON.stringify(v)); } catch (e) { /* private window */ } },
+  get(k, d) { try { const v = localStorage.getItem('jg-' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('jg-' + k, JSON.stringify(v)); } catch (e) { /* private window */ } },
 };
-function saveRc() { store.set('rc', A.rc); try { sessionStorage.setItem('ft-rc', A.rc); } catch (e) { /* ignore */ } }
+function saveRc() { store.set('rc', A.rc); try { sessionStorage.setItem('jg-rc', A.rc); } catch (e) { /* ignore */ } }
 const pid = (() => {
   const make = () => Math.random().toString(36).slice(2, 10);
-  try { let p = sessionStorage.getItem('ft-pid'); if (!p) { p = make(); sessionStorage.setItem('ft-pid', p); } return p; }
+  try { let p = sessionStorage.getItem('jg-pid'); if (!p) { p = make(); sessionStorage.setItem('jg-pid', p); } return p; }
   catch (e) { return make(); }
 })();
 const ic = n => `<svg class="ic" aria-hidden="true"><use href="#i-${n}"/></svg>`;
@@ -38,21 +52,21 @@ const LEVEL_NAMES = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 const cleanCode = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
 
 const A = {
-  fit: (() => { try { return localStorage.getItem('ft-fit') === '1'; } catch (e) { return false; } })(),   // Fit: on until switched off
+  fit: (() => { try { return localStorage.getItem('jg-fit') === '1'; } catch (e) { return false; } })(),   // Fit: on until switched off
   S: null, net: null, video: null, name: '', code: '',
   W: null,            // my turn in progress: { turnNo, pos: {id: [x, y]}, rack: [ids], startTable, startPos, startRack }
   hist: [], sel: new Set(), order: [], seen: new Set(), fresh: new Map(), loose: new Set(), bu: null,
-  vol: store.get('vol', {}), sound: store.get('sound', true), sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, lastAlert: null, lastDrew: null, lastShame: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
+  vol: store.get('vol', {}), sound: store.get('sound', true), sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('jg-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, lastAlert: null, lastDrew: null, lastShame: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
   status: 'connecting',
 };
-window.FT = A;   // for testing from the console
+window.JG = A;   // for testing from the console
 let setKey = 1;
 
 /* ---------------- joining ---------------- */
 
 function setupJoin() {
   let tabName = null;
-  try { tabName = sessionStorage.getItem('ft-name'); } catch (e) { /* ignore */ }
+  try { tabName = sessionStorage.getItem('jg-name'); } catch (e) { /* ignore */ }
   $('#name').value = tabName || store.get('name', '');
   $('#code').value = cleanCode(qs.get('room')) || store.get('code', '') || 'family';
   $('#joinForm').addEventListener('submit', e => {
@@ -62,9 +76,11 @@ function setupJoin() {
     if (!name) { $('#name').focus(); $('#joinErr').textContent = 'Please type your name.'; return; }
     if (!code) { $('#code').focus(); $('#joinErr').textContent = 'Please type a table name, like family.'; return; }
     store.set('name', name); store.set('code', code);
-    try { sessionStorage.setItem('ft-name', name); } catch (e) { /* ignore */ }
+    try { sessionStorage.setItem('jg-name', name); } catch (e) { /* ignore */ }
     start(name, code);
   });
+  // one of each: a tile, a playing card and a Color Clash card
+  $('#joinLogo').innerHTML = `${pcard(0)}<span class="tile c1"><span class="num">7</span></span>${ccard(100)}`;
   const pick = $('#rcPick');
   const paint = () => { pick.innerHTML = swatches(A.rc, 'rc'); };
   paint();
@@ -74,6 +90,7 @@ function setupJoin() {
 
 function start(name, code) {
   A.name = name; A.code = code;
+  A.rcAsked = A.rc;   // if someone already has this color, the lobby gives me another and says so
   const u = new URL(location.href); u.searchParams.set('room', code); u.searchParams.delete('auto');
   history.replaceState(null, '', u);
   $('#join').hidden = true; $('#game').hidden = false;
@@ -108,7 +125,7 @@ function start(name, code) {
 }
 
 // The last game we saw, kept across a reload so the game survives anyone (even the host) refreshing.
-const snapKey = () => 'ft-snap-' + A.code;
+const snapKey = () => 'jg-snap-' + A.code;
 function saveSnap(S) { try { sessionStorage.setItem(snapKey(), JSON.stringify(S)); } catch (e) { /* full or private */ } }
 function loadSnap() { try { return JSON.parse(sessionStorage.getItem(snapKey())); } catch (e) { return null; } }
 function snapshot() { return A.S || loadSnap(); }
@@ -122,14 +139,26 @@ function send(m) { A.net && A.net.send(m); }
 /* ---------------- state ---------------- */
 
 const me = () => A.S && A.S.players.find(p => p.pid === pid);
-const myTurn = () => !!(A.S && A.S.phase === 'play' && A.S.turn === pid);
+// Number Tiles is being played (the tile code below only runs then); myTurn is my turn in Number Tiles.
+const tiles = () => !!(A.S && A.S.game === 'tiles');
+const myTurn = () => !!(A.S && A.S.game === 'tiles' && A.S.phase === 'play' && A.S.turn === pid);
 const seated = () => A.S ? A.S.players.filter(p => p.seat) : [];
+const isHost = () => !!(A.S && A.S.host === pid);
 
 function setState(S) {
   const was = A.S;
   A.S = S;
   saveSnap(S);
   const m = me();
+  // The referee gives everyone their own color: if the one I asked for was taken, I get another.
+  if (m && m.rc && m.rc !== A.rc) {
+    if (A.rcAsked === A.rc) toast(`${RACKS[A.rc].label} was taken, so you are ${RACKS[m.rc].label}.`);
+    A.rc = m.rc; saveRc();
+  }
+  if (m) A.rcAsked = null;
+  if (S.phase !== 'play' || S.game !== 'uno') A.wildPick = null;
+  // Blackjack: each new round of bets starts from my last bet; the first chip tapped starts a new amount.
+  if (S.bj && S.bj.stage === 'bet' && !(was && was.bj && was.bj.stage === 'bet' && was.round === S.round)) { A.bjBet = null; A.betFresh = true; }
   // Keep my own rack order; a newly drawn tile goes on the end and glows once.
   if (m) {
     const rack = new Set(m.rack);
@@ -164,6 +193,10 @@ function setState(S) {
   const dk = S.drew ? S.drew.k : 0;
   if (A.lastDrew != null && S.drew && dk !== A.lastDrew) showDrew(S.drew);
   A.lastDrew = dk;
+  // The card games' notices: a free buy-back, a skip, someone taking a +4 stack, someone's last card.
+  const nk = S.ann ? S.ann.k : 0;
+  if (A.lastAnn != null && S.ann && nk !== A.lastAnn) showAnn(S.ann);
+  A.lastAnn = nk;
   const pk = S.played ? S.played.k : 0;
   if (A.lastPlayed != null && S.played && pk !== A.lastPlayed) {
     A.shown = { pid: S.played.pid, ids: new Set(S.played.ids), until: Date.now() + BY_MS };
@@ -174,7 +207,11 @@ function setState(S) {
   A.video.sync(S.players.filter(p => p.on && p.peer && p.pid !== pid).map(p => p.peer));
   flip(null, renderAll);
   help.state();
-  stats.state();
+  // Statistics and coach are for Number Tiles only.
+  $('#statsBtn').hidden = !!(S.game && S.game !== 'tiles');
+  if (S.game === 'tiles' || !S.game) stats.state(); else stats.leave();
+  const eb = $('#endBtn');
+  if (eb) eb.hidden = !(isHost() && S.phase === 'play');
 }
 
 const clonePos = p => { const o = {}; for (const k in p || {}) o[k] = [p[k][0], p[k][1]]; return o; };
@@ -540,18 +577,33 @@ function renderSeats() {
     el.querySelector('.nm').textContent = p.name;
     const mr = el.querySelector('.minirack'), st = rackStyle(p.rc);
     if (mr.getAttribute('style') !== st) mr.setAttribute('style', st);
+    // every seat is framed in its player's color
+    el.style.setProperty('--pc', RACKS[p.rc] ? RACKS[p.rc].base : RACKS.yellow.base);
+    const isTiles = S.game === 'tiles' || !S.game;
+    el.classList.toggle('cards', !isTiles);
     // Their rack shows the backs of the tiles they still hold, laid out the way they have them.
-    drawBacks(el, p.seat && playing ? count : 0, isMe && A.grid ? layOf(A.grid) : p.lay);
-    // Whether they have made their first play of 30 yet.
+    drawBacks(el, p.seat && playing && isTiles ? count : 0, isMe && A.grid ? layOf(A.grid) : p.lay);
+    // Number Tiles: whether they have made their first play of 30 yet. The card games: their money, or how
+    // many cards they hold.
     const ob = el.querySelector('.open30'), show = !!(p.seat && playing);
-    const obHtml = show ? `${ic(p.opened ? 'check' : 'lock')}30` : '';
+    let obHtml = '', obCls = 'open30', obTitle = '';
+    if (show && isTiles) {
+      obHtml = `${ic(p.opened ? 'check' : 'lock')}30`; obCls += ' show' + (p.opened ? ' yes' : '');
+      obTitle = p.opened ? 'Has made their first 30' : 'Has not made their first 30 yet';
+    } else if (show && S.game === 'bj') {
+      obHtml = `${ic('chip')}${money(p.chips || 0)}`; obCls += ' show money'; obTitle = 'Money';
+    } else if (show && S.game === 'uno') {
+      const n = (p.hand || []).length;
+      obHtml = `${ic('cards')}${n}`; obCls += ' show' + (n === 1 ? ' last' : ''); obTitle = `${n} card${n === 1 ? '' : 's'}`;
+    }
     if (ob.innerHTML !== obHtml) ob.innerHTML = obHtml;
-    ob.className = 'open30' + (show ? ' show' : '') + (p.opened ? ' yes' : '');
-    ob.title = p.opened ? 'Has made their first 30' : 'Has not made their first 30 yet';
+    ob.className = obCls;
+    ob.title = obTitle;
     let tag = '';
+    const wins = winsOf(p, S.game || 'tiles');
     if (!p.on) tag = '⚠ Lost connection';
     else if (playing && !p.seat) tag = 'Watching';
-    else if (p.wins) tag = `${ic('trophy')} ${p.wins}`;
+    else if (wins) tag = `${ic('trophy')} ${wins}`;
     if (el.querySelector('.tag').innerHTML !== tag) el.querySelector('.tag').innerHTML = tag;
     const face = el.querySelector('.face');
     const av = face.querySelector('.avatar');
@@ -614,59 +666,100 @@ function renderCenter() {
   fitMain();
   if (!S) { box.innerHTML = '<div class="panel"><h2>Finding your table…</h2></div>'; return; }
   const cur = S.phase === 'play' && S.players.find(p => p.pid === S.turn);
-  document.title = !cur ? 'Family Tiles' : myTurn() ? '▶ Your turn! · Family Tiles' : `${cur.name}'s turn · Family Tiles`;
+  const gname = S.game ? ' · ' + GAMES[S.game].name : '';
+  document.title = !cur ? 'Jensen Games' + gname : cur.pid === pid ? '▶ Your turn!' + gname : `${cur.name}'s turn${gname}`;
+  $('#gameName').hidden = !S.game;
+  $('#gameName b').textContent = S.game ? GAMES[S.game].name : '';
+  box.parentElement.classList.toggle('cardgame', S.phase === 'play' && S.game !== 'tiles');
   if (S.phase === 'lobby') return renderLobby(box);
   if (S.phase === 'over') return renderOver(box);
+  if (S.game === 'bj') return renderBJ(box, viewCtx());
+  if (S.game === 'uno') return renderUno(box, viewCtx());
   renderBoard(box);
 }
+const viewCtx = () => ({ A, pid, esc, ic, rackStyle });
 
+// A little picture of each game, for the game chooser.
+const GAME_ART = {
+  tiles: () => `<span class="tile c1"><span class="num">7</span></span><span class="tile c2"><span class="num">8</span></span><span class="tile c3"><span class="num">9</span></span>`,
+  bj: () => pcard(0) + pcard(25),
+  uno: () => ccard(7) + ccard(73) + ccard(104),
+};
+const gameArt = (g, cls = '') => `<span class="gart gart-${g} ${cls}" aria-hidden="true">${GAME_ART[g]()}</span>`;
+const players = g => (g.min === g.max ? `${g.min}` : `${g.min}–${g.max}`) + ' players';
+
+/* The lobby: everyone sits down and picks their color; the host picks the game, sets it up and starts it. */
 function renderLobby(box) {
   const S = A.S;
   const here = S.players.filter(p => p.on);
-  const sets = here.length > 4 ? 2 : 1;
+  const host = isHost(), hostP = S.players.find(p => p.pid === S.host);
+  const hostName = hostP ? esc(hostP.name) : 'The host';
+  const g = S.game && GAMES[S.game];
   const link = location.origin + location.pathname + '?room=' + A.code;
-  const chips = here.map((p, i) => `<div class="pchip ${p.cpu ? 'cpu' : ''}" style="${rackStyle(p.rc)}"><span class="av">${p.cpu ? `${ic('bot')}<i class="lvl">${LEVEL_NAMES[p.cpu][0]}</i>` : esc((p.name || '?').slice(0, 1).toUpperCase())}</span>
-      <span class="pn">${esc(p.name)}<span class="pt">${p.pid === pid ? 'You' : p.cpu ? `Computer · ${LEVEL_NAMES[p.cpu]}` : i >= 8 ? 'Watching (table full)' : 'Ready'}</span></span>
-      ${p.cpu ? `<button class="iconbtn rm" data-act="rmcpu" data-pid="${esc(p.pid)}" aria-label="Remove ${esc(p.name)}">${ic('close')}</button>` : ''}</div>`).join('');
+  const max = g ? g.max : 8;
+  const chips = here.map((p, i) => `<div class="pchip ${p.cpu ? 'cpu' : ''}" style="${rackStyle(p.rc)}"><span class="av">${p.cpu ? `${ic('bot')}<i class="lvl">${LEVEL_NAMES[p.cpu][0]}</i>` : esc((p.name || '?').slice(0, 1).toUpperCase())}${p.pid === S.host ? `<i class="crown" title="Host">${ic('crown')}</i>` : ''}</span>
+      <span class="pn">${esc(p.name)}<span class="pt">${[p.pid === pid ? 'You' : p.cpu ? `Computer · ${LEVEL_NAMES[p.cpu]}` : '', p.pid === S.host ? 'Host' : '', i >= max ? 'Watching (full)' : ''].filter(Boolean).join(' · ') || 'Ready'}</span></span>
+      ${p.cpu && host ? `<button class="iconbtn rm" data-act="rmcpu" data-pid="${esc(p.pid)}" aria-label="Remove ${esc(p.name)}">${ic('close')}</button>` : ''}
+      ${!p.cpu && host && p.pid !== pid ? `<button class="iconbtn rm" data-act="host" data-pid="${esc(p.pid)}" aria-label="Make ${esc(p.name)} the host" title="Make ${esc(p.name)} the host">${ic('crown')}</button>` : ''}</div>`).join('');
   const full = here.length >= 8;
-  const open = here.length < 8 ? 1 : 0;
-  const empties = Array.from({ length: open }, () => `<div class="pchip empty-seat">Open seat</div>`).join('');
-  box.innerHTML = `<div class="card lobby">
-    <div class="lcol">
-      <div class="panelhead"><span class="badge">${ic('users')}</span><div class="ph"><h2>Table “${esc(A.code)}”</h2><p>Waiting for everyone to sit down</p></div>
-        <span class="headact"><button class="btn small" data-act="${navigator.share ? 'share' : 'copy'}">${ic(navigator.share ? 'share' : 'link')}Invite</button><button class="btn small" data-act="leave" aria-label="Leave table">${ic('logout')}</button></span></div>
-      <div class="section invite"><h3>Invite your family</h3>
-        <div class="linkrow"><input readonly value="${esc(link)}" aria-label="Table link"><button class="btn" data-act="copy">${ic('link')}Copy link</button>${navigator.share ? `<button class="btn" data-act="share">${ic('share')}Share</button>` : ''}</div>
-      </div>
-      <div class="section"><h3>At the table · ${here.length} of 8 · ${here.length < 2 ? 'need one more' : sets === 2 ? 'two sets of tiles' : 'one set of tiles'}</h3>
-        <div class="players">${chips}${empties}</div>
-      </div>
-    </div>
-    <div class="lcol">
-      <div class="section cpusec ${full ? 'full' : ''}"><h3>Add a computer player</h3>
+  const empties = here.length < 8 ? `<div class="pchip empty-seat">Open seat</div>` : '';
+  const taken = {};
+  for (const p of S.players) if (p.pid !== pid && (p.on || p.seat)) taken[p.rc] = p.name;
+  let right;
+  if (!g) {
+    right = `<div class="section"><h3>${host ? 'Choose a game' : `${hostName} is choosing a game`}</h3>
+      <div class="gamepick">${GAME_IDS.map(id => { const x = GAMES[id]; return `<button class="gcard" data-act="pick" data-game="${id}" ${host ? '' : 'disabled'}>
+        ${gameArt(id)}<span class="gtxt"><b>${x.name}</b><small>${x.blurb}</small><i>${players(x)}${id === 'tiles' ? '' : ' · computers welcome'}</i></span></button>`; }).join('')}</div>
+      ${host ? '' : `<p class="tip">${ic('crown')}<span>Only the host picks the game. Pick your color while you wait.</span></p>`}</div>`;
+  } else {
+    const cfg = cfgFor(S.game, S.cfg && S.cfg[S.game]);
+    const sets = g.settings.map(st => `<div class="gset"><span class="glabel">${st.label}</span><span class="seg" role="group" aria-label="${st.label}">${st.options.map(([v, label]) =>
+      `<button class="${cfg[st.key] === v ? 'on' : ''}" data-act="cfg" data-key="${st.key}" data-v='${esc(JSON.stringify(v))}' aria-pressed="${cfg[st.key] === v}" ${host ? '' : 'disabled'}>${label}</button>`).join('')}</span></div>`).join('');
+    const need = g.min - here.length;
+    right = `<div class="section gamehead">${gameArt(S.game, 'small')}<div class="gh"><h3>Game</h3><b class="gname">${g.name}</b><small>${players(g)}</small></div>
+        ${host ? `<button class="btn small" data-act="pick" data-game="">${ic('undo')}Change</button>` : ''}</div>
+      <div class="section"><h3>Settings${host ? '' : ` · set by ${hostName}`}</h3><div class="gsets">${sets}</div></div>
+      ${host ? `<div class="section cpusec ${full ? 'full' : ''}"><h3>Add a computer player</h3>
         <div class="cpuadd">
           <button class="btn" data-act="addcpu" data-level="easy" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Easy</b><small>Learning</small></span></button>
           <button class="btn" data-act="addcpu" data-level="medium" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Medium</b><small>Solid</small></span></button>
           <button class="btn" data-act="addcpu" data-level="hard" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Hard</b><small>Tricky</small></span></button>
-        </div>
+        </div></div>` : ''}
+      ${host ? `<button class="btn go huge" data-act="start" ${need > 0 ? 'disabled' : ''}>${need > 0 ? `Need ${need} more player${need === 1 ? '' : 's'}` : `Start ${g.name}`} ${ic('arrow')}</button>`
+        : `<div class="waitstart">${ic('crown')}<span>Waiting for ${hostName} to start</span></div>`}`;
+  }
+  box.innerHTML = `<div class="card lobby">
+    <div class="lcol">
+      <div class="panelhead"><span class="badge">${ic('users')}</span><div class="ph"><h2>Lobby “${esc(A.code)}”</h2><p>${g ? `Up next: ${g.name}` : 'Waiting for everyone to sit down'}</p></div>
+        <span class="headact"><button class="btn small" data-act="${navigator.share ? 'share' : 'copy'}">${ic(navigator.share ? 'share' : 'link')}Invite</button><button class="btn small" data-act="leave" aria-label="Leave">${ic('logout')}</button></span></div>
+      <div class="section invite"><h3>Invite your family</h3>
+        <div class="linkrow"><input readonly value="${esc(link)}" aria-label="Lobby link"><button class="btn" data-act="copy">${ic('link')}Copy link</button>${navigator.share ? `<button class="btn" data-act="share">${ic('share')}Share</button>` : ''}</div>
       </div>
-      <div class="section"><h3>Your rack color</h3><div class="swatches row8">${swatches(A.rc, 'setrc')}</div></div>
-      <button class="btn go huge" data-act="start" ${here.length < 2 ? 'disabled' : ''}>Start the game ${ic('arrow')}</button>
+      <div class="section"><h3>In the lobby · ${here.length} of 8</h3>
+        <div class="players">${chips}${empties}</div>
+      </div>
+      <div class="section"><h3>Your color</h3><div class="swatches row8">${swatches(A.rc, 'setrc', taken)}</div></div>
       <div class="lobbyfoot"><span class="tip">${ic('cam')}<span>Press <b>Camera</b> so everyone can see you.</span></span><button class="btn small leave" data-act="leave">${ic('logout')}Leave</button></div>
     </div>
+    <div class="lcol">${right}</div>
   </div>`;
 }
 
-// No points: whoever plays all their tiles first wins, and only wins are counted.
+// No points: whoever goes out first wins, and only wins are counted (per game). Blackjack shows the money.
 function renderOver(box) {
-  const S = A.S;
+  const S = A.S, g = S.game || 'tiles';
   const r = S.result || {};
-  const rows = S.players.filter(p => p.seat || p.wins).sort((a, b) => (b.wins || 0) - (a.wins || 0));
+  const rows = S.players.filter(p => p.seat || winsOf(p, g)).sort((a, b) => winsOf(b, g) - winsOf(a, g));
+  const bj = g === 'bj' && S.bjEnd;
+  const money2 = n => (n < 0 ? '−' : n > 0 ? '+' : '') + money(Math.abs(n));
+  const table = bj ? `<div class="bjend"><div class="bjrow head"><span>Player</span><span>Money</span><span>Buy-backs</span><span>Up / down</span></div>
+      ${S.bjEnd.rows.map(x => `<div class="bjrow ${x.pid === r.pid ? 'win' : ''}" style="${rackStyle(x.rc)}"><span class="wn"><i class="dot"></i>${esc(x.name)}</span><span>${money(x.chips)}</span><span>${x.buy}</span><span class="${x.net > 0 ? 'up' : x.net < 0 ? 'down' : ''}">${money2(x.net)}</span></div>`).join('')}</div>` : '';
   box.innerHTML = `<div class="card over">
     <div class="winner"><span class="cup">${ic('trophy')}</span><h2>${r.name ? `${esc(r.name)} wins!` : 'No winner this time'}</h2></div>
-    <div class="wins">${rows.map(p => `<div class="winrow ${p.pid === r.pid ? 'win' : ''}"><span class="wn">${esc(p.name)}${p.cheats ? ` <i class="cheattag" title="Times they switched on Always show the best play this game">cheat mode ×${p.cheats}</i>` : ''}</span><span class="wc">${ic('trophy')}<b>${p.wins || 0}</b></span></div>`).join('')}</div>
-    ${rows.some(p => p.cheats) ? `<div class="cheattally"><b>${ic('sortnum')}Cheat mode this game</b>${rows.filter(p => p.cheats).sort((a, b) => b.cheats - a.cheats).map(p => `<span>${esc(p.name)} switched it on <b>${p.cheats}</b> time${p.cheats === 1 ? '' : 's'}</span>`).join('')}</div>` : ''}
-    <button class="btn go huge" data-act="newgame">Play again ${ic('arrow')}</button>
+    ${table}
+    <div class="wins">${rows.map(p => `<div class="winrow ${p.pid === r.pid ? 'win' : ''}"><span class="wn">${esc(p.name)}${p.cheats && g === 'tiles' ? ` <i class="cheattag" title="Times they switched on Always show the best play this game">cheat mode ×${p.cheats}</i>` : ''}</span><span class="wc">${ic('trophy')}<b>${winsOf(p, g)}</b></span></div>`).join('')}</div>
+    ${g === 'tiles' && rows.some(p => p.cheats) ? `<div class="cheattally"><b>${ic('sortnum')}Cheat mode this game</b>${rows.filter(p => p.cheats).sort((a, b) => b.cheats - a.cheats).map(p => `<span>${esc(p.name)} switched it on <b>${p.cheats}</b> time${p.cheats === 1 ? '' : 's'}</span>`).join('')}</div>` : ''}
+    <button class="btn go huge" data-act="newgame">Back to the lobby ${ic('arrow')}</button>
   </div>`;
 }
 
@@ -798,6 +891,16 @@ function renderMe() {
   const c = $('#controls');
   // The rack only shows during a game, so the lobby and results get the whole screen.
   document.querySelector('footer').hidden = !(S && S.phase === 'play');
+  // The card games: no rack, but my cards (Color Clash) and that game's buttons.
+  const cards = !!(S && S.phase === 'play' && S.game !== 'tiles');
+  $('#rack').hidden = cards;
+  $('#hand').hidden = !(cards && S.game === 'uno' && m && m.seat);
+  if (cards) {
+    $('#rackTools').innerHTML = '';
+    c.innerHTML = S.game === 'bj' ? bjControls(viewCtx()) : unoControls(viewCtx());
+    if (S.game === 'uno') unoHand($('#hand'), viewCtx());
+    return;
+  }
   if (!S || !m || S.phase !== 'play') { c.innerHTML = ''; $('#rackTools').innerHTML = ''; renderRack(); return; }
   // Undo, Reset and Fit sit on the rack's edge, on the right of the Sort buttons
   let tools = '';
@@ -826,7 +929,7 @@ function renderMe() {
 /* ---------------- the rack: 3 rows of slots, gaps allowed ---------------- */
 
 const ROWS = 3, GAP = 5;
-const gridKey = () => 'ft-grid-' + A.code;
+const gridKey = () => 'jg-grid-' + A.code;
 function saveGrid() { try { sessionStorage.setItem(gridKey(), JSON.stringify(A.grid)); } catch (e) { /* ignore */ } }
 function loadGrid() { try { return JSON.parse(sessionStorage.getItem(gridKey())); } catch (e) { return null; } }
 const cloneGrid = g => (g || []).map(r => r.slice());
@@ -938,6 +1041,7 @@ function renderRack() {
   for (const kv of rackStyle(A.rc).split(';')) { const [k, v] = kv.split(':'); rack.style.setProperty(k, v); }
   rack.classList.toggle('picking', A.sel.size > 0);
   const g = rack.querySelector('.grooves');
+  if (S && S.game !== 'tiles' && S.phase === 'play') { spaceTile().hidden = true; return; }
   if (!S || !m || !m.seat || S.phase === 'lobby') {
     g.style.gridTemplateColumns = '';
     g.innerHTML = `<div class="rackmsg">${S && S.phase === 'play' ? 'You are watching this game. You will get a seat in the next one.' : 'Your tiles will appear here.'}</div>`;
@@ -1369,7 +1473,7 @@ document.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'mouse' || e.button !== 0 || press || !A.S || A.S.phase !== 'play') return;
   const t = e.target;
   if (!t.closest || t.closest('.tile[data-id], button, input, a, .ghost, #spaceTile')) return;
-  if (!t.closest('main, #rack')) return;
+  if (!t.closest('main, #rack') || !tiles()) return;
   band = { x: e.clientX, y: e.clientY, on: false, base: e.shiftKey || e.ctrlKey || e.metaKey ? new Set(A.sel) : new Set(), el: null };
 });
 document.addEventListener('pointermove', e => {
@@ -1547,6 +1651,40 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
   const act = b.dataset.act;
+  // the card games' moves
+  if (act.startsWith('g:')) {
+    const m = { t: 'g', a: act.slice(2) };
+    if (b.dataset.amt) m.amt = +b.dataset.amt;
+    if (m.a === 'bet') A.bjBet = m.amt;
+    send(m);
+    return;
+  }
+  if (act === 'betadd' || act === 'betclear') {
+    const S = A.S, mm = me();
+    if (!S || !S.bj || !mm) return;
+    const base = act === 'betclear' ? 0 : (A.betFresh ? 0 : A.bjBet || 0);
+    A.betFresh = false;
+    A.bjBet = Math.max(S.bj.cfg.min, Math.min(mm.chips, base + (+b.dataset.v || 0)));
+    renderMe();
+    return;
+  }
+  if (act === 'cplay') {
+    const id = +b.dataset.id;
+    if (isWild(id)) { A.wildPick = A.wildPick === id ? null : id; renderMe(); return; }
+    A.wildPick = null;
+    send({ t: 'g', a: 'play', id });
+    return;
+  }
+  if (act === 'cwild') {
+    const id = A.wildPick;
+    A.wildPick = null;
+    if (id != null) send({ t: 'g', a: 'play', id, col: +b.dataset.col });
+    renderMe();
+    return;
+  }
+  if (act === 'pick') { send({ t: 'pick', game: b.dataset.game || null }); return; }
+  if (act === 'cfg') { let v; try { v = JSON.parse(b.dataset.v); } catch (er) { return; } send({ t: 'cfg', key: b.dataset.key, value: v }); return; }
+  if (act === 'host') { send({ t: 'host', pid: b.dataset.pid }); return; }
   if (act === 'start') send({ t: 'start' });
   else if (act === 'newgame') send({ t: 'newgame' });
   else if (act === 'done') done();
@@ -1555,7 +1693,7 @@ document.addEventListener('click', e => {
   else if (act === 'reset') resetTurn();
   else if (act === 'torack') flip(null, () => moveSelected('rack'));
   else if (act === 'space') addSpace();
-  else if (act === 'fit') { A.fit = !A.fit; try { localStorage.setItem('ft-fit', A.fit ? '1' : ''); } catch (e) { /* private */ } renderAll(); }
+  else if (act === 'fit') { A.fit = !A.fit; try { localStorage.setItem('jg-fit', A.fit ? '1' : ''); } catch (e) { /* private */ } renderAll(); }
   else if (act === 'sortnum') sortRack('num');
   else if (act === 'sortcol') sortRack('col');
   else if (act === 'skip') send({ t: 'skip' });
@@ -1563,7 +1701,7 @@ document.addEventListener('click', e => {
   else if (act === 'leave') leaveTable('You left the table.');
   else if (act === 'addcpu') send({ t: 'addcpu', level: b.dataset.level });
   else if (act === 'rmcpu') send({ t: 'rmcpu', pid: b.dataset.pid });
-  else if (act === 'share') navigator.share({ title: 'Family Tiles', text: 'Come play tiles with us!', url: location.origin + location.pathname + '?room=' + A.code }).catch(() => {});
+  else if (act === 'share') navigator.share({ title: 'Jensen Games', text: 'Come play games with us!', url: location.origin + location.pathname + '?room=' + A.code }).catch(() => {});
 });
 
 function copyLink() {
@@ -1644,7 +1782,7 @@ function leaveTable(msg) {
   A.net.stop(); A.net = null;
   A.video.stopAll();
   A.camOn = false; A.micOn = true;
-  A.S = null; A.W = null; A.lastAlert = null; A.lastDrew = null; A.lastShame = null; A.hist = []; A.sel.clear(); A.drag = null; A.loose.clear(); A.sortUndo = null; A.status = 'off';
+  A.S = null; A.W = null; A.lastAlert = null; A.lastDrew = null; A.lastShame = null; A.lastAnn = null; A.wildPick = null; A.bjBet = null; A.hist = []; A.sel.clear(); A.drag = null; A.loose.clear(); A.sortUndo = null; A.status = 'off';
   for (const el of seatEls.values()) el.remove();
   seatEls.clear(); videoEls.clear();
   for (const g of gains.values()) try { g.src.disconnect(); } catch (e) { /* ignore */ }
@@ -1653,11 +1791,11 @@ function leaveTable(msg) {
   help.leave();
   stats.leave();
   $('#game').hidden = true; $('#join').hidden = false;
-  document.title = 'Family Tiles';
+  document.title = 'Jensen Games';
   const u = new URL(location.href); u.searchParams.delete('auto'); history.replaceState(null, '', u);
   if (msg) toast(msg, 6000);
 }
-window.FT.leaveTable = leaveTable;
+window.JG.leaveTable = leaveTable;
 
 $('#leaveBtn').addEventListener('click', () => leaveTable('You left the table.'));
 // Closing the table for everyone asks for a second tap, so it can't happen by accident.
@@ -1675,6 +1813,22 @@ $('#closeAllBtn').addEventListener('click', () => {
   b.classList.remove('armed'); b.querySelector('span').textContent = 'Close for everyone';
   send({ t: 'closeall' });
 });
+// The host can end the game being played (it also asks for a second tap).
+let endArm = 0;
+$('#endBtn').addEventListener('click', () => {
+  const b = $('#endBtn');
+  if (!b.classList.contains('armed')) {
+    b.classList.add('armed');
+    b.querySelector('span').textContent = 'Tap again to end';
+    clearTimeout(endArm);
+    endArm = setTimeout(() => { b.classList.remove('armed'); b.querySelector('span').textContent = 'End this game'; }, 4000);
+    return;
+  }
+  clearTimeout(endArm);
+  b.classList.remove('armed'); b.querySelector('span').textContent = 'End this game';
+  send({ t: 'end' });
+  showSettings(false);
+});
 
 // The signature move: a big signed "MJ!" across everyone's screen.
 let mjT = 0;
@@ -1686,7 +1840,7 @@ function showMJ(name) {
   clearTimeout(mjT); mjT = setTimeout(() => { el.hidden = true; el.classList.remove('play'); }, 3200);
   [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.18), i * 90));
 }
-window.FT.showMJ = showMJ;
+window.JG.showMJ = showMJ;
 
 // "3 tiles left" / "Last tile!": a card in the player's rack colour drops in with their tiles (backs) on it.
 let alertT = 0;
@@ -1711,7 +1865,7 @@ function showAlert(a) {
   clearTimeout(alertT); alertT = setTimeout(() => { el.hidden = true; el.classList.remove('play'); }, one ? 3600 : 3100);
   (one ? [784, 988, 784, 1175] : [659, 784, 880]).forEach((f, i) => setTimeout(() => beep(f, one ? 0.16 : 0.13), i * 110));
 }
-window.FT.showAlert = showAlert;
+window.JG.showAlert = showAlert;
 
 // Someone drew a tile (or had to pass): a quick pop-up in their rack colour, for everyone.
 let drewT = 0;
@@ -1720,13 +1874,33 @@ function showDrew(a) {
   if (!el) { el = document.createElement('div'); el.id = 'drewPop'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
   const mine = a.pid === pid, who = mine ? 'You' : esc(a.name);
   el.setAttribute('style', rackStyle(a.rc));
-  el.innerHTML = `<div class="dp-card"><span class="dp-tile">${a.pass ? ic('skip') : '<b>?</b>'}</span>
-    <span class="dp-text">${a.pass ? `${who} passed <small>No tiles left to draw</small>` : `${who} drew a tile`}</span></div>`;
+  const what = tiles() ? 'tile' : 'card', n = a.n || 1;
+  el.innerHTML = `<div class="dp-card"><span class="dp-tile ${tiles() ? '' : 'card'}">${a.pass ? ic('skip') : '<b>?</b>'}</span>
+    <span class="dp-text">${a.pass ? `${who} passed <small>Nothing left to draw</small>` : n > 1 ? `${who} drew ${n} ${what}s` : `${who} drew a ${what}`}</span></div>`;
   el.hidden = false;
   el.classList.remove('play'); el.offsetWidth; el.classList.add('play');
   clearTimeout(drewT); drewT = setTimeout(() => { el.hidden = true; el.classList.remove('play'); }, 2200);
 }
-window.FT.showDrew = showDrew;
+window.JG.showDrew = showDrew;
+
+// The card games' bigger moments, in that player's color: a free buy-back, a skip, a +2/+4 stack taken,
+// someone down to their last card.
+let annT = 0;
+function showAnn(a) {
+  let el = $('#annPop');
+  if (!el) { el = document.createElement('div'); el.id = 'annPop'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  const mine = a.pid === pid;
+  const text = mine ? ({ buy: 'You bought back in', skip: 'You are skipped', take: `You take ${a.sub.slice(1)}`, last: 'You have one card left!' }[a.kind] || a.text) : a.text;
+  el.className = 'k-' + a.kind;
+  el.setAttribute('style', rackStyle(a.rc));
+  el.innerHTML = `<div class="an-card"><b class="an-big">${esc(a.sub)}</b><span class="an-text">${esc(text)}</span></div>`;
+  el.hidden = false;
+  el.classList.remove('play'); el.offsetWidth; el.classList.add('play');
+  clearTimeout(annT); annT = setTimeout(() => { el.hidden = true; el.classList.remove('play'); }, 2600);
+  const tune = { buy: [523, 659, 784], skip: [440, 330], take: [392, 330, 262], last: [784, 988, 1175] }[a.kind] || [660];
+  tune.forEach((f, i) => setTimeout(() => beep(f, 0.15), i * 110));
+}
+window.JG.showAnn = showAnn;
 
 // Someone switched on "Always show the best play": a big red stamp for everyone.
 let shameT = 0;
@@ -1740,7 +1914,7 @@ function showShame(a) {
   clearTimeout(shameT); shameT = setTimeout(() => { el.hidden = true; el.classList.remove('play'); }, 3400);
   [392, 330, 262].forEach((f, i) => setTimeout(() => beep(f, 0.2), i * 160));
 }
-window.FT.showShame = showShame;
+window.JG.showShame = showShame;
 
 let toastT = 0;
 function toast(text, ms = 4000) {

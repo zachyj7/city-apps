@@ -13,7 +13,7 @@ export const ICE = [
 export class Net {
   // h: onStatus(s), onOpen(), onMsg(m), onLost(), onPeer(peer), snapshot()
   constructor(code, h) {
-    this.hostId = 'familytiles-v1-' + code;
+    this.hostId = 'jensengames-v1-' + code;
     this.h = h;
     this.gen = 0; this.room = null; this.loop = null; this.conn = null; this.peer = null;
     this.state = 'connecting'; this.lastRx = Date.now(); this.retryAt = 0;

@@ -1,1 +1,1 @@
-{ "name": "Family Tiles", "short_name": "Tiles", "start_url": "./", "display": "standalone", "background_color": "#08251a", "theme_color": "#0c3b26", "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }] }
+{ "name": "Jensen Games", "short_name": "Jensen Games", "start_url": "./", "display": "standalone", "background_color": "#08251a", "theme_color": "#0c3b26", "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }] }

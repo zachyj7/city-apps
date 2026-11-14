@@ -1,4 +1,4 @@
-"""Local test server for Family Tiles. Run from anywhere:  python familytiles/scripts/serve.py
+"""Local test server for Jensen Games. Run from anywhere:  python jensengames/scripts/serve.py
 Then open http://localhost:8151 . Files are never cached, so a refresh always shows the latest code."""
 import http.server, os, sys
 
@@ -14,5 +14,5 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
 port = int(sys.argv[1]) if len(sys.argv) > 1 else 8151
-print('Family Tiles is at http://localhost:%d' % port)
+print('Jensen Games is at http://localhost:%d' % port)
 http.server.ThreadingHTTPServer(('', port), Handler).serve_forever()

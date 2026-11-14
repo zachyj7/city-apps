@@ -4,6 +4,7 @@
 //
 // The sign-in is checked in each browser against a scrambled copy of the username and password, so the
 // plain text is not in this file. It keeps casual visitors out; it is not strong security.
+// (The salt keeps the game's old name on purpose: changing it would stop the existing sign-in working.)
 const SALT = 'familytiles-helper-v1', ROUNDS = 200000;
 const KEYS = { helper: 'ed5ea437a688e4ea739c93fd156211d6e1b537c4ca62320fa177fa8faeb98969' };
 const CHUNK = 12000;        // one message stays well under what a data channel will carry
@@ -218,6 +219,11 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     body.querySelectorAll('#rack .tile, .ghost .tile').forEach(t => {
       t.className = 'tile hid'; t.innerHTML = '';
       t.removeAttribute('data-id'); t.removeAttribute('aria-label');
+    });
+    // and so are the cards in a Color Clash hand
+    body.querySelectorAll('#hand .cc').forEach(t => {
+      t.className = 'cc back'; t.innerHTML = '';
+      t.removeAttribute('data-card'); t.removeAttribute('data-id'); t.removeAttribute('aria-label');
     });
     return body.innerHTML;
   }

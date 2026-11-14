@@ -1,0 +1,327 @@
+/* ==========================================================================
+   Jensen Games: the lobby, the game chooser, and the two card games
+   (Blackjack and Color Clash). Uses the tokens and buttons from style.css.
+   ========================================================================== */
+
+/* every seat is framed in its player's color; the card games have no rack under the face */
+.seat { border: 2px solid color-mix(in srgb, var(--pc, #ffffff) 70%, transparent); }
+.seat.turn { border-color: var(--gold); }
+.seat.cards .minirack { display: none; }
+.open30.money { background: rgba(0,0,0,.72); color: var(--gold-hi); }
+.open30.last { background: var(--bad); color: #fff; animation: armed .6s ease-in-out infinite alternate; }
+.chip.gname b { color: var(--gold-hi); }
+
+/* taken colors in the color picker: greyed out with the owner's initial */
+.swatch.taken { cursor: not-allowed; opacity: .38; transform: none; box-shadow: none; }
+.swatch.taken .sw-top { display: grid; place-items: center; color: var(--rk-text); font-family: var(--display); font-weight: 700; font-size: 12px; }
+
+/* the host's crown */
+.pchip .av .crown {
+  position: absolute; left: -6px; top: -9px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%;
+  background: linear-gradient(var(--gold-hi), var(--gold)); color: #3a2a00; box-shadow: 0 0 0 2px #0a2618; font-style: normal;
+}
+.pchip .av .crown .ic { width: 14px; height: 14px; stroke-width: 2; }
+#i-crown { fill: currentColor; }
+
+/* ---------- choosing a game ---------- */
+.gamepick { display: flex; flex-direction: column; gap: 10px; }
+.gcard {
+  display: flex; align-items: center; gap: 16px; padding: 12px 16px; text-align: left; cursor: pointer; width: 100%;
+  border-radius: 16px; border: 2px solid var(--line-strong); color: #fff;
+  background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,.04));
+  box-shadow: var(--shadow-1); transition: transform .12s ease, border-color .12s ease, background .12s ease;
+}
+.gcard:hover:not([disabled]) { transform: translateY(-2px); border-color: var(--gold); background: linear-gradient(180deg, rgba(255,207,51,.16), rgba(255,207,51,.05)); }
+.gcard:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+.gcard[disabled] { cursor: default; opacity: .8; }
+.gtxt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gtxt b { font-family: var(--display); font-weight: 700; font-size: 1.3em; color: var(--gold-hi); line-height: 1.1; }
+.gtxt small { color: var(--muted); font-size: .86em; line-height: 1.3; }
+.gtxt i { font-style: normal; color: var(--soft); font-size: .78em; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+/* each game's little picture: three of its pieces fanned out */
+.gart { flex: none; display: flex; align-items: flex-end; justify-content: center; width: 112px; height: 78px; --tw: 38px; --th: 51px; }
+.gart > * { flex: none; --cw: 42px; }
+.gart > * + * { margin-left: -12px; }
+.gart > :nth-child(1) { transform: rotate(-12deg) translateY(4px); }
+.gart > :nth-child(3) { transform: rotate(12deg) translateY(4px); }
+.gart-bj > :nth-child(2) { transform: rotate(10deg); }
+.gart .tile { cursor: default; }
+.gart.small { width: 86px; height: 62px; --tw: 30px; --th: 40px; }
+.gart.small > * { --cw: 33px; }
+.gamehead { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-radius: 16px; background: rgba(255,255,255,.06); border: 1px solid var(--line); }
+.gamehead .gh { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gamehead h3 { margin: 0; }
+.gamehead .gname { font-family: var(--display); font-weight: 700; font-size: 1.45em; color: var(--gold-hi); line-height: 1.1; }
+.gamehead small { color: var(--soft); font-size: .82em; }
+.gsets { display: flex; flex-direction: column; gap: 8px; }
+.gset { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.glabel { font-weight: 700; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(0,0,0,.28); box-shadow: inset 0 0 0 1px var(--line); }
+.seg button {
+  min-height: 40px; min-width: 3em; padding: 0 .8em; border: 0; border-radius: 9px; cursor: pointer; background: transparent; color: var(--muted);
+  font-family: var(--display); font-weight: 600; font-size: .92em;
+}
+.seg button:hover:not([disabled]) { background: rgba(255,255,255,.1); color: #fff; }
+.seg button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.seg button.on { background: linear-gradient(var(--gold-hi), var(--gold)); color: #2a1f00; box-shadow: 0 2px 0 var(--gold-deep); }
+.seg button[disabled] { cursor: default; }
+.seg button[disabled]:not(.on) { opacity: .55; }
+.waitstart {
+  margin-top: 18px; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 60px; border-radius: 14px;
+  border: 2px dashed var(--line-strong); color: var(--muted); font-family: var(--display); font-weight: 600; font-size: 1.1em; text-align: center; padding: 8px 14px;
+}
+.waitstart .ic, .tip .ic { color: var(--gold); }
+.lobby .lcol:last-child .section.gamehead { margin-top: 0; }
+
+/* the join screen's logo: a playing card, a tile and a Color Clash card */
+.logo { align-items: flex-end; }
+.logo > * { flex: none; cursor: default; --cw: 60px; }
+.logo > :nth-child(1) { transform: rotate(-11deg) translateY(8px); }
+.logo > :nth-child(3) { transform: rotate(11deg) translateY(8px); }
+@media (max-height: 860px) { .logo > * { --cw: 45px; } }
+
+/* ---------- playing cards ---------- */
+.pc {
+  width: var(--cw, 64px); height: calc(var(--cw, 64px) * 1.4); flex: none; position: relative;
+  border-radius: calc(var(--cw, 64px) * .1); color: #111; font-family: var(--font);
+  background: linear-gradient(180deg, #ffffff, #f4f0e4);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.12), 0 2px 0 #cfc6ad, 0 4px 10px rgba(0,0,0,.35);
+}
+.pc.red { color: #d4001a; }
+.pc svg { fill: currentColor; display: block; }
+.pc-c { position: absolute; left: 6%; top: 3%; display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: .95; }
+.pc-c b { font-size: calc(var(--cw, 64px) * .3); font-weight: 700; letter-spacing: -.05em; }
+.pc-c svg { width: calc(var(--cw, 64px) * .19); height: calc(var(--cw, 64px) * .19); }
+.pc-br { left: auto; top: auto; right: 6%; bottom: 3%; transform: rotate(180deg); }
+.pc-mid { position: absolute; inset: 26% 24%; display: grid; place-items: center; }
+.pc-mid svg { width: 100%; height: 100%; }
+.pc-face { font-family: var(--display); font-weight: 700; font-size: calc(var(--cw, 64px) * .56); line-height: 1; }
+.pc.back {
+  background: repeating-linear-gradient(45deg, #1d4fb8 0 5px, #163d8f 5px 10px);
+  box-shadow: inset 0 0 0 calc(var(--cw, 64px) * .06) #fff, inset 0 0 0 calc(var(--cw, 64px) * .06 + 1px) rgba(0,0,0,.15), 0 2px 0 #cfc6ad, 0 4px 10px rgba(0,0,0,.35);
+}
+.pc.ghostcard { opacity: .18; animation: none !important; }
+
+/* ---------- Color Clash cards ---------- */
+.cc {
+  --k: #444; --ink: #fff; width: var(--cw, 64px); height: calc(var(--cw, 64px) * 1.45); flex: none; position: relative;
+  border-radius: calc(var(--cw, 64px) * .13); color: var(--ink); font-family: var(--display); font-weight: 700;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.22) 0 28%, transparent 28% 72%, rgba(0,0,0,.14) 72%),
+    var(--k);
+  box-shadow: inset 0 0 0 calc(var(--cw, 64px) * .055) #fff, inset 0 0 0 calc(var(--cw, 64px) * .055 + 1px) rgba(0,0,0,.2), 0 3px 0 rgba(0,0,0,.25), 0 5px 12px rgba(0,0,0,.4);
+}
+.cc.k0 { --k: #e63327; }
+.cc.k1 { --k: #f5c400; --ink: #2b2100; }
+.cc.k2 { --k: #1d9a4d; }
+.cc.k3 { --k: #1f6fd1; }
+.cc.kw { --k: #1b1b1b; }
+.cc-c { position: absolute; left: 10%; top: 6%; display: flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1; font-size: calc(var(--cw, 64px) * .22); }
+.cc-c svg { width: calc(var(--cw, 64px) * .19); height: calc(var(--cw, 64px) * .19); }
+.cc-br { left: auto; top: auto; right: 10%; bottom: 6%; transform: rotate(180deg); }
+.cc-mid {
+  position: absolute; inset: 22% 12%; display: grid; place-items: center; font-size: calc(var(--cw, 64px) * .66); line-height: 1;
+  text-shadow: 0 calc(var(--cw, 64px) * .03) 0 rgba(0,0,0,.35);
+}
+.cc.k1 .cc-mid { text-shadow: 0 calc(var(--cw, 64px) * .03) 0 rgba(255,255,255,.45); }
+.cc-mid > svg { width: 80%; height: 80%; grid-area: 1 / 1; }
+.cc svg { fill: none; stroke: currentColor; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
+.cc .cshape { fill: currentColor; stroke: currentColor; stroke-width: 0; }
+.cc .cshape path[stroke-width] { stroke-width: 2.2; }
+.cc .wheel { stroke: #fff; stroke-width: 1.2; }
+.cc-mid .over { grid-area: 1 / 1; font-size: .6em; color: #fff; text-shadow: 0 0 calc(var(--cw, 64px) * .06) #000, 0 2px 0 #000; }
+.cc.back {
+  background: conic-gradient(from 45deg, #e63327 0 25%, #1f6fd1 0 50%, #1d9a4d 0 75%, #f5c400 0);
+  display: grid; place-items: center; overflow: hidden;
+}
+.cc.back::after { content: ''; position: absolute; inset: 30% 14%; border-radius: 50%; background: #1b1b1b; transform: rotate(-30deg); box-shadow: 0 0 0 3px rgba(255,255,255,.85); }
+.cc-logo { position: relative; z-index: 1; color: var(--gold); font-size: calc(var(--cw, 64px) * .3); letter-spacing: .02em; transform: rotate(-30deg); }
+
+/* ---------- the card games' table ---------- */
+main.cardgame #center { min-height: 100%; display: grid; place-items: center; }
+main.cardgame:has(.cc-table) { overflow: hidden; }
+
+/* Blackjack */
+.bj-table {
+  width: 100%; max-width: 1200px; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 6px 0 10px;
+  --cw: calc(clamp(46px, min(6.4vw, 8.5vh), 86px) * var(--zoom));
+}
+.bj-dealer {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 34px 14px; border-radius: 0 0 50% 50% / 0 0 36% 36%;
+  background: radial-gradient(ellipse at 50% 0%, rgba(0,0,0,.28), rgba(0,0,0,.08) 70%, transparent);
+  --cw: calc(clamp(58px, min(8.2vw, 11vh), 112px) * var(--zoom));
+}
+.bj-dlabel { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; font-size: 1.25em; color: var(--gold-hi); letter-spacing: .04em; text-transform: uppercase; }
+.bj-cards { display: flex; justify-content: center; min-height: calc(var(--cw) * 1.4); }
+.bj-cards .pc + .pc { margin-left: calc(var(--cw) * -.42); }
+.bj-cards .pc.deal { animation: dealin .35s cubic-bezier(.2, 1.3, .4, 1) both; }
+@keyframes dealin { from { transform: translate(30px, -40px) rotate(12deg); opacity: 0; } }
+.bj-tot {
+  display: inline-grid; place-items: center; min-width: 2.2em; padding: .05em .55em; border-radius: 999px; background: #fff; color: #111;
+  font-family: var(--display); font-weight: 700; font-size: 1em; letter-spacing: 0; text-transform: none; box-shadow: 0 2px 0 rgba(0,0,0,.3);
+}
+.bj-tot.bust { background: var(--bad); color: #fff; }
+.bj-rule { font-size: .74em; color: var(--soft); letter-spacing: .08em; text-transform: uppercase; font-weight: 700; text-align: center; }
+.bj-info { font-family: var(--display); font-weight: 700; font-size: 1.3em; padding: .2em 1.1em; border-radius: 999px; background: rgba(0,0,0,.32); box-shadow: inset 0 0 0 1px var(--line); }
+.bj-spots { width: 100%; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 12px; }
+.bj-spot {
+  min-width: calc(var(--cw) * 2.7); max-width: 100%; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 10px; padding: 8px 10px 10px;
+  border-radius: 18px; background: rgba(0,0,0,.22); border: 3px solid var(--rk); box-shadow: var(--shadow-1);
+}
+.bj-spot.cur { box-shadow: 0 0 0 3px var(--gold), 0 0 26px rgba(255,207,51,.5); }
+.bj-spot.mine { background: rgba(0,0,0,.34); }
+.bj-name { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 700; }
+.bj-name span {
+  padding: .05em .65em; border-radius: 999px; background: linear-gradient(var(--rk-hi), var(--rk)); color: var(--rk-text);
+  font-family: var(--display); font-weight: 700; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bj-name b { color: var(--gold-hi); font-variant-numeric: tabular-nums; }
+.bj-hand { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 5px; border-radius: 12px; }
+.bj-hand.active { background: rgba(255,207,51,.14); box-shadow: inset 0 0 0 2px var(--gold); }
+.bj-hand.bust .bj-cards { opacity: .5; }
+.bj-meta { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; font-size: .92em; }
+.bj-bet { color: var(--gold-hi); font-weight: 700; font-variant-numeric: tabular-nums; }
+.bj-res { padding: .05em .65em; border-radius: 999px; font-family: var(--display); font-weight: 700; color: #fff; animation: cup .45s cubic-bezier(.2,1.5,.4,1) both; }
+.bj-res.r-win { background: var(--green); }
+.bj-res.r-bj { background: linear-gradient(var(--gold-hi), var(--gold)); color: #2a1f00; }
+.bj-res.r-push { background: #6b7b72; }
+.bj-res.r-lose, .bj-res.r-bust { background: var(--bad); }
+.bj-wait { min-height: calc(var(--cw) * 1.4); display: grid; place-items: center; color: var(--muted); font-family: var(--display); font-weight: 600; padding: 0 8px; }
+.bj-wait.ok { color: var(--gold-hi); font-size: 1.2em; display: flex; align-items: center; gap: 8px; }
+.chipdot { width: 28px; height: 28px; border-radius: 50%; background: #d32f2f; border: 4px dashed #fff; box-shadow: 0 0 0 2px #d32f2f, 0 3px 0 rgba(0,0,0,.4); }
+.bj-buy { flex-basis: 100%; text-align: center; font-size: .75em; color: var(--soft); font-weight: 700; }
+
+/* betting chips along the bottom */
+.betbox { display: inline-flex; align-items: center; gap: 6px; }
+.pokerchip {
+  --chip: #d32f2f; width: 50px; height: 50px; flex: none; border-radius: 50%; cursor: pointer; color: #fff; padding: 0;
+  border: 4px dashed rgba(255,255,255,.9); background: radial-gradient(circle, var(--chip) 0 52%, color-mix(in srgb, var(--chip), #000 18%) 54%);
+  box-shadow: 0 0 0 2px var(--chip), 0 3px 0 rgba(0,0,0,.45); font-family: var(--display); font-weight: 700; font-size: .85em;
+}
+.pokerchip:active { transform: translateY(2px); box-shadow: 0 0 0 2px var(--chip), 0 1px 0 rgba(0,0,0,.45); }
+.pokerchip:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+.pokerchip.c1 { --chip: #1e6fd9; }
+.pokerchip.c2 { --chip: #1d9a4d; }
+.pokerchip.c3 { --chip: #2b2b2b; }
+.poolchip.money b { color: var(--gold-hi); }
+.dealerchip { background: rgba(255,255,255,.14); color: #fff; box-shadow: inset 0 0 0 1px var(--line); }
+
+/* Color Clash */
+.cc-table {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 10px;
+  --cw: calc(clamp(78px, min(13vw, 17vh), 150px) * var(--zoom));
+}
+.cc-ring {
+  position: absolute; left: 50%; top: calc(24px + var(--cw) * .725); width: calc(var(--cw) * 3.9); aspect-ratio: 1; border-radius: 50%;
+  transform: translate(-50%, -50%); pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--cur) 34%, transparent) 0 40%, transparent 70%);
+  border: 5px dashed color-mix(in srgb, var(--cur) 75%, transparent);
+  animation: ccspin 24s linear infinite;
+}
+.cc-ring.ccw { animation-direction: reverse; }
+@keyframes ccspin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+.cc-piles { position: relative; display: flex; align-items: center; gap: calc(var(--cw) * .55); }
+.cc-deck { position: relative; width: var(--cw); height: calc(var(--cw) * 1.45); padding: 0; border: 0; background: none; cursor: default; color: inherit; border-radius: calc(var(--cw) * .13); }
+.cc-deck .cc { position: absolute; left: 0; top: 0; }
+.cc-deck .d3 { transform: translate(6px, 6px); }
+.cc-deck .d2 { transform: translate(3px, 3px); }
+.cc-deck:not([disabled]) { cursor: pointer; animation: deckglow 1.4s ease-in-out infinite; }
+@keyframes deckglow { 50% { box-shadow: 0 0 0 4px var(--gold), 0 0 30px rgba(255,207,51,.7); } }
+.cc-count { position: absolute; right: -12px; bottom: -12px; z-index: 2; min-width: 2em; padding: .1em .5em; border-radius: 999px; background: #fff; color: #111; font-family: var(--display); font-weight: 700; font-size: .85em; box-shadow: var(--shadow-1); }
+.cc-pile { position: relative; width: var(--cw); height: calc(var(--cw) * 1.45); }
+.cc-pile .cc { position: absolute; left: 0; top: 0; transform: rotate(var(--r, 0deg)); }
+.cc-pile .cc.under { filter: brightness(.8); }
+.cc-pile .cc.top { box-shadow: inset 0 0 0 calc(var(--cw) * .055) #fff, 0 0 0 4px var(--cur), 0 8px 24px rgba(0,0,0,.5); }
+.cc-pile .cc.landed { animation: ccland .4s cubic-bezier(.2, 1.4, .4, 1) both; }
+@keyframes ccland { from { transform: translateY(-60px) scale(1.25) rotate(-20deg); opacity: 0; } }
+.cc-by {
+  position: absolute; left: 50%; top: calc(100% + 12px); transform: translateX(-50%); white-space: nowrap; padding: .1em .75em; border-radius: 999px;
+  background: linear-gradient(var(--rk-hi), var(--rk)); color: var(--rk-text); font-family: var(--display); font-weight: 700; font-size: .85em;
+  box-shadow: var(--shadow-1); max-width: 12em; overflow: hidden; text-overflow: ellipsis;
+}
+.cc-now { position: relative; display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.cc-color { display: inline-flex; align-items: center; gap: 8px; padding: .25em 1em .25em .6em; border-radius: 999px; color: #fff; font-family: var(--display); font-weight: 700; font-size: 1.15em; box-shadow: inset 0 0 0 2px rgba(255,255,255,.6), var(--shadow-1); text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.cc-color svg { width: 1.2em; height: 1.2em; fill: currentColor; stroke: currentColor; stroke-width: 0; }
+.cc-color svg path[stroke-width] { stroke-width: 2.2; }
+.cc-pend { padding: .1em .7em; border-radius: 999px; background: var(--bad); color: #fff; font-family: var(--display); font-weight: 700; font-size: 1.6em; line-height: 1.1; animation: armed .5s ease-in-out infinite alternate; box-shadow: var(--shadow-1); }
+.cc-dirlabel { font-size: 1.6em; color: var(--muted); line-height: 1; }
+
+/* my Color Clash hand, along the bottom: the cards I can play stand up */
+.hand {
+  container-type: inline-size; position: relative; display: flex; justify-content: center; align-items: flex-end;
+  padding: 24px 10px 4px; min-height: calc(var(--cw) * 1.45 + 30px);
+  --cw: calc(clamp(58px, min(10.5vw, 12vh), 108px) * var(--zoom));
+}
+.hand .cc {
+  margin-left: clamp(calc(var(--cw) * -.72), calc((100cqw - var(--n) * var(--cw)) / max(1, var(--n) - 1)), 8px);
+  transition: transform .15s ease, filter .15s ease;
+}
+.hand .cc:first-child { margin-left: 0; }
+.hand .cc.ok { transform: translateY(-16px); cursor: pointer; box-shadow: inset 0 0 0 calc(var(--cw) * .055) #fff, 0 0 0 3px var(--gold), 0 8px 18px rgba(0,0,0,.5); }
+.hand .cc.ok:hover { transform: translateY(-24px); z-index: 2; }
+.hand .cc.no { filter: brightness(.55) saturate(.7); }
+.hand .cc.new { animation: ccland .45s cubic-bezier(.2, 1.4, .4, 1) both; }
+.hand .cc.picking { transform: translateY(-28px); z-index: 3; }
+.wildpick {
+  position: absolute; left: 50%; bottom: calc(100% + 4px); transform: translateX(-50%); z-index: 30;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 12px; border-radius: 18px;
+  background: linear-gradient(180deg, var(--glass-hi), var(--glass)); border: 1px solid var(--line-strong); box-shadow: var(--shadow-3);
+}
+.wp {
+  width: 84px; height: 84px; border-radius: 16px; border: 3px solid #fff; cursor: pointer; color: #fff; padding: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  font-family: var(--display); font-weight: 700; font-size: .9em; box-shadow: 0 3px 0 rgba(0,0,0,.4);
+}
+.wp:nth-child(2) { color: #2b2100; }
+.wp svg { width: 32px; height: 32px; fill: currentColor; stroke: currentColor; stroke-width: 0; }
+.wp svg path[stroke-width] { stroke-width: 2.2; }
+.wp:hover { transform: translateY(-2px); }
+.wp:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+
+/* the card games' big moments, in that player's color */
+#annPop { position: fixed; left: 0; right: 0; top: 30%; z-index: 78; pointer-events: none; display: flex; justify-content: center; padding: 0 16px; }
+#annPop .an-card {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 30px 14px; border-radius: 22px; max-width: 520px; text-align: center;
+  background: linear-gradient(180deg, var(--rk-hi) 0%, var(--rk) 50%, var(--rk-lo) 100%); color: var(--rk-text);
+  border: 3px solid var(--rk-deep); box-shadow: 0 16px 36px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.4);
+}
+#annPop .an-big { font-family: var(--display); font-weight: 700; font-size: 2.6em; line-height: 1; }
+#annPop .an-text { font-family: var(--display); font-weight: 600; font-size: 1.2em; }
+#annPop.k-take .an-big, #annPop.k-last .an-big { font-size: 3.2em; }
+#annPop.play .an-card { animation: alin .45s cubic-bezier(.2, 1.5, .4, 1) both, alout .4s ease-in 2.1s forwards; }
+#drewPop .dp-tile.card { width: 36px; height: 50px; border-radius: 6px; background: conic-gradient(from 45deg, #e63327 0 25%, #1f6fd1 0 50%, #1d9a4d 0 75%, #f5c400 0); box-shadow: inset 0 0 0 3px #fff, 0 4px 8px rgba(0,0,0,.35); }
+#drewPop .dp-tile.card b, #drewPop .dp-tile.card .ic { color: #fff; filter: drop-shadow(0 1px 1px #000); }
+
+/* Blackjack's final standings */
+.bjend { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 14px; font-size: .95em; }
+.bjrow { display: grid; grid-template-columns: minmax(0, 1.6fr) 1fr .9fr 1fr; gap: 8px; align-items: center; padding: 7px 14px; border-radius: var(--r-md); background: rgba(255,255,255,.06); text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+.bjrow.head { background: none; color: var(--soft); font-size: .78em; letter-spacing: .06em; text-transform: uppercase; padding-top: 0; padding-bottom: 0; }
+.bjrow .wn, .bjrow.head span:first-child { text-align: left; display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bjrow .dot { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--rk); box-shadow: 0 0 0 2px rgba(255,255,255,.3); }
+.bjrow.win { background: rgba(255,207,51,.14); color: var(--gold-hi); }
+.bjrow .up { color: #7ee2a2; }
+.bjrow .down { color: #ffb4ae; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-ring, .cc-deck:not([disabled]), .cc-pend, .open30.last, .bj-cards .pc, .cc-pile .cc.landed, .hand .cc.new { animation: none; }
+}
+@media (max-width: 1099px) {
+  .bj-table { gap: 10px; }
+  .bj-dealer { padding: 6px 18px 10px; }
+  .bj-spots { gap: 8px; }
+  .bj-spot { padding: 6px 8px 8px; border-width: 2px; }
+  .cc-table { padding: 14px 6px; gap: 12px; }
+  .gart { width: 92px; height: 64px; --tw: 30px; --th: 40px; }
+  .gart > * { --cw: 33px; }
+  .gcard { padding: 10px 12px; gap: 12px; }
+}
+@media (max-width: 640px) {
+  .bj-table { --cw: calc(40px * var(--zoom)); }
+  .bj-dealer { --cw: calc(52px * var(--zoom)); }
+  .bj-spot { min-width: 0; flex: 1 1 40%; }
+  .pokerchip { width: 42px; height: 42px; font-size: .75em; border-width: 3px; }
+  .betbox { gap: 4px; }
+  .wp { width: 64px; height: 64px; font-size: .75em; }
+  .wp svg { width: 24px; height: 24px; }
+  .seg button { min-height: 36px; padding: 0 .6em; }
+}

@@ -1,18 +1,70 @@
-# Family Tiles
+# Jensen Games
 
-Number-tile rummy for up to 8 people online, with everyone's face around the table.
+Family game night online for up to 8 people, with everyone's face around the table. Three games:
+**Number Tiles** (tile rummy), **Blackjack** against a computer dealer, and **Color Clash** (a match-the-color
+card game where +2s and +4s stack).
 
-- Everyone opens the same link (or types the same table name) and joins one table.
-- Add computer players in the waiting room: **Easy** (learning the game), **Medium** (a solid player) or **Hard**
+## The lobby
+
+- Everyone opens the same link (or types the same lobby name) and joins the lobby. The page used to be called
+  Family Tiles; the old address (`/familytiles/`) sends people to the new one.
+- Each player has their own color, picked on the join screen and changeable in the lobby. Two people can't have
+  the same color: taken colors are greyed out with the owner's initial, and if yours was taken when you joined
+  you get the next free one (with a message saying so). Your color frames your face, your seat and your spot
+  at the table in every game.
+- The first person in is the **host** (crown). Only the host picks the game, changes its settings, adds or
+  removes computer players and starts it. The host can hand the crown to someone else (crown button on their
+  name); if the host leaves, the next person still here takes over.
+- After picking a game the lobby shows that game's settings (everyone sees them; only the host can change them).
+  **Change** goes back to the list of games.
+- **End this game** (host only, in Settings, tap twice) stops the game for everyone. After any game,
+  **Back to the lobby** returns to the same game's settings.
+- Computer players (**Easy**, **Medium**, **Hard**) can play every game. The host's browser plays their turns.
+- Wins are counted per game and shown with a trophy by each face.
+
+## Blackjack
+
+- Pretend money only. Everyone starts with the host's chosen amount ($500, $1,000 or $5,000).
+- Each hand: tap chips to build your bet (the first chip starts a new amount; the circle arrow goes back to the
+  smallest bet), then **Bet**. When everyone has bet (or sat out), the cards are dealt. The host can **Deal now**
+  without waiting for slow deciders.
+- **Hit**, **Stand**, **Double** (on your first two cards) and **Split** (a pair, up to four hands; split aces get
+  one card each). 21 stands by itself.
+- The computer dealer peeks for blackjack under an ace or a ten, then draws to 17 (standing or hitting on a soft
+  17, as the host chose). Blackjack pays 3 to 2 (or 6 to 5). No insurance or surrender.
+- Out of money? **Free buy-back** puts you back at the starting amount, as often as you like. Buy-backs are
+  counted, and the final standings (when the host ends the game) count them against you: the winner is whoever
+  is furthest up.
+- Settings: starting money, smallest bet, decks in the shoe (1, 2 or 6; reshuffled at the last quarter),
+  dealer on soft 17, blackjack pays.
+- Computers: Easy goes on a hunch, Medium plays like the dealer, Hard follows basic strategy.
+
+## Color Clash
+
+- 108 cards: in red (heart), yellow (sun), green (leaf) and blue (drop), one 0, two each of 1–9, Skip, Reverse
+  and +2; plus four Wild and four Wild +4. Each color has its own shape so it doesn't rely on color alone.
+- Play a card that matches the color or the number/symbol on the pile, or a Wild (then pick the new color).
+  Cards you can play stand up in your hand; tap one to play it. Can't (or don't want to) play? **Draw**: if the
+  card you drew can be played you can play it or **Keep it**. (Host setting: draw one, or draw until you can play.)
+- **Stacking**: a +4 can go on a +4 or on a +2, and the total keeps growing (+2, +4, +8, ...). A +2 on a +2 is
+  allowed too unless the host turns it off. The first player who can't (or won't) add to it presses **Take** and
+  picks up the whole stack, and their turn is over.
+- Reverse with two players works like Skip. First to play their last card wins; everyone sees a notice when
+  someone is down to one card.
+- Settings: cards to start (5, 7 or 10), +2 on a +2, draw one or draw until you can play.
+
+## Number Tiles
+
+- Computer players (added by the host in the lobby): **Easy** (learning the game), **Medium** (a solid player) or **Hard**
   (rearranges the table, splits runs, borrows tiles). Mix and match up to 8 players, or play alone against them.
   The host's browser runs their turns (`js/ai.js`).
-- **Leave table** (in Settings or the waiting room) takes you back to the start so you can join again; your seat
+- **Leave** (in Settings or the lobby) takes you back to the start so you can join again; your seat
   is kept during a game. **Close table for everyone** sends everyone back and clears the game.
 - **Camera on** uses the front camera on phones and the webcam on computers. Faces stay on screen all game.
-- 2–4 players use one set of 106 tiles; 5–8 players use two sets.
+- 2–4 players use one set of 106 tiles; 5–8 players use two sets (the host can also choose one or two sets).
 - Big, high-contrast tiles in the Atkinson Hyperlegible font, with a shape on every tile for each color
   (♣ black club, ♥ red heart, ♠ blue spade, ◆ orange diamond, drawn solid with a fine dark edge). The two jokers in each set show a photo each (`www/img/joker.jpg` and `joker2.jpg`) with JOKER under it. **A− / A+** makes everything bigger or smaller.
-- Each player's rack is a wedge rack with their name pressed into the edge, in the color they pick
+- Each player's rack is a wedge rack with their name pressed into the edge, in their color
   (yellow, red, blue, green, pink, purple, black or white).
 - The rack has 3 rows of slots, and each tile stands in a groove. Tiles stay where you put them, so you can
   leave gaps. Drag a tile onto another and that one slides aside; or tap a tile, then tap an empty slot
@@ -36,7 +88,7 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
   bottom of their tiles. It stays for a few seconds after the turn ends, then fades away.
 - **Sort 1-2-3 / Sort colors** line the tiles up and centre each row on the rack.
 - Settings has a volume slider for each person, plus text size, color shapes and game sounds.
-- Every menu (join, waiting room, results, settings) fits on one screen without scrolling, on phones and computers.
+- Every menu fits on one screen on computers; on phones the lobby scrolls when a game with several settings is picked.
 - Whose turn it is shows as a flag and glowing frame on that player's face, and in the browser tab's title.
   Each face also shows how many tiles they hold and the backs of those tiles, laid out where that player has them on their rack
   (only which slots are filled is shared, never which tiles), and whether they have made their first 30.
@@ -56,7 +108,7 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
   switched it on. The best play is searched for in your own browser for up to
   a few seconds (`js/stats.js`, `bestPlay` in `js/ai.js`).
 
-## Rules
+### Rules
 
 - Everyone starts with 14 tiles. On your turn, put down sets or draw one tile.
 - A set is 3+ numbers in a row in one color (a run), or 3–4 of the same number in different colors (a group).
@@ -72,7 +124,8 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
 ## How it works
 
 No server of our own: the public PeerJS broker introduces the players, and the first person at a table
-hosts the game in their browser (`js/room.js`). Every change is sent to everyone as a full snapshot, so if the
+hosts the referee in their browser (`js/room.js`; Blackjack is `js/bj.js`, Color Clash `js/uno.js`, and what they
+look like is `js/cardview.js` and `games.css`; the game list and settings are `js/games.js`). Every change is sent to everyone as a full snapshot, so if the
 host leaves or reloads, someone else takes over without losing the game. Video is a direct two-way call
 between every pair of players (`js/video.js`).
 
@@ -81,7 +134,9 @@ network may not be able to connect or may not see video.
 
 ## Test locally
 
-    python familytiles/scripts/serve.py      # http://localhost:8151
+    python jensengames/scripts/serve.py      # http://localhost:8151
 
 Open two tabs with the same `?room=` code. Add `&fakecam` to use a moving test picture instead of a real
-camera. `window.FT` holds the game state for poking at from the console.
+camera. `window.JG` holds the game state for poking at from the console.
+
+Saved settings on each device start with `jg-`; ones saved by Family Tiles (`ft-`) are copied over the first time.

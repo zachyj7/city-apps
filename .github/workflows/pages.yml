@@ -1,4 +1,4 @@
-# Publishes Clock Rate (www/) and Hourfall (hourfall/www/) to GitHub Pages every time main changes.
+# Publishes Clock Rate (www/), Hourfall, Big Money and Jensen Games to GitHub Pages every time main changes.
 name: Deploy to GitHub Pages
 
 on:
@@ -24,14 +24,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-      # Clock Rate is served at the site root, Hourfall under /hourfall/, Big Money under /bigmoney/, Family Tiles under /familytiles/.
+      # Clock Rate is served at the site root, Hourfall under /hourfall/, Big Money under /bigmoney/, Jensen Games under /jensengames/
+      # (the old Family Tiles address, /familytiles/, sends people on to it).
       - name: Assemble site
         run: |
           mkdir _site
           cp -r www/. _site/
           cp -r hourfall/www _site/hourfall
           cp -r bigmoney/www _site/bigmoney
-          cp -r familytiles/www _site/familytiles
+          cp -r jensengames/www _site/jensengames
+          mkdir -p _site/familytiles
+          printf %s "<!doctype html><meta charset=utf-8><title>Jensen Games</title><script>location.replace('../jensengames/'+location.search)</script><a href=../jensengames/>Family Tiles is now Jensen Games</a>" > _site/familytiles/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
