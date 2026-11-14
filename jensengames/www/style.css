@@ -189,13 +189,14 @@ b, strong { font-weight: 700; }
 #game {
   height: 100dvh; display: grid;
   grid-template-columns: minmax(150px, 220px) minmax(0, 1fr) minmax(150px, 220px);
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  grid-template-areas: "head head head" "left main right" "left foot right";
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "head head head" "left ctrl right" "left main right" "left foot right";
 }
 header { grid-area: head; }
 #seatsL { grid-area: left; }
 #seatsR { grid-area: right; }
 main { grid-area: main; }
+#controls { grid-area: ctrl; }
 footer { grid-area: foot; }
 
 header {
@@ -443,12 +444,12 @@ footer {
 }
 #mySeat:empty { display: none; }
 .mine { min-width: 0; }
-/* The turn buttons sit above the rack (or hand), straight on the table: Done / Draw are chunky keys that
-   look raised off the screen, each with its own shadow. */
+/* The turn buttons sit above the table, straight on the felt: Done / Draw are chunky keys that look
+   raised off the screen, each with its own shadow. */
 #controls {
-  order: -1; position: relative; z-index: 5;
+  position: relative; z-index: 5;
   justify-self: center; display: flex; gap: 10px; align-items: center; justify-content: center; max-width: 100%;
-  padding: 2px 0 8px;
+  padding: 12px 0 0;
 }
 #controls:empty { display: none; }
 #controls .btn { min-height: 40px; padding: .15em .85em; font-size: .85em; border-radius: 10px; gap: .4em; white-space: nowrap; }
@@ -743,8 +744,8 @@ footer {
   .brandname, .tname, .hlabel { display: none; }
   .hbtn { min-height: 40px; padding: .25em .7em; font-size: .88em; }
   .popover { top: 54px; right: 8px; padding: 6px 14px 12px; }
-  #game { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
-    grid-template-areas: "head" "left" "main" "foot"; }
+  #game { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "head" "left" "ctrl" "main" "foot"; }
   #seatsR { display: none; }
   #seatsL { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, clamp(92px, 13vw, 132px)); justify-content: center; gap: 6px; padding: 8px 8px 0; }
   .seat { padding: 3px; gap: 3px; border-radius: 12px; max-height: none; box-shadow: var(--shadow-1); }
@@ -783,7 +784,7 @@ footer {
 }
 /* phones: the turn buttons fill one row, the small ones as icons */
 @media (max-width: 640px) {
-  #controls { justify-self: stretch; gap: 8px; padding: 2px 6px 8px; }
+  #controls { justify-self: stretch; gap: 8px; padding: 10px 8px 0; }
   #controls .btn { padding: 0 .4em; min-width: 34px; flex: 0 1 auto; }
   #controls .btn.go, #controls .btn.draw { min-width: 0; padding: 0 .5em; min-height: 48px; }
   #rackTools .long { display: none; }
