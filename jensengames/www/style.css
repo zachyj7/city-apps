@@ -452,6 +452,8 @@ footer { position: relative; }
   display: flex; gap: 10px; align-items: center; justify-content: center; max-width: 100%; width: max-content;
 }
 #controls:empty { display: none; }
+/* out of the way while tiles are being moved */
+body.moving #controls { display: none; }
 #controls .btn { min-height: 40px; padding: .15em .85em; font-size: .85em; border-radius: 10px; gap: .4em; white-space: nowrap; }
 #controls .btn.go, #controls .btn.draw {
   min-width: 7.2em; min-height: 52px; font-size: 1em; padding: .15em 1.1em; border-radius: 13px; transform: translateY(-3px);

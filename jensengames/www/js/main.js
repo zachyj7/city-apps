@@ -913,7 +913,8 @@ function renderMe() {
   $('#rackTools').innerHTML = tools;
   let html = '';
   if (myTurn()) {
-    html += `<button class="btn go" data-act="done">${ic('check')}Done</button>`;
+    // Done only shows once at least one tile has gone from my rack onto the table this turn.
+    if (A.W && A.W.rack.length < A.W.startRack.length) html += `<button class="btn go" data-act="done">${ic('check')}Done</button>`;
     html += `<button class="btn draw" data-act="draw" title="Tiles left to draw: ${S.pool.length}">${S.pool.length ? `${ic('draw')}Draw<b class="cnt">${S.pool.length}</b>` : `${ic('skip')}Pass`}</button>`;
   } else {
     const cur = S.players.find(p => p.pid === S.turn);
@@ -1274,7 +1275,7 @@ function startDrag(id) {
   // each tile sits in its place in the group; the spacing follows the tile size (rack or table) as it is carried
   ghost.innerHTML = ids.map(x => { const [ox, oy] = off.get(x); return tileHTML(x, '', `position:absolute;left:calc(${ox} * (var(--tw) + var(--gap)));top:calc(${oy} * (var(--th) + var(--rgap)))`); }).join('');
   document.body.appendChild(ghost);
-  document.body.classList.add('dragging');
+  document.body.classList.add('dragging', 'moving');
   const rt = $('#rack .grooves .tile, #rack .grooves .cell');
   A.drag = { ids, off, grab: off.get(id), slot: null, view: null, over: false, gx: 0, gy: 0, rtw: rt ? rt.offsetWidth : 50 };
   // Start with the tile shown where it already is, so nothing jumps (a group leaves gaps where it was).
@@ -1441,7 +1442,7 @@ function drawHand() {
 function endDrag() {
   if (A.W) sendHand(true);
   ghost && ghost.remove(); ghost = null;
-  document.body.classList.remove('dragging');
+  document.body.classList.remove('dragging', 'moving');
   const d = A.drag; A.drag = null;
   return d;
 }
@@ -1567,6 +1568,7 @@ document.addEventListener('pointerdown', e => {
   spaceDrag = { fx: (e.clientX - r.left) / r.width, fy: (e.clientY - r.top) / r.height, rtw: r.width, el: ghostEl, mark: null, slot: null, aim: null, dir: 0, ax: e.clientX, gx: r.left, gy: r.top };
   // the rack shows the space opening like any tile would (neighbours slide aside)
   A.drag = { ids: [], view: null, space: true };
+  document.body.classList.add('moving');
 });
 document.addEventListener('pointermove', e => {
   if (!spaceDrag) return;
@@ -1609,6 +1611,7 @@ function spaceView(r, c, left) {
 const endSpaceDrag = drop => {
   if (!spaceDrag) return;
   const d = spaceDrag; spaceDrag = null;
+  document.body.classList.remove('moving');
   d.el.remove(); spaceMark(null);
   const view = A.drag && A.drag.space ? A.drag.view : null;
   A.drag = null;
