@@ -61,8 +61,8 @@ export function initStats({ A, pid, esc, ic, send }) {
     live = e.target.checked;
     const S = A.S, m = me();
     if (S && S.phase === 'play' && m && m.seat) {
-      if (live && (!m.cheat || m.cheatOffAt != null)) send({ t: 'cheat' });
-      else if (!live && m.cheat && m.cheatOffAt == null) send({ t: 'cheat', on: false });
+      if (live && !m.cheat) send({ t: 'cheat' });
+      else if (!live && m.cheat) send({ t: 'cheat', on: false });
     }
     liveResult = null;
     syncLive();
@@ -141,7 +141,7 @@ export function initStats({ A, pid, esc, ic, send }) {
           <button class="btn" data-st="last" ${canLast ? '' : 'disabled'}>${ic('sortnum')}Analyze</button></div>
         ${lastNote ? `<p class="sthint">${lastNote}</p>` : ''}
         ${lastResult && canLast ? lastResult : ''}
-        <label class="strow"><div><b>Always show the best play</b><span>A card during each of your turns with the best play there is. <em class="warn">Everyone at the table will see you are a cheater, until you have played a turn with it switched off.</em></span></div>
+        <label class="strow"><div><b>Always show the best play</b><span>A card during each of your turns with the best play there is. <em class="warn">Everyone at the table will see you are a cheater while it is on, and the end of the game shows how many times you switched it on.</em></span></div>
           <input type="checkbox" class="switch" id="stLive" ${live ? 'checked' : ''}></label>
         <div class="strow"><div><b>Can I go out?</b><span>Could you put down every tile and win this turn?</span></div>
           <button class="btn" data-st="out" ${A.S && A.S.phase === 'play' && me() && me().seat ? '' : 'disabled'}>${ic('trophy')}Check</button></div>
@@ -342,10 +342,10 @@ export function initStats({ A, pid, esc, ic, send }) {
       live = false; liveFor = null; lastResult = outResult = liveResult = null;
       replay = null; clearTimeout(rpTimer); close();
     }
-    // keep the table's record in step with the switch (on: marked a cheater; off: the mark comes off after a turn)
+    // keep the table's record in step with the switch (on: marked a cheater; off: the mark comes off)
     if (unlocked && S && S.phase === 'play' && m && m.seat) {
-      if (live && (!m.cheat || m.cheatOffAt != null)) send({ t: 'cheat' });
-      else if (!live && m.cheat && m.cheatOffAt == null) send({ t: 'cheat', on: false });
+      if (live && !m.cheat) send({ t: 'cheat' });
+      else if (!live && m.cheat) send({ t: 'cheat', on: false });
     }
     syncLive();
     render();

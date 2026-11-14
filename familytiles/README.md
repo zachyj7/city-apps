@@ -24,7 +24,14 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
   like words in a sentence. Everyone sees the same layout. At the end of each turn the sets are put in order and packed up
   tidily, in reading order, one space apart.
 - **Fit** (with the turn buttons) zooms the table out so every row is on screen at once, with a spare row to
-  play into. Tiles go down as usual; at the end of the turn the table is tidied and goes back to its normal size.
+  play into. Tiles go down as usual. It stays on (on this device) until you press it again.
+- **Live table**: while someone plays, everyone sees their moves as they happen, including the tiles they are
+  carrying over the table and the faded spots tiles were lifted from. Tiles carried around their own rack stay private.
+- **Drew a tile**: when anyone draws (or has to pass with nothing left to draw), a quick pop-up in their rack
+  colour tells everyone.
+- **Who played what**: tiles going down are outlined in the player's rack colour, with their name across the
+  bottom of their tiles. It stays for a few seconds after the turn ends, then fades away.
+- **Sort 1-2-3 / Sort colors** line the tiles up and centre each row on the rack.
 - Settings has a volume slider for each person, plus text size, color shapes and game sounds.
 - Every menu (join, waiting room, results, settings) fits on one screen without scrolling, on phones and computers.
 - Whose turn it is shows as a flag and glowing frame on that player's face, and in the browser tab's title.
@@ -41,8 +48,9 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
   and biggest play. The coach plays back, step by step, the best play for your last turn once it is over (starting from
   your rack as you had it, rows and all; the arrows, dots or arrow keys go back and forth between steps), and
   **Can I go out?** answers yes or no. **Always show the best play** (off until switched on) puts a card
-  with the best play up during every turn, and marks that player as a **cheater** to everyone until they
-  have played a whole turn with it switched off. The best play is searched for in your own browser for up to
+  with the best play up during every turn, and marks that player as a **cheater** to everyone while it is
+  on (the mark comes off as soon as it is switched off). The end-of-game screen shows how many times each player
+  switched it on. The best play is searched for in your own browser for up to
   a few seconds (`js/stats.js`, `bestPlay` in `js/ai.js`).
 
 ## Rules

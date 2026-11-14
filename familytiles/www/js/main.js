@@ -38,10 +38,11 @@ const LEVEL_NAMES = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 const cleanCode = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
 
 const A = {
+  fit: (() => { try { return localStorage.getItem('ft-fit') === '1'; } catch (e) { return false; } })(),   // Fit: on until switched off
   S: null, net: null, video: null, name: '', code: '',
   W: null,            // my turn in progress: { turnNo, pos: {id: [x, y]}, rack: [ids], startTable, startPos, startRack }
   hist: [], sel: new Set(), order: [], seen: new Set(), fresh: new Map(), loose: new Set(), bu: null,
-  vol: store.get('vol', {}), sound: store.get('sound', true), sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, lastAlert: null, lastShame: null, fit: false, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
+  vol: store.get('vol', {}), sound: store.get('sound', true), sortUndo: null, grid: null, cols: 7, rc: (() => { try { return sessionStorage.getItem('ft-rc'); } catch (e) { return null; } })() || store.get('rc', 'yellow'), lastFx: null, lastAlert: null, lastDrew: null, lastShame: null, drag: null, camOn: false, micOn: true, zoom: store.get('zoom', 1), shapes: store.get('shapes', true),
   status: 'connecting',
 };
 window.FT = A;   // for testing from the console
@@ -87,6 +88,7 @@ function start(name, code) {
       if (m.t === 'state') setState(m.s);
       else if (m.t === 'nope') { toast(m.why); beep(220, 0.25); }
       else if (m.t === 'relay') help.rx(m.from, m.m);
+      else if (m.t === 'hand') onHand(m);
       else if (m.t === 'closed') {
         // Someone closed the table: forget this game so it can't come back, and go to the join screen.
         try { sessionStorage.removeItem(snapKey()); sessionStorage.removeItem(gridKey()); } catch (e) { /* ignore */ }
@@ -126,7 +128,6 @@ const seated = () => A.S ? A.S.players.filter(p => p.seat) : [];
 function setState(S) {
   const was = A.S;
   A.S = S;
-  if (A.fit && (S.phase !== 'play' || (was && was.turnNo !== S.turnNo))) A.fit = false;
   saveSnap(S);
   const m = me();
   // Keep my own rack order; a newly drawn tile goes on the end and glows once.
@@ -160,6 +161,16 @@ function setState(S) {
   const ak = S.alert ? S.alert.k : 0;
   if (A.lastAlert !== null && S.alert && ak !== A.lastAlert) showAlert(S.alert);
   A.lastAlert = ak;
+  const dk = S.drew ? S.drew.k : 0;
+  if (A.lastDrew != null && S.drew && dk !== A.lastDrew) showDrew(S.drew);
+  A.lastDrew = dk;
+  const pk = S.played ? S.played.k : 0;
+  if (A.lastPlayed != null && S.played && pk !== A.lastPlayed) {
+    A.shown = { pid: S.played.pid, ids: new Set(S.played.ids), until: Date.now() + BY_MS };
+    clearTimeout(A.shownT); A.shownT = setTimeout(() => { A.shown = null; if (A.S) renderAll(); }, BY_MS + 50);
+  }
+  A.lastPlayed = pk;
+  if (A.hand && (A.hand.ending || A.hand.turnNo !== S.turnNo)) A.hand = null;
   A.video.sync(S.players.filter(p => p.on && p.peer && p.pid !== pid).map(p => p.peer));
   flip(null, renderAll);
   help.state();
@@ -366,7 +377,7 @@ const numHTML = n => String(n).replace(/0/g, '<span class="z">0</span>');
 // Each set of tiles has two jokers, each with its own photo (see .jface in style.css).
 const jokerFace = id => (id % 106 === 105 ? 'jface j2' : 'jface');
 
-function tileHTML(id, extra = '', style = '') {
+function tileHTML(id, extra = '', style = '', inner = '') {
   const t = tile(id);
   // The glow carries on from where it was when the screen is redrawn, instead of starting over.
   let fresh = '';
@@ -378,7 +389,7 @@ function tileHTML(id, extra = '', style = '') {
   const label = t.j ? 'Joker' : `${COLOR_NAMES[t.c]} ${t.n}`;
   const face = t.j ? `<span class="${jokerFace(id)}" aria-hidden="true"></span><span class="sym">JOKER</span>`
     : `<span class="num">${numHTML(t.n)}</span>${A.shapes ? SHAPES[t.c] : ''}`;
-  return `<div class="${cls}" data-id="${id}" role="button" aria-label="${label}"${style ? ` style="${style}"` : ''}>${face}</div>`;
+  return `<div class="${cls}" data-id="${id}" role="button" aria-label="${label}"${style ? ` style="${style}"` : ''}>${face}${inner}</div>`;
 }
 
 // The rack and buttons go first: the table then sizes itself to the room that is left.
@@ -653,7 +664,8 @@ function renderOver(box) {
   const rows = S.players.filter(p => p.seat || p.wins).sort((a, b) => (b.wins || 0) - (a.wins || 0));
   box.innerHTML = `<div class="card over">
     <div class="winner"><span class="cup">${ic('trophy')}</span><h2>${r.name ? `${esc(r.name)} wins!` : 'No winner this time'}</h2></div>
-    <div class="wins">${rows.map(p => `<div class="winrow ${p.pid === r.pid ? 'win' : ''}"><span class="wn">${esc(p.name)}${p.cheat ? ' <i class="cheattag">cheater</i>' : ''}</span><span class="wc">${ic('trophy')}<b>${p.wins || 0}</b></span></div>`).join('')}</div>
+    <div class="wins">${rows.map(p => `<div class="winrow ${p.pid === r.pid ? 'win' : ''}"><span class="wn">${esc(p.name)}${p.cheats ? ` <i class="cheattag" title="Times they switched on Always show the best play this game">cheat mode ×${p.cheats}</i>` : ''}</span><span class="wc">${ic('trophy')}<b>${p.wins || 0}</b></span></div>`).join('')}</div>
+    ${rows.some(p => p.cheats) ? `<div class="cheattally"><b>${ic('sortnum')}Cheat mode this game</b>${rows.filter(p => p.cheats).sort((a, b) => b.cheats - a.cheats).map(p => `<span>${esc(p.name)} switched it on <b>${p.cheats}</b> time${p.cheats === 1 ? '' : 's'}</span>`).join('')}</div>` : ''}
     <button class="btn go huge" data-act="newgame">Play again ${ic('arrow')}</button>
   </div>`;
 }
@@ -707,6 +719,24 @@ function measureBoard(box, rows) {
 }
 
 const BOARD_PAD = 6;   // a little felt above the top row
+// Who put a tile down: shown on the tiles going down during a turn, and for a few seconds after the turn.
+const BY_MS = 6000;
+// Each such tile is outlined in the player's rack colour, with their name under each run of their tiles.
+// (On your own screen during your own turn, your new tiles keep their gold outline instead.)
+function byOf(id, before) {
+  const S = A.S;
+  let who = null, fade = null;
+  if (S.work && !A.W && !before[id]) who = S.turn;
+  else if (A.shown && A.shown.ids.has(id)) {
+    const left = A.shown.until - Date.now();
+    if (left <= 0) return null;
+    who = A.shown.pid;
+    fade = Math.max(0, left - 700);
+  }
+  const p = who && S.players.find(q => q.pid === who);
+  return p ? { p, fade } : null;
+}
+const fadeStyle = b => (b.fade == null ? '' : `;animation:byOut .7s ease ${b.fade}ms forwards`);
 function boardPoint(px, py) {
   const b = $('#board').getBoundingClientRect();
   return [(px - b.left) / A.bu.ux, (py - b.top - BOARD_PAD) / A.bu.uy];
@@ -722,16 +752,29 @@ function renderBoard(box) {
   let lowest = 0;
   for (const id in pos) lowest = Math.max(lowest, pos[id][1]);
   const u = measureBoard(box, Math.ceil(lowest + 1 + (live ? 1 : 0)));
-  let html = '', maxX = BOARD_W, maxY = 0;
+  let html = '', names = '', maxX = BOARD_W, maxY = 0;
   for (const g of groupsOf(pos)) {
     const ok = analyze(g).ok;
+    let run = null;   // the run of tiles in this set put down by one player, for their name label
+    const endRun = () => {
+      if (!run) return;
+      const cx = (run.x0 + run.n / 2) * u.ux - 2, ty = run.y * u.uy + BOARD_PAD + u.bh;
+      names += `<div class="byname" aria-hidden="true" style="${rackStyle(run.b.p.rc)};left:${cx.toFixed(1)}px;top:${ty.toFixed(1)}px${fadeStyle(run.b)}">${esc(run.b.p.name || '?')}</div>`;
+      run = null;
+    };
     g.forEach((id, i) => {
       const [x, y] = pos[id];
       maxX = Math.max(maxX, x + 1); maxY = Math.max(maxY, y);
-      const cls = [before[id] ? '' : 'placed', lifted.has(id) ? 'lifted' : '', showMarks ? (ok ? 'seg-ok' : 'seg-bad') : 'seg', i ? '' : 'seg-start', i === g.length - 1 ? 'seg-end' : ''].join(' ');
-      html += tileHTML(id, cls, `left:${(x * u.ux).toFixed(1)}px;top:${(y * u.uy + BOARD_PAD).toFixed(1)}px`);
+      const b = byOf(id, before);
+      const cls = [before[id] || b ? '' : 'placed', lifted.has(id) ? 'lifted' : '', showMarks ? (ok ? 'seg-ok' : 'seg-bad') : 'seg', i ? '' : 'seg-start', i === g.length - 1 ? 'seg-end' : '', b ? 'owned' : ''].join(' ');
+      const ring = b ? `<i class="byring" aria-hidden="true" style="${rackStyle(b.p.rc)}${fadeStyle(b)}"></i>` : '';
+      html += tileHTML(id, cls, `left:${(x * u.ux).toFixed(1)}px;top:${(y * u.uy + BOARD_PAD).toFixed(1)}px`, ring);
+      if (b && run && run.b.p === b.p) run.n++;
+      else { endRun(); if (b) run = { b, x0: x, y, n: 1 }; }
     });
+    endRun();
   }
+  html += names;
   const mainEl = box.parentElement, cs = getComputedStyle(mainEl);
   const wpx = Math.ceil(maxX * u.ux - 4);
   const room = mainEl.offsetHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 2 - (wpx > box.clientWidth ? 9 : 0);
@@ -742,6 +785,7 @@ function renderBoard(box) {
   const need = html ? (maxY + extra) * u.uy + BOARD_PAD + u.bh + 4 : 0;
   const h = Math.max(need, room);
   box.innerHTML = `<div id="board" class="board ${live ? 'live' : ''}" style="--tw:${u.bw}px;--th:${u.bh}px;width:${wpx}px;height:${Math.floor(h)}px">${html}</div>`;
+  drawHand();
 }
 
 // The "first 30" badge: a green tick once a player has made their opening play, a grey padlock until then.
@@ -978,6 +1022,15 @@ function sortRack(by) {
     for (let i = 0; i < Math.max(flat.length, ROWS * cols); i += cols) { const r = flat.slice(i, i + cols); while (r.length < cols) r.push(null); g.push(r); }
   }
   while (g.length < ROWS) g.push(blank());
+  // each row centred on the rack, gaps between colors kept
+  g = g.map(row => {
+    let a = row.findIndex(x => x != null), b = -1;
+    row.forEach((x, i) => { if (x != null) b = i; });
+    if (a < 0) return row;
+    const out = blank(), at = Math.floor((cols - (b - a + 1)) / 2);
+    for (let i = a; i <= b; i++) out[at + i - a] = row[i];
+    return out;
+  });
   flip($('#rack .grooves'), () => {
     A.grid = g;
     A.sortUndo = { by, before, after: JSON.stringify(fitGrid(cloneGrid(g), rackIds(), A.cols)) };
@@ -1004,7 +1057,7 @@ function flip(container, change) {
   const before = new Map();
   // A tile being dragged has a faded copy where it came from and a space where it will land: those share its
   // number, so they are left out (otherwise one of them flies across between the table and the rack).
-  const all = () => document.querySelectorAll('#rack .grooves .tile[data-id]:not(.landing), #board .tile[data-id]:not(.lifted)');
+  const all = () => document.querySelectorAll('#rack .grooves .tile[data-id]:not(.landing), #board > .tile[data-id]:not(.lifted)');
   for (const el of all()) before.set(el.dataset.id, el.getBoundingClientRect());
   change();
   const moved = [];
@@ -1206,6 +1259,7 @@ document.addEventListener('pointermove', e => {
   d.gx = e.clientX - press.fx * tw - d.grab[0] * (tw + gap);
   d.gy = e.clientY - press.fy * th - d.grab[1] * (th + rgap);
   ghost.style.transform = `translate(${d.gx}px, ${d.gy}px)`;
+  queueHand();
   // The slot being aimed at sticks until the pointer is well into the next one, so a hand hovering on the
   // line between two slots (or two rows) doesn't make the rack shuffle back and forth.
   // The grabbed tile lands in the slot it covers most: the one its centre is in (slots are all the same size),
@@ -1219,7 +1273,68 @@ document.addEventListener('pointermove', e => {
   if (d.over) edgeScroll(e); else d.armed = false;
 }, { passive: false });
 
+/* Live: while it is my turn, the tiles I carry over the table are sent to everyone else as they move (a few
+   times a second), so they see where they are going. Tiles carried only around my rack are never sent. */
+let handT = 0, handLast = 0, handWas = '';
+function sendHand(clear) {
+  clearTimeout(handT); handT = 0;
+  const d = A.drag;
+  if (!A.W) return;
+  let m;
+  if (clear || !d || !d.ids || !d.ids.length) m = { t: 'hand', ids: [] };
+  else if (d.over && $('#board')) {
+    const [x, y] = boardPoint(d.gx, d.gy);
+    m = { t: 'hand', ids: d.ids, off: d.ids.map(id => d.off.get(id)), at: [Math.round(x * 100) / 100, Math.round(y * 100) / 100] };
+  } else {
+    const ids = d.ids.filter(id => A.W.pos[id]);   // lifted off the table: they show as picked up
+    m = { t: 'hand', ids, off: ids.map(id => d.off.get(id)), at: null };
+  }
+  const key = JSON.stringify(m);
+  if (key === handWas) return;
+  handWas = key; handLast = Date.now();
+  send(m);
+}
+function queueHand() {
+  if (!A.W || handT) return;
+  const wait = Math.max(0, 70 - (Date.now() - handLast));
+  handT = setTimeout(() => { handT = 0; sendHand(false); }, wait);
+}
+function onHand(m) {
+  if (myTurn() || !A.S || m.from !== A.S.turn || m.turnNo !== A.S.turnNo) return;
+  clearTimeout(A.handT);
+  if (!m.ids || !m.ids.length) {
+    // dropped: what they did arrives with the next update; until then the tiles stay where they were let go
+    if (A.hand) { A.hand.ending = true; A.handT = setTimeout(() => { A.hand = null; drawHand(); }, 800); }
+    return;
+  }
+  A.hand = { from: m.from, turnNo: m.turnNo, ids: m.ids, off: m.off || [], at: m.at };
+  A.handT = setTimeout(() => { A.hand = null; drawHand(); }, 4000);   // nothing heard for a while: gone
+  drawHand();
+}
+function drawHand() {
+  const board = $('#board');
+  if (!board) return;
+  const h = A.hand && A.S && !A.W && A.hand.from === A.S.turn ? A.hand : null;
+  const ids = new Set(h ? h.ids : []);
+  for (const t of board.querySelectorAll('.tile.peerlifted')) if (!ids.has(+t.dataset.id)) t.classList.remove('peerlifted');
+  for (const id of ids) { const t = board.querySelector(`:scope > .tile[data-id="${id}"]`); if (t) t.classList.add('peerlifted'); }
+  let el = board.querySelector('.peerhand');
+  if (!h || !h.at || !A.bu) { if (el) el.remove(); return; }
+  const u = A.bu, key = h.ids.join(',') + '|' + u.bw;
+  if (!el || el.dataset.key !== key) {
+    if (el) el.remove();
+    el = document.createElement('div');
+    el.className = 'peerhand'; el.dataset.key = key;
+    el.innerHTML = h.ids.map((id, i) => { const o = h.off[i] || [0, 0]; return tileHTML(id, 'carried', `left:${(o[0] * u.ux).toFixed(1)}px;top:${(o[1] * u.uy).toFixed(1)}px`); }).join('');
+    el.style.transition = 'none';
+    el.style.transform = `translate(${h.at[0] * u.ux}px, ${h.at[1] * u.uy + BOARD_PAD}px)`;
+    board.appendChild(el);
+    el.offsetWidth; el.style.transition = '';
+  } else el.style.transform = `translate(${h.at[0] * u.ux}px, ${h.at[1] * u.uy + BOARD_PAD}px)`;
+}
+
 function endDrag() {
+  if (A.W) sendHand(true);
   ghost && ghost.remove(); ghost = null;
   document.body.classList.remove('dragging');
   const d = A.drag; A.drag = null;
@@ -1439,7 +1554,7 @@ document.addEventListener('click', e => {
   else if (act === 'reset') resetTurn();
   else if (act === 'torack') flip(null, () => moveSelected('rack'));
   else if (act === 'space') addSpace();
-  else if (act === 'fit') { A.fit = !A.fit; renderAll(); }
+  else if (act === 'fit') { A.fit = !A.fit; try { localStorage.setItem('ft-fit', A.fit ? '1' : ''); } catch (e) { /* private */ } renderAll(); }
   else if (act === 'sortnum') sortRack('num');
   else if (act === 'sortcol') sortRack('col');
   else if (act === 'skip') send({ t: 'skip' });
@@ -1528,7 +1643,7 @@ function leaveTable(msg) {
   A.net.stop(); A.net = null;
   A.video.stopAll();
   A.camOn = false; A.micOn = true;
-  A.S = null; A.W = null; A.fit = false; A.lastAlert = null; A.lastShame = null; A.hist = []; A.sel.clear(); A.drag = null; A.loose.clear(); A.sortUndo = null; A.status = 'off';
+  A.S = null; A.W = null; A.lastAlert = null; A.lastDrew = null; A.lastShame = null; A.hist = []; A.sel.clear(); A.drag = null; A.loose.clear(); A.sortUndo = null; A.status = 'off';
   for (const el of seatEls.values()) el.remove();
   seatEls.clear(); videoEls.clear();
   for (const g of gains.values()) try { g.src.disconnect(); } catch (e) { /* ignore */ }
@@ -1596,6 +1711,21 @@ function showAlert(a) {
   (one ? [784, 988, 784, 1175] : [659, 784, 880]).forEach((f, i) => setTimeout(() => beep(f, one ? 0.16 : 0.13), i * 110));
 }
 window.FT.showAlert = showAlert;
+
+// Someone drew a tile (or had to pass): a quick pop-up in their rack colour, for everyone.
+let drewT = 0;
+function showDrew(a) {
+  let el = $('#drewPop');
+  if (!el) { el = document.createElement('div'); el.id = 'drewPop'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  const mine = a.pid === pid, who = mine ? 'You' : esc(a.name);
+  el.setAttribute('style', rackStyle(a.rc));
+  el.innerHTML = `<div class="dp-card"><span class="dp-tile">${a.pass ? ic('skip') : '<b>?</b>'}</span>
+    <span class="dp-text">${a.pass ? `${who} passed <small>No tiles left to draw</small>` : `${who} drew a tile`}</span></div>`;
+  el.hidden = false;
+  el.classList.remove('play'); el.offsetWidth; el.classList.add('play');
+  clearTimeout(drewT); drewT = setTimeout(() => { el.hidden = true; el.classList.remove('play'); }, 2200);
+}
+window.FT.showDrew = showDrew;
 
 // Someone switched on "Always show the best play": a big red stamp for everyone.
 let shameT = 0;
