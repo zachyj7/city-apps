@@ -798,22 +798,24 @@ function renderMe() {
   const c = $('#controls');
   // The rack only shows during a game, so the lobby and results get the whole screen.
   document.querySelector('footer').hidden = !(S && S.phase === 'play');
-  if (!S || !m || S.phase !== 'play') { c.innerHTML = ''; renderRack(); return; }
-  const fitBtn = `<button class="btn ${A.fit ? 'on' : ''}" data-act="fit" aria-pressed="${A.fit}" aria-label="Fit the whole table on screen" title="Fit the whole table on screen">${ic('fit')}<span class="long">Fit</span></button>`;
-  let html = '';
+  if (!S || !m || S.phase !== 'play') { c.innerHTML = ''; $('#rackTools').innerHTML = ''; renderRack(); return; }
+  // Undo, Reset and Fit sit on the rack's edge, on the right of the Sort buttons
+  let tools = '';
   if (myTurn()) {
     const placed = A.W && A.W.rack.length < A.W.startRack.length;
+    tools += `<button class="sortbtn" data-act="undo" aria-label="Undo" title="Undo" ${A.hist.length ? '' : 'disabled'}>${ic('undo')}<span class="long">Undo</span></button>`;
+    tools += `<button class="sortbtn" data-act="reset" aria-label="Reset" title="Reset" ${placed || (A.W && A.hist.length) ? '' : 'disabled'}>${ic('reset')}<span class="long">Reset</span></button>`;
+  }
+  tools += `<button class="sortbtn ${A.fit ? 'on' : ''}" data-act="fit" aria-pressed="${A.fit}" aria-label="Fit the whole table on screen" title="Fit the whole table on screen">${ic('fit')}<span class="long">Fit</span></button>`;
+  $('#rackTools').innerHTML = tools;
+  let html = '';
+  if (myTurn()) {
     html += `<button class="btn go" data-act="done">${ic('check')}Done</button>`;
     html += `<button class="btn draw" data-act="draw" title="Tiles left to draw: ${S.pool.length}">${S.pool.length ? `${ic('draw')}Draw<b class="cnt">${S.pool.length}</b>` : `${ic('skip')}Pass`}</button>`;
-    html += `<button class="btn" data-act="undo" aria-label="Undo" title="Undo" ${A.hist.length ? '' : 'disabled'}>${ic('undo')}<span class="long">Undo</span></button>`;
-    html += `<button class="btn" data-act="reset" aria-label="Reset" title="Reset" ${placed || (A.W && A.hist.length) ? '' : 'disabled'}>${ic('reset')}<span class="long">Reset</span></button>`;
-    html += fitBtn;
-    html += `<button class="btn" data-act="torack" aria-label="Back to rack" title="Back to rack" ${A.sel.size ? '' : 'disabled'}>${ic('torack')}<span class="long">Rack</span></button>`;
   } else {
     const cur = S.players.find(p => p.pid === S.turn);
     if (cur) html += `<span class="turnchip" style="${rackStyle(cur.rc)}">${cur.cpu ? ic('bot') : ''}${esc(cur.name)}</span>`;
     if (cur && !cur.on) html += `<button class="btn" data-act="skip">${ic('skip')}Skip</button>`;
-    html += fitBtn;
     html += `<span class="poolchip" title="Tiles left to draw: ${S.pool.length}">${ic('draw')}<b>${S.pool.length}</b></span>`;
   }
   c.innerHTML = html;
@@ -935,7 +937,6 @@ function renderRack() {
   const rack = $('#rack');
   for (const kv of rackStyle(A.rc).split(';')) { const [k, v] = kv.split(':'); rack.style.setProperty(k, v); }
   rack.classList.toggle('picking', A.sel.size > 0);
-  $('#rackName').textContent = A.name;
   const g = rack.querySelector('.grooves');
   if (!S || !m || !m.seat || S.phase === 'lobby') {
     g.style.gridTemplateColumns = '';
@@ -972,7 +973,7 @@ function renderRack() {
   }
   $('#rackInfo').innerHTML = `${badge}<span>${ids.length}<span class="long"> tiles</span></span>`;
   placeSpaceTile();
-  for (const b of document.querySelectorAll('.sortbtn')) {
+  for (const b of document.querySelectorAll('#sorts .sortbtn')) {
     const by = b.dataset.act === 'sortnum' ? 'num' : 'col';
     const undo = canUndoSort(by);
     const html = undo ? `${ic('undo')}<span class="lbl">Undo sort</span>` : `${ic(by === 'num' ? 'sortnum' : 'sortcol')}<span class="lbl">${SORT_LABELS[by]}</span>`;
@@ -1761,6 +1762,18 @@ function beep(f, dur, f2) {
     o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + dur);
   } catch (e) { /* no sound */ }
 }
+
+// The size of the tiles on my rack, from the slider on its edge (remembered on this device). Bigger tiles mean
+// fewer slots across; the tiles keep their rows and slide over where they need to.
+A.rz = Math.min(1.5, Math.max(0.7, +store.get('rz', 1) || 1));
+$('#rack').style.setProperty('--rz', A.rz);
+$('#rackSize').value = A.rz;
+$('#rackSize').addEventListener('input', e => {
+  A.rz = +e.target.value; store.set('rz', A.rz);
+  $('#rack').style.setProperty('--rz', A.rz);
+  heldCols = 0; A.wide = null;   // a new size is a fresh start for the slot count
+  renderRack();
+});
 
 const stats = initStats({ A, pid, esc, ic, send });
 stats.unlock(true);   // statistics are open to everyone, from Settings

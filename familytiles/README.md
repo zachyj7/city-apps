@@ -23,7 +23,10 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
 - The table works like the rack: put tiles anywhere. Tiles side by side make a set and a space separates sets,
   like words in a sentence. Everyone sees the same layout. At the end of each turn the sets are put in order and packed up
   tidily, in reading order, one space apart.
-- **Fit** (with the turn buttons) zooms the table out so every row is on screen at once, with a spare row to
+- **Done** and **Draw** sit under the rack. **Undo**, **Reset** and **Fit** are on the rack's edge, to the right of
+  the Sort buttons, with a slider between them that makes the tiles on your rack bigger or smaller (remembered on
+  this device; bigger tiles mean fewer slots across).
+- **Fit** zooms the table out so every row is on screen at once, with a spare row to
   play into. Tiles go down as usual. It stays on (on this device) until you press it again.
 - **Live table**: while someone plays, everyone sees their moves as they happen, including the tiles they are
   carrying over the table and the faded spots tiles were lifted from. Tiles carried around their own rack stay private.
