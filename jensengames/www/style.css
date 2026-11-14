@@ -443,21 +443,18 @@ footer {
 }
 #mySeat:empty { display: none; }
 .mine { min-width: 0; }
-/* The turn buttons sit above the rack (or hand), on a bar that floats a little off the table: a deep soft
-   shadow under it, and Done / Draw are chunky keys standing up off the bar. */
+/* The turn buttons sit above the rack (or hand), straight on the table: Done / Draw are chunky keys that
+   look raised off the screen, each with its own shadow. */
 #controls {
   order: -1; position: relative; z-index: 5;
-  justify-self: center; display: flex; gap: 8px; align-items: center; justify-content: center; max-width: 100%;
-  padding: 8px; border-radius: 18px; background: linear-gradient(180deg, var(--glass-hi), var(--glass));
-  border: 1px solid var(--line-strong);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 4px 0 rgba(0,0,0,.35), 0 14px 22px -6px rgba(0,0,0,.6), 0 26px 40px -12px rgba(0,0,0,.5);
-  transform: translateY(-4px);
+  justify-self: center; display: flex; gap: 10px; align-items: center; justify-content: center; max-width: 100%;
+  padding: 2px 0 8px;
 }
 #controls:empty { display: none; }
 #controls .btn { min-height: 40px; padding: .15em .85em; font-size: .85em; border-radius: 10px; gap: .4em; white-space: nowrap; }
 #controls .btn.go, #controls .btn.draw {
   min-width: 7.2em; min-height: 52px; font-size: 1em; padding: .15em 1.1em; border-radius: 13px; transform: translateY(-3px);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), inset 0 -2px 0 rgba(0,0,0,.12), 0 5px 0 var(--b-edge), 0 9px 14px rgba(0,0,0,.45);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), inset 0 -2px 0 rgba(0,0,0,.12), 0 5px 0 var(--b-edge), 0 12px 18px -2px rgba(0,0,0,.55);
 }
 #controls .btn.go:active, #controls .btn.draw:active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 0 0 var(--b-edge), 0 2px 4px rgba(0,0,0,.4); }
 #controls .btn[disabled] { background: transparent; color: rgba(255,255,255,.32); box-shadow: none; }
@@ -786,7 +783,7 @@ footer {
 }
 /* phones: the turn buttons fill one row, the small ones as icons */
 @media (max-width: 640px) {
-  #controls { justify-self: stretch; gap: 5px; padding: 5px; border-radius: 14px; }
+  #controls { justify-self: stretch; gap: 8px; padding: 2px 6px 8px; }
   #controls .btn { padding: 0 .4em; min-width: 34px; flex: 0 1 auto; }
   #controls .btn.go, #controls .btn.draw { min-width: 0; padding: 0 .5em; min-height: 48px; }
   #rackTools .long { display: none; }
