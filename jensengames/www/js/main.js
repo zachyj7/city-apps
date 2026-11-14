@@ -713,7 +713,7 @@ function renderLobby(box) {
       ${host ? '' : `<p class="tip">${ic('crown')}<span>Only the host picks the game. Pick your color while you wait.</span></p>`}</div>`;
   } else {
     const cfg = cfgFor(S.game, S.cfg && S.cfg[S.game]);
-    const sets = g.settings.map(st => `<div class="gset"><span class="glabel">${st.label}</span><span class="seg" role="group" aria-label="${st.label}">${st.options.map(([v, label]) =>
+    const sets = g.settings.map(st => `<div class="gset"><span class="glabel">${st.label}</span><span class="segopts" role="group" aria-label="${st.label}">${st.options.map(([v, label]) =>
       `<button class="${cfg[st.key] === v ? 'on' : ''}" data-act="cfg" data-key="${st.key}" data-v='${esc(JSON.stringify(v))}' aria-pressed="${cfg[st.key] === v}" ${host ? '' : 'disabled'}>${label}</button>`).join('')}</span></div>`).join('');
     const need = g.min - here.length;
     right = `<div class="section gamehead">${gameArt(S.game, 'small')}<div class="gh"><h3>Game</h3><b class="gname">${g.name}</b><small>${players(g)}</small></div>

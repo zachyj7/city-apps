@@ -56,16 +56,16 @@
 .gsets { display: flex; flex-direction: column; gap: 8px; }
 .gset { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .glabel { font-weight: 700; }
-.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(0,0,0,.28); box-shadow: inset 0 0 0 1px var(--line); }
-.seg button {
+.segopts { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(0,0,0,.28); box-shadow: inset 0 0 0 1px var(--line); }
+.segopts button {
   min-height: 40px; min-width: 3em; padding: 0 .8em; border: 0; border-radius: 9px; cursor: pointer; background: transparent; color: var(--muted);
   font-family: var(--display); font-weight: 600; font-size: .92em;
 }
-.seg button:hover:not([disabled]) { background: rgba(255,255,255,.1); color: #fff; }
-.seg button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
-.seg button.on { background: linear-gradient(var(--gold-hi), var(--gold)); color: #2a1f00; box-shadow: 0 2px 0 var(--gold-deep); }
-.seg button[disabled] { cursor: default; }
-.seg button[disabled]:not(.on) { opacity: .55; }
+.segopts button:hover:not([disabled]) { background: rgba(255,255,255,.1); color: #fff; }
+.segopts button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.segopts button.on { background: linear-gradient(var(--gold-hi), var(--gold)); color: #2a1f00; box-shadow: 0 2px 0 var(--gold-deep); }
+.segopts button[disabled] { cursor: default; }
+.segopts button[disabled]:not(.on) { opacity: .55; }
 .waitstart {
   margin-top: 18px; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 60px; border-radius: 14px;
   border: 2px dashed var(--line-strong); color: var(--muted); font-family: var(--display); font-weight: 600; font-size: 1.1em; text-align: center; padding: 8px 14px;
@@ -323,5 +323,5 @@ main.cardgame:has(.cc-table) { overflow: hidden; }
   .betbox { gap: 4px; }
   .wp { width: 64px; height: 64px; font-size: .75em; }
   .wp svg { width: 24px; height: 24px; }
-  .seg button { min-height: 36px; padding: 0 .6em; }
+  .segopts button { min-height: 36px; padding: 0 .6em; }
 }
