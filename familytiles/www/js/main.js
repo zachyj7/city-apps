@@ -1,6 +1,7 @@
 // Family Tiles: what each player sees and touches.
 import { Net } from './net.js';
 import { Video } from './video.js';
+import { initHelp } from './help.js';
 import { tile, analyze, openingPoints, checkTurn, groupsOf, tidyPos, autoSplit, SYMBOLS, COLOR_NAMES, OPEN_POINTS, BOARD_W } from './rules.js';
 
 // Rack colors to pick from. hi/base/lo/deep shade the plastic, ink is the pressed-in name, text is printing on it.
@@ -84,6 +85,7 @@ function start(name, code) {
     onMsg: m => {
       if (m.t === 'state') setState(m.s);
       else if (m.t === 'nope') { toast(m.why); beep(220, 0.25); }
+      else if (m.t === 'relay') help.rx(m.from, m.m);
       else if (m.t === 'closed') {
         // Someone closed the table: forget this game so it can't come back, and go to the join screen.
         try { sessionStorage.removeItem(snapKey()); sessionStorage.removeItem(gridKey()); } catch (e) { /* ignore */ }
@@ -151,6 +153,7 @@ function setState(S) {
   else if (A.lastFx === null) A.lastFx = S.fx ? S.fx.k : 0;
   A.video.sync(S.players.filter(p => p.on && p.peer && p.pid !== pid).map(p => p.peer));
   flip(null, renderAll);
+  help.state();
 }
 
 const clonePos = p => { const o = {}; for (const k in p || {}) o[k] = [p[k][0], p[k][1]]; return o; };
@@ -1090,7 +1093,7 @@ $('#volList').addEventListener('input', e => {
   renderSeats();
 });
 function showSettings(open) {
-  if (open) renderVolumes(true);
+  if (open) { renderVolumes(true); help.render(); }
   $('#settings').hidden = !open;
   $('#setBtn').setAttribute('aria-expanded', open);
   $('#setBtn').classList.toggle('on', open);
@@ -1115,6 +1118,7 @@ function leaveTable(msg) {
   for (const g of gains.values()) try { g.src.disconnect(); } catch (e) { /* ignore */ }
   gains.clear();
   showSettings(false);
+  help.leave();
   $('#game').hidden = true; $('#join').hidden = false;
   document.title = 'Family Tiles';
   const u = new URL(location.href); u.searchParams.delete('auto'); history.replaceState(null, '', u);
@@ -1172,4 +1176,5 @@ function beep(f, dur, f2) {
   } catch (e) { /* no sound */ }
 }
 
+const help = initHelp({ A, pid, send, toast, esc, ic });
 setupJoin();

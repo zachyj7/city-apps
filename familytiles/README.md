@@ -24,6 +24,10 @@ Number-tile rummy for up to 8 people online, with everyone's face around the tab
 - Whose turn it is shows as a flag and glowing frame on that player's face, and in the browser tab's title.
   Each face also shows the backs of the tiles they hold and whether they have made their first 30.
 - Split a run on the table and play your own tile into one of the halves, and everyone sees a signed **MJ!**
+- **Helper sign-in** (bottom of Settings): someone with the helper username and password can look at another
+  player's screen to sort out a technical problem. The tiles in that player's hand are blanked, and they see a
+  notice with a **Stop** button the whole time. It shows the game page only, not the rest of their device
+  (`js/help.js`).
 
 ## Rules
 

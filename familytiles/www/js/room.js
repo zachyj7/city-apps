@@ -137,6 +137,14 @@ export class Room {
     if (m.t === 'cam') { p.cam = !!m.cam; p.mic = !!m.mic; return this.push(); }
     if (m.t === 'rc') { p.rc = cleanColor(m.rc); return this.push(); }
 
+    // A private note from one player to another (the helper view uses it). Nothing in the game changes.
+    if (m.t === 'relay') {
+      if (typeof m.to !== 'string' || !m.m || typeof m.m !== 'object' || JSON.stringify(m.m).length > 20000) return;
+      const out = { t: 'relay', from: p.pid, m: m.m };
+      this.each(k => { if (k.pid === m.to) k.send(out); });
+      return;
+    }
+
     // Close the table for everyone: they all go back to the join screen and the game is cleared.
     if (m.t === 'closeall') {
       this.s = emptyState();
