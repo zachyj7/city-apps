@@ -71,7 +71,7 @@ function begin() {
 
 // ------------------------------------------------------------------ multiplayer
 function onStatus(s) {
-  G.netLabel = { host: 'online (hosting)', client: 'online', solo: 'offline, retrying', joining: 'joining…', reconnecting: 'reconnecting…', connecting: 'connecting…' }[s] || s;
+  G.netLabel = { host: 'online (hosting)', client: 'online', solo: 'offline, retrying', stuck: "can't reach the room, retrying", joining: 'joining…', reconnecting: 'reconnecting…', connecting: 'connecting…' }[s] || s;
   $('#net').textContent = `${G.roomCode} · ${G.players.size + 1} 👤 · ${G.netLabel}`;
 }
 function dropPlayer(id) {
