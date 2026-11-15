@@ -1,14 +1,11 @@
 // Online play with no server of our own. Everyone at a table finds each other through the public PeerJS broker.
 // The first one in hosts the referee (Room) in their browser; everyone else connects to them.
 // If the host leaves, whoever notices first takes over using the last snapshot they had.
+// Players on cellular need the TURN relay from ice.js to reach a host on wifi (or another phone).
 import { Room } from './room.js';
+import { iceServers } from './ice.js';
 
 const copy = m => JSON.parse(JSON.stringify(m));
-export const ICE = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-];
 
 export class Net {
   // h: onStatus(s), onOpen(), onMsg(m), onLost(), onPeer(peer), snapshot()
@@ -49,12 +46,14 @@ export class Net {
     this.retryAt = Date.now() + 5000;
   }
 
-  tryHost() {
+  async tryHost() {
     if (this.stopped) return;
     const gen = ++this.gen;
     if (!window.Peer) return this.offline();
+    const ice = await iceServers();
+    if (this.stopped || gen !== this.gen) return;
     let peer, done = false;
-    try { peer = new window.Peer(this.hostId, { debug: 0, config: { iceServers: ICE } }); } catch (e) { return this.offline(); }
+    try { peer = new window.Peer(this.hostId, { debug: 0, config: { iceServers: ice } }); } catch (e) { return this.offline(); }
     const fail = type => {
       if (done || gen !== this.gen) return;
       done = true; clearTimeout(to);
@@ -92,18 +91,20 @@ export class Net {
     });
   }
 
-  join() {
+  async join() {
     if (this.stopped) return;
     const gen = ++this.gen;
     this.status('joining');
+    const ice = await iceServers();
+    if (this.stopped || gen !== this.gen) return;
     let peer;
-    try { peer = new window.Peer({ debug: 0, config: { iceServers: ICE } }); } catch (e) { return this.offline(); }
+    try { peer = new window.Peer({ debug: 0, config: { iceServers: ice } }); } catch (e) { return this.offline(); }
     const giveUp = () => {
       if (gen !== this.gen || this.conn) return;
       try { peer.destroy(); } catch (e) { /* ignore */ }
       this.tryHost();
     };
-    const to = setTimeout(giveUp, 12000);
+    const to = setTimeout(giveUp, 15000);   // a relayed (cellular) connection can take several seconds
     peer.on('error', e => {
       if (this.conn && e.type === 'peer-unavailable') return;   // a video call to someone who left
       if (!this.conn) { clearTimeout(to); giveUp(); }
