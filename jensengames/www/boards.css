@@ -188,3 +188,10 @@ body.chipdragging, body.chipdragging * { cursor: grabbing !important; user-selec
   .bg-name { font-size: .95em; }
   .bg-pl { min-height: 38px; }
 }
+
+/* tapping someone's face during Number Tiles: rock paper scissors with them */
+body.rps-ok .seat:not(.me):not(.off) { cursor: pointer; }
+body.rps-ok .seat:not(.me):not(.off):hover .face { box-shadow: 0 0 0 3px var(--gold); }
+.seatmenu { position: fixed; z-index: 60; padding: 6px; border-radius: 16px; }
+.seatmenu .btn { gap: 10px; white-space: nowrap; }
+.seatmenu .rpsico { font-size: 1.1em; letter-spacing: -.1em; }

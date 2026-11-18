@@ -282,6 +282,16 @@ function moveSelected(target, pt) {
   A.hist.push(snapshotW());
   const mv = new Set(moving);
   const rackRest = W.rack.filter(id => !mv.has(id));
+  // A tile taken out of a group of one number (like four 7s) leaves no hole: the tiles left slide together,
+  // starting where the group started. (Runs are left alone: taking from the middle of a run splits it.)
+  for (const g of groupsOf(W.pos)) {
+    const rest = g.filter(id => !mv.has(id));
+    if (rest.length === g.length || !rest.length) continue;
+    const a = analyze(g);
+    if (!a.ok || a.kind !== 'group') continue;
+    const [x0, y0] = W.pos[g[0]];
+    rest.forEach((id, i) => { W.pos[id] = [r2(x0 + i), y0]; });
+  }
   if (target === 'board') {
     // Tiles stay exactly where they are put; a moment later they are straightened up (see settleNow).
     W.rack = rackRest;
@@ -519,6 +529,7 @@ function seatEl(p) {
     el.innerHTML = `<div class="face"><div class="avatar"></div><div class="nm"></div><div class="flag">▶ TURN</div><div class="open30"></div><div class="stamp">Cheater</div></div>
       <div class="minirack"><div class="backs"></div><div class="mini-edge"><span class="engr"></span></div><b class="mcount" hidden></b></div>
       <div class="tag"></div>`;
+    el.dataset.pid = p.pid;
     seatEls.set(p.pid, el);
   }
   return el;
@@ -1886,7 +1897,7 @@ function leaveTable(msg) {
   A.net.stop(); A.net = null;
   A.video.stopAll();
   A.camOn = false; A.micOn = true;
-  A.rps = null; showRps(false); $('#rpsBtn').hidden = true;
+  A.rps = null; showRps(false); seatMenu(null);
   A.S = null; A.W = null; A.lastAlert = null; A.lastDrew = null; A.lastShame = null; A.lastAnn = null; A.wildPick = null; A.bjBet = null; A.hist = []; A.sel.clear(); A.drag = null; A.loose.clear(); A.sortUndo = null; A.status = 'off';
   for (const el of seatEls.values()) el.remove();
   seatEls.clear(); videoEls.clear();
@@ -1942,14 +1953,12 @@ const HANDS = { r: ['✊', 'Rock'], p: ['✋', 'Paper'], s: ['✌️', 'Scissors
 const rpsOn = () => !!(A.S && A.S.phase === 'play' && A.S.game === 'tiles' && me());
 function rpsState() {
   const on = rpsOn();
-  $('#rpsBtn').hidden = !on;
-  if (!on) { A.rps = null; showRps(false); return; }
+  document.body.classList.toggle('rps-ok', on);
+  if (!on) { A.rps = null; showRps(false); seatMenu(null); return; }
   if (!$('#rpsBox').hidden) renderRps();
 }
 function showRps(open) {
   $('#rpsBox').hidden = !open;
-  $('#rpsBtn').setAttribute('aria-expanded', open);
-  $('#rpsBtn').classList.toggle('on', open);
   if (open) renderRps();
 }
 function onRps(m) {
@@ -1987,9 +1996,9 @@ function renderRps() {
     body = `<div class="rpsvs">${hand(mine, won ? 'win' : tie ? '' : 'lose')}<span class="vs">vs</span>${hand(theirs, !won && !tie ? 'win' : tie ? '' : 'lose')}</div>
       <p class="rpsres ${won ? 'won' : tie ? '' : 'lost'}">${won ? 'You win!' : tie ? "It's a tie!" : `${esc(opp.name)} wins!`}</p>
       <p class="rpsscore">You <b>${g.score[pid] || 0}</b> – <b>${g.score[opp.pid] || 0}</b> ${esc(opp.name)}</p>
-      <div class="rpsacts"><button class="btn go" data-act="rpsask" data-pid="${esc(opp.pid)}">${ic('reset')}Again</button><button class="btn" data-act="rpsback">Someone else</button></div>`;
+      <div class="rpsacts"><button class="btn go" data-act="rpsask" data-pid="${esc(opp.pid)}">${ic('reset')}Again</button><button class="btn" data-act="rpsclose">Done</button></div>`;
   } else {
-    body = `<p class="rpsmsg">${chipOf(opp)} ${g.stage === 'no' ? 'said no thanks.' : 'stopped playing.'}</p><div class="rpsacts"><button class="btn" data-act="rpsback">OK</button></div>`;
+    body = `<p class="rpsmsg">${chipOf(opp)} ${g.stage === 'no' ? 'said no thanks.' : 'stopped playing.'}</p><div class="rpsacts"><button class="btn" data-act="rpsclose">OK</button></div>`;
   }
   box.innerHTML = head + `<div class="rpsbody">${body}</div>`;
 }
@@ -2001,7 +2010,34 @@ function rpsAct(act, b) {
   if (act === 'rpsno' && live) { send({ t: 'rps', a: 'no', id: g.id }); A.rps = null; showRps(false); return; }
   if (act === 'rpsback') { A.rps = null; renderRps(); }
 }
-$('#rpsBtn').addEventListener('click', () => showRps($('#rpsBox').hidden));
+// Tapping someone's face (their webcam) during Number Tiles offers a game of rock paper scissors with them.
+function seatMenu(seat) {
+  let m = $('#seatMenu');
+  if (!seat) { if (m) m.hidden = true; return; }
+  const p = A.S && A.S.players.find(q => q.pid === seat.dataset.pid);
+  if (!p) return;
+  if (!m) { m = document.createElement('div'); m.id = 'seatMenu'; m.className = 'card seatmenu'; m.setAttribute('role', 'menu'); document.body.appendChild(m); }
+  m.innerHTML = `<button class="btn" role="menuitem" data-act="rpsask" data-pid="${esc(p.pid)}"><span class="rpsico" aria-hidden="true">✊✋✌️</span>Rock paper scissors with ${esc(p.name)}</button>`;
+  m.hidden = false;
+  const r = seat.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
+  const below = r.bottom + 8 + h < innerHeight;
+  m.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+  m.style.top = (below ? r.bottom + 8 : Math.max(8, r.top - h - 8)) + 'px';
+}
+document.addEventListener('click', e => {
+  const menu = e.target.closest && e.target.closest('#seatMenu');
+  if (menu) { setTimeout(() => seatMenu(null)); return; }
+  const seat = e.target.closest && e.target.closest('.seat[data-pid]');
+  const open = $('#seatMenu') && !$('#seatMenu').hidden;
+  seatMenu(null);
+  if (!seat || !rpsOn() || seat.dataset.pid === pid || A.drag) return;
+  const p = A.S.players.find(q => q.pid === seat.dataset.pid);
+  if (!p || !p.on || (open && A.menuFor === p.pid)) { A.menuFor = null; return; }
+  A.menuFor = p.pid;
+  seatMenu(seat);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') seatMenu(null); });
+window.addEventListener('resize', () => seatMenu(null));
 
 // The signature move: a big signed "MJ!" across everyone's screen.
 let mjT = 0;

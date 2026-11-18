@@ -75,8 +75,8 @@ card game where +2s and +4s stack), and three two-player board games: **Chess**,
 
 ## Rock paper scissors on the side
 
-- During Number Tiles, the **✊** button (top right) lets anyone, playing or watching, challenge someone else
-  (or a computer). They get the challenge as a small card and can pick or say no thanks. The tile game carries
+- During Number Tiles, tap someone's face (their webcam) and choose **Rock paper scissors with ...** to
+  challenge them (anyone, playing or watching, and computers too). They get the challenge as a small card and can pick or say no thanks. The tile game carries
   on underneath and nobody leaves their seat. Picks stay private (the referee only tells the two players), and
   a running score is kept for each pair.
 

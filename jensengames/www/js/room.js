@@ -385,7 +385,7 @@ export class Room {
     const key = [g.a, g.b].sort().join('|'), sc = (this.rpsScore && this.rpsScore[key]) || {};
     for (const me of [g.a, g.b]) {
       const view = {
-        id: g.id, stage: g.stage, me, a: who(g.a), b: who(g.b),
+        id: g.id, stage: g.stage, by: g.by || null, me, a: who(g.a), b: who(g.b),
         mine: g.pick[me] || null, picked: { [g.a]: !!g.pick[g.a], [g.b]: !!g.pick[g.b] },
         res: g.stage === 'done' ? { pick: g.pick, win: g.win } : null,
         score: { [g.a]: sc[g.a] || 0, [g.b]: sc[g.b] || 0 },
