@@ -3,7 +3,7 @@
 // in it (no names, no faces). The notice is "retained", so the start screen gets every current one as soon as it
 // looks, and it is cleared when the lobby closes, or by the broker itself if that browser disappears.
 const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-const ROOT = 'cityapps/jensengames/v1/lobby/';
+const ROOT = 'cityapps/jensengames/v1/lobby/';   // (the old name stays here on purpose, like the lobby id in net.js)
 const FRESH_MS = 3 * 60e3;   // a notice not refreshed for this long is treated as gone
 const enc = new TextEncoder(), dec = new TextDecoder();
 

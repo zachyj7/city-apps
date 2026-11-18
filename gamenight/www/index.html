@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Jensen Games</title>
+<title>Game Night</title>
 <meta name="description" content="Family game night online: number tiles, blackjack, Color Clash, chess, checkers and mancala, with everyone's face around the table.">
 <meta name="theme-color" content="#06231a">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -63,13 +63,13 @@
 <section id="join">
   <form id="joinForm" class="card joinbox">
     <div class="logo" id="joinLogo" aria-hidden="true"></div>
-    <h1 class="title">Jensen Games</h1>
+    <h1 class="title">Game Night</h1>
     <p class="tagline">Game night with the whole family, faces all around the table.</p>
     <label for="prof">Who's playing?</label>
     <select id="prof" class="profsel"></select>
-    <label for="name">Play as a different name <span class="opt">(optional)</span></label>
+    <label for="name" id="nameLabel">Play as a different name <span class="opt">(optional)</span></label>
     <input id="name" autocomplete="off" maxlength="18" placeholder="Leave blank to use your own name">
-    <p class="fieldhint">Your stats are always saved under your own name.</p>
+    <p class="fieldhint" id="nameHint">Your stats are always saved under your own name.</p>
     <div id="openLobbies" class="openlobbies" hidden></div>
     <label for="code">Lobby name</label>
     <input id="code" autocomplete="off" autocapitalize="none" maxlength="20" placeholder="family">
@@ -85,7 +85,7 @@
 
 <section id="game" hidden>
   <header>
-    <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="brandname">Jensen Games</span></div>
+    <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="brandname">Game Night</span></div>
     <span class="chip gname" id="gameName" hidden><svg class="ic"><use href="#i-cards"/></svg><b></b></span>
     <span class="chip tname"><svg class="ic"><use href="#i-users"/></svg><b id="tableName"></b></span>
     <span id="status" class="status"><i></i><span></span></span>

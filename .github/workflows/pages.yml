@@ -1,4 +1,4 @@
-# Publishes Clock Rate, Hourfall, Big Money and Jensen Games to GitHub Pages every time main changes.
+# Publishes Clock Rate, Hourfall, Big Money and Game Night to GitHub Pages every time main changes.
 name: Deploy to GitHub Pages
 
 on:
@@ -24,17 +24,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-      # Each game has its own folder: /clockrate/, /hourfall/, /bigmoney/, /jensengames/. Nothing is served at the site root.
-      # The old Family Tiles address, /familytiles/, sends people on to /jensengames/.
+      # Each game has its own folder: /clockrate/, /hourfall/, /bigmoney/, /gamenight/. Nothing is served at the site root.
+      # Game Night's old addresses (Family Tiles, then Jensen Games) send people on to /gamenight/.
       - name: Assemble site
         run: |
           mkdir _site
           cp -r clockrate/www _site/clockrate
           cp -r hourfall/www _site/hourfall
           cp -r bigmoney/www _site/bigmoney
-          cp -r jensengames/www _site/jensengames
-          mkdir -p _site/familytiles
-          printf %s "<!doctype html><meta charset=utf-8><title>Jensen Games</title><script>location.replace('../jensengames/'+location.search)</script><a href=../jensengames/>Family Tiles is now Jensen Games</a>" > _site/familytiles/index.html
+          cp -r gamenight/www _site/gamenight
+          for old in familytiles jensengames; do
+            mkdir -p _site/$old
+            printf %s "<!doctype html><meta charset=utf-8><title>Game Night</title><script>location.replace('../gamenight/'+location.search)</script><a href=../gamenight/>This is now Game Night</a>" > _site/$old/index.html
+          done
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

@@ -49,7 +49,7 @@ function ccFace(k) {
 }
 
 export function ccard(id, cls = '', attrs = '') {
-  if (id == null) return `<div class="cc back ${cls}" ${attrs} aria-label="Face-down card"><span class="cc-logo">JG</span></div>`;
+  if (id == null) return `<div class="cc back ${cls}" ${attrs} aria-label="Face-down card"><span class="cc-logo">GN</span></div>`;
   const k = CARD[id], f = ccFace(k);
   const shape = k.c < 4 ? CSHAPES[k.c] : '';
   const label = (k.c < 4 ? COLOR_NAMES[k.c] + ' ' : '') + f.name;

@@ -4,7 +4,7 @@
 import { makePool, checkTurn, isMJ, DEAL, groupsOf, tidyPos, layoutPos, packPos } from './rules.js';
 import { aiTurn } from './ai.js';
 import { check } from './help.js';
-import { GAMES, cfgFor, COLORS, PROFILES, RPS_ID, okColor, cleanRec } from './games.js';
+import { GAMES, cfgFor, COLORS, STAT_PROFILES, RPS_ID, okColor, cleanRec } from './games.js';
 import { BJ } from './bj.js';
 import { UNO } from './uno.js';
 import { CHESS } from './chess.js';
@@ -172,7 +172,7 @@ export class Room {
         if (s.phase === 'lobby') this.note(`${clean(m.name)} sat down`);
         else this.note(`${clean(m.name)} is watching`);
       }
-      p.name = clean(m.name); p.prof = PROFILES.includes(m.prof) ? m.prof : null; p.rc = this.freeColor(cleanColor(m.rc), p.pid); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true;
+      p.name = clean(m.name); p.prof = STAT_PROFILES.includes(m.prof) ? m.prof : null; p.rc = this.freeColor(cleanColor(m.rc), p.pid); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true;
       return this.push();
     }
     const p = c.pid && this.player(c.pid);

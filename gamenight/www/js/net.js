@@ -10,6 +10,7 @@ const copy = m => JSON.parse(JSON.stringify(m));
 export class Net {
   // h: onStatus(s), onOpen(), onMsg(m), onLost(), onPeer(peer), snapshot()
   constructor(code, h) {
+    // (the old name stays in this id on purpose: every device, old page or new, has to agree on it)
     this.hostId = 'jensengames-v1-' + code;
     this.h = h;
     this.gen = 0; this.room = null; this.loop = null; this.conn = null; this.peer = null;

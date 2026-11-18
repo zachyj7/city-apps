@@ -1,11 +1,11 @@
-// Jensen Games: what each player sees and touches. Everyone meets in the lobby, the host picks a game
+// Game Night: what each player sees and touches. Everyone meets in the lobby, the host picks a game
 // (Number Tiles, Blackjack or Color Clash), and the faces stay around the table whatever is being played.
 import { Net } from './net.js';
 import { Video } from './video.js';
 import { initHelp } from './help.js';
 import { initStats } from './stats.js';
 import { tile, analyze, openingPoints, checkTurn, groupsOf, tidyPos, autoSplit, COLOR_NAMES, OPEN_POINTS, BOARD_W } from './rules.js';
-import { GAMES, GAME_IDS, COLORS, cfgFor, winsOf, BOARD_GAMES, PROFILES, isHex } from './games.js';
+import { GAMES, GAME_IDS, COLORS, cfgFor, winsOf, BOARD_GAMES, PROFILES, GUEST, STAT_PROFILES, isHex } from './games.js';
 import { allRecs, mergeRecs, lifeWins, lifeTable } from './lifetime.js';
 import { watchLobbies, lobbyNotice } from './lobbies.js';
 import { renderChess, renderCheckers, renderMancala, boardControls, boardTap, chessGlyph } from './boardview.js';
@@ -85,11 +85,22 @@ let setKey = 1;
 function setupJoin() {
   // Who you are (lifetime stats are saved under this) and, if you like, a different name to play as today.
   const sel = $('#prof');
-  sel.innerHTML = `<option value="">Choose your name…</option>` + PROFILES.map(n => `<option>${esc(n)}</option>`).join('');
+  sel.innerHTML = `<option value="">Choose your name…</option>` + PROFILES.map(n => `<option>${esc(n)}</option>`).join('')
+    + `<option value="${GUEST}">Someone else (type your name)</option>`;
+  // "Someone else": the name box is their name (and needed); their stats are kept under Guest
+  const nameMode = () => {
+    const guest = sel.value === GUEST;
+    $('#nameLabel').innerHTML = guest ? 'Your name' : 'Play as a different name <span class="opt">(optional)</span>';
+    $('#name').placeholder = guest ? 'Type your name' : 'Leave blank to use your own name';
+    $('#nameHint').textContent = guest ? 'Your games count as Guest in the lifetime stats.' : 'Your stats are always saved under your own name.';
+    if (guest && document.activeElement === sel) $('#name').focus();
+  };
+  sel.addEventListener('change', nameMode);
   let tabProf = null, tabNick = null;
   try { tabProf = sessionStorage.getItem('jg-prof'); tabNick = sessionStorage.getItem('jg-nick'); } catch (e) { /* ignore */ }
   const prof = qs.get('prof') || tabProf || store.get('prof', '');
-  if (PROFILES.includes(prof)) sel.value = prof;
+  if (STAT_PROFILES.includes(prof)) sel.value = prof;
+  nameMode();
   $('#name').value = tabNick || '';
   $('#code').value = cleanCode(qs.get('room')) || store.get('code', '') || 'family';
   $('#joinForm').addEventListener('submit', e => {
@@ -97,7 +108,8 @@ function setupJoin() {
     const prof = sel.value;
     const nick = $('#name').value.trim().slice(0, 18);
     const code = cleanCode($('#code').value);
-    if (!PROFILES.includes(prof)) { sel.focus(); $('#joinErr').textContent = 'Please choose your name.'; return; }
+    if (!STAT_PROFILES.includes(prof)) { sel.focus(); $('#joinErr').textContent = 'Please choose your name.'; return; }
+    if (prof === GUEST && !nick) { $('#name').focus(); $('#joinErr').textContent = 'Please type your name.'; return; }
     if (!code) { $('#code').focus(); $('#joinErr').textContent = 'Please type a lobby name, like family.'; return; }
     store.set('prof', prof); store.set('code', code);
     try { sessionStorage.setItem('jg-prof', prof); sessionStorage.setItem('jg-nick', nick); } catch (e) { /* ignore */ }
@@ -112,7 +124,7 @@ function setupJoin() {
   pick.addEventListener('click', e => { const b = e.target.closest('[data-rc]'); if (b) { A.rc = b.dataset.rc; saveRc(); paint(); } });
   pick.addEventListener('change', e => { if (e.target.matches('[data-custom]') && isHex(e.target.value.toLowerCase())) { A.rc = e.target.value.toLowerCase(); saveRc(); paint(); } });
   showLobbies();
-  if (qs.has('auto') && PROFILES.includes(sel.value)) $('#joinForm').requestSubmit();
+  if (qs.has('auto') && STAT_PROFILES.includes(sel.value) && (sel.value !== GUEST || $('#name').value.trim())) $('#joinForm').requestSubmit();
 }
 
 // The open lobbies, listed on the start screen. Tapping one fills in its name (and joins, once you have
@@ -751,7 +763,7 @@ function renderCenter() {
   if (!S) { box.innerHTML = '<div class="panel"><h2>Finding your table…</h2></div>'; return; }
   const cur = S.phase === 'play' && S.players.find(p => p.pid === S.turn);
   const gname = S.game ? ' · ' + GAMES[S.game].name : '';
-  document.title = !cur ? 'Jensen Games' + gname : cur.pid === pid ? '▶ Your turn!' + gname : `${cur.name}'s turn${gname}`;
+  document.title = !cur ? 'Game Night' + gname : cur.pid === pid ? '▶ Your turn!' + gname : `${cur.name}'s turn${gname}`;
   $('#gameName').hidden = !S.game;
   $('#gameName b').textContent = S.game ? GAMES[S.game].name : '';
   box.parentElement.classList.toggle('cardgame', S.phase === 'play' && S.game !== 'tiles');
@@ -1883,7 +1895,7 @@ document.addEventListener('click', e => {
   if (act === 'whisper') { openWhisper(b.dataset.pid); return; }
   if (act === 'wclose') { closeWhisper(); return; }
   if (act === 'wnoteclose') { $('#wNote').hidden = true; return; }
-  if (act === 'joinlobby') { $('#code').value = b.dataset.code; if (PROFILES.includes($('#prof').value)) $('#joinForm').requestSubmit(); else { $('#prof').focus(); $('#joinErr').textContent = 'Choose your name, then join.'; } return; }
+  if (act === 'joinlobby') { $('#code').value = b.dataset.code; if (STAT_PROFILES.includes($('#prof').value)) $('#joinForm').requestSubmit(); else { $('#prof').focus(); $('#joinErr').textContent = 'Choose your name, then join.'; } return; }
   if (act === 'lifeclose') { showLife(false); return; }
   if (act === 'pick') { send({ t: 'pick', game: b.dataset.game || null }); return; }
   if (act === 'cfg') { let v; try { v = JSON.parse(b.dataset.v); } catch (er) { return; } send({ t: 'cfg', key: b.dataset.key, value: v }); return; }
@@ -1904,7 +1916,7 @@ document.addEventListener('click', e => {
   else if (act === 'leave') leaveTable('You left the table.');
   else if (act === 'addcpu') send({ t: 'addcpu', level: b.dataset.level });
   else if (act === 'rmcpu') send({ t: 'rmcpu', pid: b.dataset.pid });
-  else if (act === 'share') navigator.share({ title: 'Jensen Games', text: 'Come play games with us!', url: location.origin + location.pathname + '?room=' + A.code }).catch(() => {});
+  else if (act === 'share') navigator.share({ title: 'Game Night', text: 'Come play games with us!', url: location.origin + location.pathname + '?room=' + A.code }).catch(() => {});
 });
 
 function copyLink() {
@@ -1996,7 +2008,7 @@ function leaveTable(msg) {
   help.leave();
   stats.leave();
   $('#game').hidden = true; $('#join').hidden = false;
-  document.title = 'Jensen Games';
+  document.title = 'Game Night';
   const u = new URL(location.href); u.searchParams.delete('auto'); history.replaceState(null, '', u);
   if (msg) toast(msg, 6000);
 }

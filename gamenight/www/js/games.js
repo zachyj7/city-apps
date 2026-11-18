@@ -1,4 +1,4 @@
-// The games you can play in Jensen Games, and the settings the host can change for each.
+// The games you can play in Game Night, and the settings the host can change for each.
 // Shared by the referee (room.js) and the screens (main.js), so both agree on what is allowed.
 
 export const GAMES = {
@@ -90,6 +90,9 @@ export const okColor = c => COLORS.includes(c) || isHex(c);
 
 // The family: everyone picks their own name, and lifetime stats are kept under it (whatever name they play as).
 export const PROFILES = ['Audrey', 'Gabe', 'Josh', 'Matt', 'Nina', 'Shiloh', 'Zach'];
+// Anyone else ("Someone else" on the join screen) types their own name; their games all count under Guest.
+export const GUEST = 'Guest';
+export const STAT_PROFILES = [...PROFILES, GUEST];
 // Lifetime records also cover rock paper scissors.
 export const RPS_ID = 'rps';
 
@@ -98,9 +101,9 @@ export const RPS_ID = 'rps';
 export function cleanRec(r) {
   if (!r || typeof r !== 'object' || typeof r.id !== 'string' || r.id.length > 24 || !Number.isFinite(r.at)) return null;
   if (!GAMES[r.g] && r.g !== RPS_ID) return null;
-  const ps = Array.isArray(r.ps) ? [...new Set(r.ps.filter(x => PROFILES.includes(x)))] : [];
+  const ps = Array.isArray(r.ps) ? [...new Set(r.ps.filter(x => STAT_PROFILES.includes(x)))] : [];
   if (!ps.length) return null;
-  const win = PROFILES.includes(r.win) || r.win === 'cpu' ? r.win : null;
+  const win = STAT_PROFILES.includes(r.win) || r.win === 'cpu' ? r.win : null;
   const out = { id: r.id, at: r.at, g: r.g, ps, cpu: Math.max(0, Math.min(8, Math.floor(+r.cpu) || 0)), win };
   if (r.net && typeof r.net === 'object') {
     out.net = {};

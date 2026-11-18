@@ -2,7 +2,7 @@
 // There is no server, so each device keeps the whole family's records. When people play together their
 // devices pass along whatever the others are missing, so every device catches up the next time it joins.
 // Records have their own id, so a game is never counted twice.
-import { GAMES, GAME_IDS, PROFILES, RPS_ID, cleanRec } from './games.js';
+import { GAMES, GAME_IDS, PROFILES, GUEST, RPS_ID, cleanRec } from './games.js';
 
 const KEY = 'jg-ledger';
 let recs = new Map();
@@ -42,7 +42,8 @@ const money = n => (n < 0 ? '−' : '+') + '$' + Math.abs(Math.round(n)).toLocal
 
 // The table of everyone's lifetime stats: wins out of games played, for each game.
 export function lifeTable(me, esc) {
-  const rows = PROFILES.map(p => {
+  // the family, and Guest once anyone else has played
+  const rows = [...PROFILES, ...(allRecs().some(r => r.ps.includes(GUEST)) ? [GUEST] : [])].map(p => {
     const t = COLS.map(([g]) => tally(p, g));
     return { p, t, won: t.reduce((s, x) => s + x.won, 0), played: t.reduce((s, x) => s + x.played, 0) };
   }).sort((a, b) => b.won - a.won || b.played - a.played || a.p.localeCompare(b.p));
