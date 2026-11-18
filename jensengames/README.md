@@ -1,11 +1,19 @@
 # Jensen Games
 
-Family game night online for up to 8 people, with everyone's face around the table. Six games:
+Family game night online for up to 8 people, with everyone's face around the table. Nine games:
 **Number Tiles** (tile rummy), **Blackjack** against a computer dealer, **Color Clash** (a match-the-color
-card game where +2s and +4s stack), and three two-player board games: **Chess**, **Checkers** and **Mancala**.
+card game where +2s and +4s stack), **Idiot**, **Hearts**, **Dominoes** (Mexican Train rules), and three two-player
+board games: **Chess**, **Checkers** and **Mancala**.
 
 ## The lobby
 
+- **Who's playing?** Everyone picks their own name from the list (Audrey, Gabe, Josh, Matt, Nina, Shiloh, Zach).
+  You can also play as a different name for the day; your stats are still saved under your own name, and the
+  lobby shows it in brackets.
+- **Open lobbies** are listed on the start screen (tap one to join it). The browser running a lobby posts a
+  short notice on a free public MQTT broker (`js/lobbies.js`): only the lobby name, the game and how many people
+  are in it, never names or faces. Anyone who knows where to look could see it, so the host can switch off
+  **Show this lobby on the start screen** in the lobby. The notice is cleared when the lobby closes.
 - Everyone opens the same link (or types the same lobby name) and joins the lobby. The page used to be called
   Family Tiles; the old address (`/familytiles/`) sends people to the new one.
 - Each player has their own color, picked on the join screen and changeable in the lobby. Two people can't have
@@ -23,7 +31,12 @@ card game where +2s and +4s stack), and three two-player board games: **Chess**,
 - **End this game** (host only, in Settings, tap twice) stops the game for everyone. After any game,
   **Back to the lobby** returns to the same game's settings.
 - Computer players (**Easy**, **Medium**, **Hard**) can play every game. The host's browser plays their turns.
-- Wins are counted per game and shown with a trophy by each face.
+- **Lifetime stats** (Settings, or the start screen): wins out of games played for everyone, for every game and
+  rock paper scissors (plus money up or down in Blackjack). Each finished game is saved on every device at the
+  table, and devices pass along records the others are missing whenever they play together (`js/lifetime.js`),
+  so every device catches up. Games the host ends early don't count (except Blackjack, which always ends that way).
+  The trophy by each face shows their lifetime wins at the game being played.
+- Colors: eight ready-made ones, or **Custom** for any color at all.
 
 ## Blackjack
 
@@ -56,6 +69,67 @@ card game where +2s and +4s stack), and three two-player board games: **Chess**,
   someone is down to one card.
 - Settings: cards to start (5, 7 or 10), +2 on a +2, draw one or draw until you can play.
 
+## Idiot
+
+- 2–8 players (two decks for 6 or more). Everyone gets 3 cards face down, 3 face up on top of them, and 3 in hand.
+- Before play: tap a card in your hand, then one of your face-up cards, to swap them. Press **Ready**.
+- Play one or more cards of the same rank (tap to choose, then **Play**), equal to or higher than the top of the
+  pile; aces are high. A **2** goes on anything and anything goes on a 2. A **10**, or four of the same rank in a
+  row, **burns** the pile and you go again. Draw back up to 3 while the deck lasts.
+- Can't play (or don't want to)? **Pick up** the pile.
+- With your hand gone, play your face-up cards; then your face-down ones, blind (tap one). A blind card that
+  doesn't play means you pick up the pile and that card.
+- First one out wins; the last one holding cards is the Idiot.
+
+## Hearts
+
+- 3 or 4 players (with 3, the 2 of diamonds is taken out and everyone gets 17 cards). Lowest score wins.
+- Each hand starts by passing 3 cards: left, right, across, then keep (with three players: left, right, keep).
+  Cards you were passed are outlined until the first trick.
+- The 2 of clubs leads. Follow suit if you can. No hearts or queen of spades on the first trick (unless that's
+  all you have), and hearts can't be led until one has been played.
+- Each heart is 1 point and the queen of spades 13. Take them all (**shoot the moon**) and everyone else gets 26.
+- The game ends when someone reaches 50 or 100 (host's choice).
+
+## Dominoes
+
+Mexican Train rules (from the RNK Gaming sheet) with the family's house rules.
+
+- Double-twelve set. 2–8 players draw 16 tiles each (2–3 players), 15 (4), 14 (5), 12 (6), 10 (7) or 9 (8).
+- Each round's engine is a double in the middle: double 12 in the first round, then 11, down to double blank
+  (13 rounds; the host can choose 7, 3 or 1). Who starts moves round one seat each round.
+- The middle is drawn like a real station hub: a black octagon with the engine lying in a white slot. **Your own
+  train always heads straight down**, toward your tiles; everyone else's comes off the side nearest their face on
+  screen; community trains take the free sides,
+  and if there are more trains than sides, the extras go in between, starting a little further out. Toy trains
+  and pennies sit on each train's first tile. Trains carry no colors.
+- Long trains **snake**: tiles sit on a grid of half-tile squares, and near the edge of the table a train turns
+  90 degrees (the matching halves side by side, making a square corner), runs across one tile, turns again and
+  comes back alongside itself. Each train only winds into its own half of the gap toward its neighbour. Only when
+  even that is full are the oldest tiles counted as "+n". **Fit** shrinks the tiles until every train shows whole.
+- A size slider on the tray makes your own dominoes bigger or smaller (remembered on that device). Tiles you can
+  play have a gold edge; the others are not dimmed.
+- **One tile a turn** (or a double and the tile that covers it). Your first turn starts your own train.
+- After that: on your own train, any **community train**, or another player's train only if it has a **penny**.
+  Tap a tile to choose it, then tap the end of a train (or **Play**, when it fits just one place). Or **drag** a
+  tile from your tray onto a train: the trains it fits light up, and once dropped it waits there until you press
+  **Confirm** (or **Cancel** to take it back).
+- **Your tiles sit in a tray** like the Number Tiles rack: drag them anywhere (gaps allowed; dropping on a tile
+  slides it aside), and double-tap a tile (or press **Flip**) to turn it end for end, so you can lay out trains in
+  your hand to plan ahead. Only you see the layout, and it stays put for the round on that device.
+- **Community trains** (house rule, in place of a single Mexican Train): after your first turn you may start a new
+  one with a tile that matches the engine, up to six. Each is marked with a little toy locomotive in its own color.
+- Can't play? **Draw a tile**. A **penny** goes on your train only if you still can't play anywhere (or there is
+  nothing left to draw); then others may play on it, until you play on it again. With the boneyard empty you **Pass**.
+- **Starting someone's train** (house rule): if a player couldn't start their own train, someone else may start it
+  for them with a tile matching the engine. That is their whole turn; they can't play another tile.
+- **Doubles** must be covered straight away by the same player. If they can't (even after drawing), it is an
+  **open double**: everyone must cover it before playing anywhere else.
+- A round ends when someone plays their last tile; everyone scores the total of the tiles left in hand. If
+  nobody can play and the boneyard is empty, the round ends there. Lowest total after the last round wins.
+- The tiles look like a Cardinal color-dot set: pips in each number's own color and layout (1 light blue, 2 green,
+  3 red, 4 brown, 5 blue, 6 yellow, 7 magenta, 8 teal, 9 purple, 10 orange, 11 maroon, 12 grey).
+
 ## Chess, Checkers and Mancala
 
 - Two players: Players 1 and 2 in the lobby order (a computer player can take either spot). Anyone else in the
@@ -73,12 +147,15 @@ card game where +2s and +4s stack), and three two-player board games: **Chess**,
 - Computers: Easy looks one move ahead with plenty of luck, Medium a few moves, Hard deeper (`chess.js`,
   `checkers.js`, `mancala.js`; the screens are in `boardview.js` and `boards.css`).
 
-## Rock paper scissors on the side
+## Tap someone's face: whispers and rock paper scissors
 
-- During Number Tiles, tap someone's face (their webcam) and choose **Rock paper scissors with ...** to
-  challenge them (anyone, playing or watching, and computers too). They get the challenge as a small card and can pick or say no thanks. The tile game carries
-  on underneath and nobody leaves their seat. Picks stay private (the referee only tells the two players), and
-  a running score is kept for each pair.
+- Tap anyone's face (their webcam) to open a little menu for them.
+- **Whisper to ...** (any time, in the lobby or any game): a private message only that person sees. It pops up
+  on their screen with a **Reply** button; the whisper box keeps the conversation while you are at the table.
+  The referee passes it to that one person (and back to you) and keeps nothing.
+- **Rock paper scissors with ...** (during any game; computers too): they get the challenge as a small card and
+  can pick or say no thanks. The game carries on underneath and nobody leaves their seat. Picks stay private
+  (the referee only tells the two players), and a running score is kept for each pair.
 
 ## Number Tiles
 
@@ -122,8 +199,13 @@ card game where +2s and +4s stack), and three two-player board games: **Chess**,
 - Split a run on the table and play your own tile into one of the halves, and everyone sees a signed **MJ!**
 - When someone gets down to 3 tiles (or fewer), and again at their last tile, everyone sees a notice in that
   player's rack color.
-- **Helper sign-in** (bottom of Settings): the helper can look at another player's screen to sort out a technical problem. The tiles in that
-  player's hand are blanked, and they see a notice with a **Stop** button the whole time. It shows the game
+- **Helper sign-in** (bottom of Settings): the helper can look at another player's screen to sort out a technical problem. The tiles and
+  cards in that player's hand are blanked, and they see a notice with a **Stop** button the whole time.
+  The helper can also **Take control**: once the player taps **Allow**, the helper's taps, typing and scrolling
+  happen on the player's own page (Settings, camera, color, the lobby and start screen). Their cards and tiles,
+  the game itself, whispers and rock paper scissors, and Leave / Close for everyone / End game are always off
+  limits; the player's own browser enforces this, and a ring shows each tap. The player's notice says the
+  helper can't see or touch their cards or tiles, and **Stop** ends control too. It shows the game
   page only, not the rest of their device (`js/help.js`). The helper can also lock the Statistics and coach page
   for the whole table (and open it again); the referee checks the sign-in before it changes.
 - **Statistics and coach** (top of Settings, open to everyone unless the helper has locked it): a coach, then each player's turns, tiles played, draws

@@ -2,6 +2,11 @@
 // technical problem. The other player's browser sends a picture of its page (as HTML, never the real
 // screen), with the tiles in their hand blanked out, and shows a notice with a Stop button while it does.
 //
+// The helper can also ask to take control. Once the player allows it, the helper's taps, typing and scrolling
+// on the picture are done on the player's own page, except anything to do with playing: their tiles and cards,
+// the game's buttons and board, their whispers and rock paper scissors, and leaving or closing the table. The
+// player's own browser decides what is allowed, and Stop ends control too.
+//
 // The sign-in is checked in each browser against a scrambled copy of the username and password, so the
 // plain text is not in this file. It keeps casual visitors out; it is not strong security.
 // (The salt keeps the game's old name on purpose: changing it would stop the existing sign-in working.)
@@ -11,6 +16,9 @@ const CHUNK = 12000;        // one message stays well under what a data channel 
 const FRAME_MS = 600;       // at most this often
 const KEEP_MS = 6000;       // the helper says "still here" this often
 const DROP_MS = 20000;      // and is forgotten after this long without it
+// What a helper in control can never touch: anything to do with playing, private messages, and leaving or
+// closing the table. (During a game, the middle of the screen is blocked too: see allowed().)
+const BLOCKED = '#rack, #hand, #board, #controls, .tile, .pc, .cc, .dm, #rpsBox, #wBox, #wNote, #seatMenu, .seat, #helpBanner, #viewer, #closeAllBtn, #endBtn, #leaveBtn, [data-act=leave], #helpBox';
 
 // Which login this is ('helper'), or null. (The referee uses it too, for the coach switch.)
 export async function check(u, p) {
@@ -95,12 +103,61 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
   // The viewer: their page, drawn in a frame the size of their screen and shrunk to fit mine.
   const viewer = document.createElement('div');
   viewer.id = 'viewer'; viewer.hidden = true;
-  viewer.innerHTML = `<div class="vhead"><span class="vtitle"></span><span class="vinfo"></span><button type="button" class="btn" data-help="close">${ic('close')}<span>Close</span></button></div>
+  viewer.innerHTML = `<div class="vhead"><span class="vtitle"></span><span class="vinfo"></span><button type="button" class="btn vctl" data-help="ctl">${ic('stop')}<span>Take control</span></button><button type="button" class="btn" data-help="close">${ic('close')}<span>Close</span></button></div>
     <div class="vstage"><div class="vnote"></div><div class="vwrap"><iframe sandbox="allow-same-origin" title="Their screen" tabindex="-1"></iframe></div></div>`;
   document.body.appendChild(viewer);
   const frame = viewer.querySelector('iframe'), wrap = viewer.querySelector('.vwrap'), stage = viewer.querySelector('.vstage');
   viewer.querySelector('[data-help=close]').addEventListener('click', () => closeViewer());
   let frameReady = false, last = null, keepT = 0, waitT = 0;
+  // control: 'off', 'asked' (waiting for them to allow it) or 'on'
+  let ctl = 'off';
+  const ctlBtn = viewer.querySelector('[data-help=ctl]');
+  function setCtl(v) {
+    ctl = v;
+    ctlBtn.classList.toggle('on', v === 'on');
+    ctlBtn.querySelector('span').textContent = v === 'on' ? 'Stop controlling' : v === 'asked' ? 'Waiting for them to allow…' : 'Take control';
+    viewer.classList.toggle('controlling', v === 'on');
+    if (frame.contentDocument && frame.contentDocument.body) frame.contentDocument.body.classList.toggle('hctl', v === 'on');
+  }
+  ctlBtn.addEventListener('click', () => {
+    if (!viewing) return;
+    if (ctl === 'off') { setCtl('asked'); relay(viewing.pid, { k: 'ctlask' }); }
+    else { relay(viewing.pid, { k: 'ctlend' }); setCtl('off'); }
+  });
+  // What a tap, typing or scrolling on the picture means on their page: the element (by its place in the page,
+  // checked again on their side) and what to do with it.
+  const ref = el => ({ hx: +el.getAttribute('data-hx'), tag: el.tagName, id: el.id || null, act: el.getAttribute('data-act') || null });
+  const doIt = m => { if (viewing && ctl === 'on') relay(viewing.pid, { k: 'do', ...m }); };
+  const typing = el => el && ((el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|range|color)$/.test(el.type)) || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+  frame.addEventListener('load', () => {
+    const doc = frame.contentDocument;
+    if (!doc) return;
+    doc.addEventListener('click', e => {
+      if (ctl !== 'on') { e.preventDefault(); return; }
+      const t = e.target.closest && e.target.closest('[data-hx]');
+      if (!t) return;
+      if (typing(t)) return;   // typed into, below
+      e.preventDefault();
+      const el = t.closest('button, a, label, input, select, summary, [data-act], [role=button], .swatch') || t;
+      doIt({ a: 'click', ...ref(el) });
+    }, true);
+    let typeT = 0;
+    doc.addEventListener('input', e => {
+      const t = e.target;
+      if (ctl !== 'on' || !typing(t) || !t.hasAttribute('data-hx')) return;
+      clearTimeout(typeT);
+      typeT = setTimeout(() => doIt({ a: 'set', v: String(t.value).slice(0, 200), ...ref(t) }), t.tagName === 'SELECT' ? 0 : 200);
+    }, true);
+    doc.addEventListener('keydown', e => {
+      if (ctl === 'on' && e.key === 'Enter' && typing(e.target) && e.target.hasAttribute('data-hx')) { e.preventDefault(); clearTimeout(typeT); doIt({ a: 'set', v: String(e.target.value).slice(0, 200), enter: true, ...ref(e.target) }); }
+    }, true);
+    doc.addEventListener('submit', e => e.preventDefault(), true);
+    doc.addEventListener('wheel', e => {
+      if (ctl !== 'on') return;
+      const t = e.target.closest && e.target.closest('[data-hx]');
+      if (t) { e.preventDefault(); doIt({ a: 'scroll', dy: Math.max(-600, Math.min(600, e.deltaY)), ...ref(t) }); }
+    }, { passive: false, capture: true });
+  });
   frame.addEventListener('load', () => { frameReady = true; if (last) paint(last); });
 
   function note(text) { const n = viewer.querySelector('.vnote'); n.textContent = text; n.hidden = !text; }
@@ -111,7 +168,10 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     viewing = { pid: id, name: nameOf(id), parts: null };
     last = null; frameReady = false;
     const links = [...document.querySelectorAll('link[rel=stylesheet]')].map(l => l.outerHTML).join('');
-    frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><base href="${esc(location.href)}">${links}<style>html,body{overflow:hidden}</style></head><body></body></html>`;
+    // with control on, the parts that are theirs to play show a no-entry cursor
+    const blocked = BLOCKED.split(',').map(x => `body.hctl ${x.trim()}, body.hctl ${x.trim()} *`).join(',');
+    frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><base href="${esc(location.href)}">${links}<style>html,body{overflow:hidden} body.hctl{cursor:pointer} ${blocked}{cursor:not-allowed !important}</style></head><body></body></html>`;
+    setCtl('off');
     viewer.querySelector('.vtitle').textContent = `${viewing.name}'s screen`;
     viewer.querySelector('.vinfo').textContent = 'Tiles in their hand are hidden';
     wrap.hidden = true;
@@ -125,6 +185,8 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
 
   function closeViewer(quiet) {
     clearInterval(keepT); clearTimeout(waitT);
+    if (viewing && ctl !== 'off' && !quiet) relay(viewing.pid, { k: 'ctlend' });
+    setCtl('off');
     if (viewing && !quiet) relay(viewing.pid, { k: 'unwatch' });
     viewing = null; last = null;
     viewer.hidden = true;
@@ -145,10 +207,17 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     if (!frameReady) return;
     const doc = frame.contentDocument;
     if (!doc) return;
+    const act = doc.activeElement, keepHx = act && act.getAttribute && act.getAttribute('data-hx');
+    const caret = keepHx && typeof act.selectionStart === 'number' ? [act.selectionStart, act.selectionEnd, act.value] : null;
     doc.documentElement.className = f.hc || '';
     doc.documentElement.setAttribute('style', f.hs || '');
     doc.body.className = f.bc || '';
     doc.body.innerHTML = f.html;
+    doc.body.classList.toggle('hctl', ctl === 'on');
+    if (keepHx) {
+      const el = doc.querySelector(`[data-hx="${keepHx}"]`);
+      if (el && el.tagName === act.tagName) { if (caret) { el.value = caret[2]; } el.focus(); if (caret) try { el.setSelectionRange(caret[0], caret[1]); } catch (e) { /* not a text box */ } }
+    }
     note(''); wrap.hidden = false;
     fit();
     for (const el of doc.querySelectorAll('[data-sx]')) { el.scrollLeft = +el.dataset.sx; el.scrollTop = +el.dataset.sy; }
@@ -164,7 +233,13 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
   banner.id = 'helpBanner'; banner.hidden = true;
   document.body.appendChild(banner);
   banner.addEventListener('click', e => {
-    if (!e.target.closest('button')) return;
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.ctl) {
+      const w = watchers.get(b.dataset.ctl);
+      if (w) { w.ask = false; w.ctl = b.dataset.yes === '1'; relay(b.dataset.ctl, { k: w.ctl ? 'ctlok' : 'ctlno' }); }
+      return sync();
+    }
     for (const id of watchers.keys()) relay(id, { k: 'stop' });
     watchers.clear(); sync();
   });
@@ -174,8 +249,13 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
 
   function sync() {
     const names = [...watchers.keys()].map(nameOf);
+    const asking = [...watchers].find(([, w]) => w.ask), driving = [...watchers].filter(([, w]) => w.ctl).map(([id]) => nameOf(id));
     banner.hidden = !names.length;
-    const html = names.length ? `<span>${ic('users')}<b>${esc(names.join(', '))}</b> can see your screen to help. Your tiles are hidden.</span><button type="button" class="btn">Stop</button>` : '';
+    banner.classList.toggle('ctl', !!driving.length || !!asking);
+    const html = !names.length ? ''
+      : asking ? `<span>${ic('users')}<b>${esc(nameOf(asking[0]))}</b> wants to control your screen to help. They can't see or touch your cards or tiles.</span><button type="button" class="btn go" data-ctl="${esc(asking[0])}" data-yes="1">Allow</button><button type="button" class="btn" data-ctl="${esc(asking[0])}" data-yes="0">No</button>`
+      : driving.length ? `<span>${ic('users')}<b>${esc(driving.join(', '))}</b> is controlling your screen to help. They can't see or touch your cards or tiles.</span><button type="button" class="btn">Stop</button>`
+      : `<span>${ic('users')}<b>${esc(names.join(', '))}</b> can see your screen to help. They can't see or touch your cards or tiles.</span><button type="button" class="btn">Stop</button>`;
     if (banner.innerHTML !== html) banner.innerHTML = html;
     if (names.length && !obs) {
       obs = new MutationObserver(soon);
@@ -202,6 +282,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     const L = document.body.querySelectorAll('*'), C = body.querySelectorAll('*');
     for (let i = 0; i < L.length; i++) {
       const l = L[i], c = C[i];
+      c.setAttribute('data-hx', i);
       if (l.scrollLeft || l.scrollTop) { c.setAttribute('data-sx', l.scrollLeft); c.setAttribute('data-sy', l.scrollTop); }
       const tag = l.tagName;
       if (tag === 'INPUT') {
@@ -225,6 +306,10 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
       t.className = 'cc back'; t.innerHTML = '';
       t.removeAttribute('data-card'); t.removeAttribute('data-id'); t.removeAttribute('aria-label');
     });
+    // and playing cards (Idiot, Hearts) and dominoes in the hand
+    body.querySelectorAll('#hand .pc').forEach(t => { t.className = 'pc back'; t.innerHTML = ''; t.removeAttribute('aria-label'); });
+    body.querySelectorAll('#hand .dm').forEach(t => { t.className = 'dm v hid'; t.innerHTML = '<span class="dh"></span><span class="dh"></span>'; t.removeAttribute('aria-label'); });
+    body.querySelectorAll('#hand [data-id]').forEach(t => t.removeAttribute('data-id'));
     return body.innerHTML;
   }
 
@@ -248,6 +333,54 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     for (const to of watchers.keys()) for (let i = 0; i < n; i++) relay(to, { k: 'f', id, i, n, d: text.slice(i * CHUNK, (i + 1) * CHUNK) });
   }
 
+  // Find the element the helper means on this page, and check it is one they may use.
+  function target(m) {
+    let el = Number.isInteger(m.hx) && m.hx >= 0 ? document.body.querySelectorAll('*')[m.hx] : null;
+    const same = e => e && e.tagName === m.tag && (m.id ? e.id === m.id : true) && (m.act ? e.getAttribute('data-act') === m.act : true);
+    if (!same(el)) {
+      el = (m.id && document.getElementById(m.id)) || (m.act && [...document.querySelectorAll('[data-act]')].find(e => e.getAttribute('data-act') === m.act)) || null;
+      if (!same(el)) return null;
+    }
+    return el;
+  }
+  function allowed(el) {
+    if (!el || !document.body.contains(el)) return false;
+    if (el.closest(BLOCKED)) return false;
+    // during a game the middle of the screen is the game itself
+    if (A.S && A.S.phase === 'play' && el.closest('#center')) return false;
+    return true;
+  }
+  // a ring where the helper tapped, so it is clear what they are doing
+  function ping(el) {
+    const r = el.getBoundingClientRect(), d = document.createElement('div');
+    d.className = 'helpping';
+    d.style.left = r.left + r.width / 2 + 'px'; d.style.top = r.top + r.height / 2 + 'px';
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 700);
+  }
+  function onDo(from, m) {
+    const w = watchers.get(from);
+    if (!w || !w.ctl) return;
+    w.at = Date.now();
+    const el = target(m);
+    if (!allowed(el)) return relay(from, { k: 'nope' });
+    ping(el);
+    if (m.a === 'click') {
+      if (el.tagName === 'INPUT' && /^(text|search|email|number|tel|url)$/.test(el.type)) el.focus();
+      else el.click();
+    } else if (m.a === 'set' && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') && el.type !== 'password') {
+      el.value = String(m.v || '').slice(0, 200);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      if (m.enter && el.form) el.form.requestSubmit();
+    } else if (m.a === 'scroll') {
+      let s = el;
+      while (s && s !== document.body && !(s.scrollHeight > s.clientHeight + 2 && /auto|scroll/.test(getComputedStyle(s).overflowY))) s = s.parentElement;
+      (s && s !== document.body ? s : document.scrollingElement).scrollBy(0, +m.dy || 0);
+    }
+    soon();
+  }
+
   let checking = false, lastCheck = 0;
   async function onWatch(from, m) {
     const tok = String(m.u) + '\n' + String(m.p);
@@ -269,7 +402,13 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
       if (!m || typeof from !== 'string') return;
       if (m.k === 'watch') return void onWatch(from, m);
       if (m.k === 'unwatch') { if (watchers.delete(from)) sync(); return; }
+      if (m.k === 'ctlask') { const w = watchers.get(from); if (w && !w.ctl) { w.ask = true; sync(); } return; }
+      if (m.k === 'ctlend') { const w = watchers.get(from); if (w) { w.ctl = false; w.ask = false; sync(); } return; }
+      if (m.k === 'do') return onDo(from, m);
       if (!viewing || from !== viewing.pid) return;
+      if (m.k === 'ctlok') { setCtl('on'); toast(`${viewing.name} let you control their screen. Their cards and tiles stay theirs.`); return; }
+      if (m.k === 'ctlno') { setCtl('off'); toast(`${viewing.name} said no to control.`); return; }
+      if (m.k === 'nope') { toast('That part is theirs to play, so it can\'t be done for them.', 2500); return; }
       if (m.k === 'deny') { closeViewer(true); toast('Their device did not accept the helper sign-in.'); }
       else if (m.k === 'stop') { const n = viewing.name; closeViewer(true); toast(`${n} stopped showing their screen.`); }
       else if (m.k === 'f') {

@@ -5,8 +5,11 @@ import { Video } from './video.js';
 import { initHelp } from './help.js';
 import { initStats } from './stats.js';
 import { tile, analyze, openingPoints, checkTurn, groupsOf, tidyPos, autoSplit, COLOR_NAMES, OPEN_POINTS, BOARD_W } from './rules.js';
-import { GAMES, GAME_IDS, COLORS, cfgFor, winsOf, BOARD_GAMES } from './games.js';
+import { GAMES, GAME_IDS, COLORS, cfgFor, winsOf, BOARD_GAMES, PROFILES, isHex } from './games.js';
+import { allRecs, mergeRecs, lifeWins, lifeTable } from './lifetime.js';
+import { watchLobbies, lobbyNotice } from './lobbies.js';
 import { renderChess, renderCheckers, renderMancala, boardControls, boardTap, chessGlyph } from './boardview.js';
+import { renderIdiot, idiotHand, idiotControls, renderHearts, heartsHand, heartsControls, renderDominoes, dominoHand, dominoControls, tableTap, TABLE_ACTS, HAND_GAMES, domino, setTrayHooks } from './cardtable.js';
 import { renderBJ, bjControls, renderUno, unoHand, unoControls, pcard, ccard, money, isWild } from './cardview.js';
 
 // Rack colors to pick from. hi/base/lo/deep shade the plastic, ink is the pressed-in name, text is printing on it.
@@ -20,12 +23,26 @@ const RACKS = {
   black:  { label: 'Black',  hi: '#6b6b6b', base: '#333333', lo: '#222222', deep: '#000000', ink: '#141414', text: '#f2f2f2' },
   white:  { label: 'White',  hi: '#ffffff', base: '#ebebeb', lo: '#cfcfcf', deep: '#9a9a9a', ink: '#9a9a9a', text: '#1a1a1a' },
 };
-const rackStyle = rc => { const r = RACKS[rc] || RACKS.yellow; return `--rk-hi:${r.hi};--rk:${r.base};--rk-lo:${r.lo};--rk-deep:${r.deep};--rk-ink:${r.ink};--rk-text:${r.text}`; };
+// A custom color ('#rrggbb') gets its own shades worked out the same way.
+const mixHex = (hex, t) => { const n = parseInt(hex.slice(1), 16); const f = c => Math.round(t > 0 ? c + (255 - c) * t : c * (1 + t)); return '#' + [n >> 16, (n >> 8) & 255, n & 255].map(c => f(c).toString(16).padStart(2, '0')).join(''); };
+const customRacks = new Map();
+function rackOf(rc) {
+  if (RACKS[rc]) return RACKS[rc];
+  if (!isHex(rc)) return RACKS.yellow;
+  if (!customRacks.has(rc)) {
+    const n = parseInt(rc.slice(1), 16), lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+    customRacks.set(rc, { label: 'Custom', hi: mixHex(rc, 0.38), base: rc, lo: mixHex(rc, -0.16), deep: mixHex(rc, -0.5), ink: mixHex(rc, -0.45), text: lum > 0.55 ? '#1a1a1a' : '#f7f7f7' });
+  }
+  return customRacks.get(rc);
+}
+const rackStyle = rc => { const r = rackOf(rc); return `--rk-hi:${r.hi};--rk:${r.base};--rk-lo:${r.lo};--rk-deep:${r.deep};--rk-ink:${r.ink};--rk-text:${r.text}`; };
 // taken: color -> the name of whoever has it (those can't be picked)
 const swatches = (cur, act, taken = {}) => COLORS.map(k => {
   const r = RACKS[k], who = taken[k];
   return `<button type="button" class="swatch ${k === cur ? 'on' : ''} ${who ? 'taken' : ''}" data-${act}="${k}" style="${rackStyle(k)}" aria-pressed="${k === cur}" ${who ? `disabled title="${esc(who)} has this color"` : ''} aria-label="${r.label}${who ? ` (${esc(who)})` : ''}"><span class="sw-top">${who ? esc(who.slice(0, 1).toUpperCase()) : ''}</span><span class="sw-edge">${r.label}</span></button>`;
-}).join('');
+}).join('')
+  // the last one opens a color picker for any color at all
+  + `<label class="swatch custom ${isHex(cur) ? 'on' : ''}" style="${rackStyle(isHex(cur) ? cur : '#8a8f98')}" title="Pick any color"><input type="color" data-custom="${act}" value="${isHex(cur) ? cur : '#3fc1c9'}" aria-label="Pick your own color"><span class="sw-top">${isHex(cur) ? '' : '+'}</span><span class="sw-edge">Custom</span></label>`;
 
 const $ = s => document.querySelector(s);
 const qs = new URLSearchParams(location.search);
@@ -66,19 +83,26 @@ let setKey = 1;
 /* ---------------- joining ---------------- */
 
 function setupJoin() {
-  let tabName = null;
-  try { tabName = sessionStorage.getItem('jg-name'); } catch (e) { /* ignore */ }
-  $('#name').value = tabName || store.get('name', '');
+  // Who you are (lifetime stats are saved under this) and, if you like, a different name to play as today.
+  const sel = $('#prof');
+  sel.innerHTML = `<option value="">Choose your name…</option>` + PROFILES.map(n => `<option>${esc(n)}</option>`).join('');
+  let tabProf = null, tabNick = null;
+  try { tabProf = sessionStorage.getItem('jg-prof'); tabNick = sessionStorage.getItem('jg-nick'); } catch (e) { /* ignore */ }
+  const prof = qs.get('prof') || tabProf || store.get('prof', '');
+  if (PROFILES.includes(prof)) sel.value = prof;
+  $('#name').value = tabNick || '';
   $('#code').value = cleanCode(qs.get('room')) || store.get('code', '') || 'family';
   $('#joinForm').addEventListener('submit', e => {
     e.preventDefault();
-    const name = $('#name').value.trim().slice(0, 18);
+    const prof = sel.value;
+    const nick = $('#name').value.trim().slice(0, 18);
     const code = cleanCode($('#code').value);
-    if (!name) { $('#name').focus(); $('#joinErr').textContent = 'Please type your name.'; return; }
-    if (!code) { $('#code').focus(); $('#joinErr').textContent = 'Please type a table name, like family.'; return; }
-    store.set('name', name); store.set('code', code);
-    try { sessionStorage.setItem('jg-name', name); } catch (e) { /* ignore */ }
-    start(name, code);
+    if (!PROFILES.includes(prof)) { sel.focus(); $('#joinErr').textContent = 'Please choose your name.'; return; }
+    if (!code) { $('#code').focus(); $('#joinErr').textContent = 'Please type a lobby name, like family.'; return; }
+    store.set('prof', prof); store.set('code', code);
+    try { sessionStorage.setItem('jg-prof', prof); sessionStorage.setItem('jg-nick', nick); } catch (e) { /* ignore */ }
+    A.prof = prof;
+    start(nick || prof, code);
   });
   // one of each: a tile, a playing card and a Color Clash card
   $('#joinLogo').innerHTML = `${pcard(0)}<span class="tile c1"><span class="num">7</span></span>${ccard(100)}`;
@@ -86,11 +110,31 @@ function setupJoin() {
   const paint = () => { pick.innerHTML = swatches(A.rc, 'rc'); };
   paint();
   pick.addEventListener('click', e => { const b = e.target.closest('[data-rc]'); if (b) { A.rc = b.dataset.rc; saveRc(); paint(); } });
-  if (qs.has('auto') && $('#name').value) $('#joinForm').requestSubmit();
+  pick.addEventListener('change', e => { if (e.target.matches('[data-custom]') && isHex(e.target.value.toLowerCase())) { A.rc = e.target.value.toLowerCase(); saveRc(); paint(); } });
+  showLobbies();
+  if (qs.has('auto') && PROFILES.includes(sel.value)) $('#joinForm').requestSubmit();
 }
+
+// The open lobbies, listed on the start screen. Tapping one fills in its name (and joins, once you have
+// chosen your name).
+let stopWatch = null;
+function showLobbies() {
+  if (stopWatch) return;
+  const box = $('#openLobbies');
+  stopWatch = watchLobbies(list => {
+    box.hidden = !list.length;
+    box.innerHTML = list.length ? `<span class="olabel">Open lobbies</span>` + list.map(x => {
+      const g = x.game && GAMES[x.game];
+      const what = x.phase === 'play' ? (g ? `Playing ${g.name}` : 'Playing') : g ? `Getting ready for ${g.name}` : 'In the lobby';
+      return `<button type="button" class="olobby" data-act="joinlobby" data-code="${esc(x.code)}"><b>${esc(x.code)}</b><span>${esc(what)} · ${x.n} ${x.n === 1 ? 'person' : 'people'}</span>${ic('arrow')}</button>`;
+    }).join('') : '';
+  });
+}
+function hideLobbies() { if (stopWatch) { stopWatch(); stopWatch = null; } }
 
 function start(name, code) {
   A.name = name; A.code = code;
+  hideLobbies();
   A.rcAsked = A.rc;   // if someone already has this color, the lobby gives me another and says so
   const u = new URL(location.href); u.searchParams.set('room', code); u.searchParams.delete('auto');
   history.replaceState(null, '', u);
@@ -101,13 +145,15 @@ function start(name, code) {
   if (!A.video) { A.video = new Video(() => renderSeats()); A.video.init(); }
   A.net = new Net(code, {
     onStatus: s => { A.status = s; renderStatus(); },
-    onOpen: () => { laySent = ''; hello(); },
+    onOpen: () => { laySent = ''; hello(); send({ t: 'ledger', recs: allRecs() }); },
     onMsg: m => {
       if (m.t === 'state') setState(m.s);
       else if (m.t === 'nope') { toast(m.why); beep(220, 0.25); }
       else if (m.t === 'relay') help.rx(m.from, m.m);
       else if (m.t === 'hand') onHand(m);
       else if (m.t === 'rps') onRps(m);
+      else if (m.t === 'whisper') onWhisper(m);
+      else if (m.t === 'ledger') { if (mergeRecs(m.recs)) { renderSeats(); if (A.S && A.S.phase === 'over') renderCenter(); if (!$('#lifeBox').hidden) renderLife(); } }
       else if (m.t === 'closed') {
         // Someone closed the table: forget this game so it can't come back, and go to the join screen.
         try { sessionStorage.removeItem(snapKey()); sessionStorage.removeItem(gridKey()); } catch (e) { /* ignore */ }
@@ -134,7 +180,7 @@ function snapshot() { return A.S || loadSnap(); }
 
 function hello() {
   const snap = snapshot();
-  A.net.send({ t: 'hello', pid, name: A.name, rc: A.rc, snap: snap && snap.round ? snap : null, peer: A.net.peer && A.net.peer.id, cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
+  A.net.send({ t: 'hello', pid, name: A.name, prof: A.prof, rc: A.rc, snap: snap && snap.round ? snap : null, peer: A.net.peer && A.net.peer.id, cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
 }
 function send(m) { A.net && A.net.send(m); }
 
@@ -154,13 +200,19 @@ function setState(S) {
   const m = me();
   // The referee gives everyone their own color: if the one I asked for was taken, I get another.
   if (m && m.rc && m.rc !== A.rc) {
-    if (A.rcAsked === A.rc) toast(`${RACKS[A.rc].label} was taken, so you are ${RACKS[m.rc].label}.`);
+    if (A.rcAsked === A.rc) toast(`${rackOf(A.rc).label} was taken, so you are ${rackOf(m.rc).label}.`);
     A.rc = m.rc; saveRc();
   }
   if (m) A.rcAsked = null;
   if (S.phase !== 'play' || S.game !== 'uno') A.wildPick = null;
-  if (!was || was.turnNo !== S.turnNo || S.phase !== 'play') { A.bsel = null; A.promo = null; A.resignArm = 0; }
+  if (!was || was.turnNo !== S.turnNo || S.phase !== 'play') { A.bsel = null; A.promo = null; A.resignArm = 0; A.isel = new Set(); A.pending = null; if (!(S.dm && S.phase === 'play')) A.dsel = null; }
+  if (!was || S.phase !== 'play' || (S.hr && was.hr && S.hr.handNo !== was.hr.handNo) || (S.hr && S.hr.passed && S.hr.passed[pid])) A.hsel = new Set();
+  if (S.phase !== 'play' || !S.id || S.id.stage !== 'swap') A.iswap = null;
   rpsState();
+  updateNotice();
+  // the host can list or unlist the lobby from Settings at any time, games included
+  $('#listedRow').hidden = !isHost();
+  $('#listedOn').checked = !S.unlisted;
   // Blackjack: each new round of bets starts from my last bet; the first chip tapped starts a new amount.
   if (S.bj && S.bj.stage === 'bet' && !(was && was.bj && was.bj.stage === 'bet' && was.round === S.round)) { A.bjBet = null; A.betFresh = true; }
   // Keep my own rack order; a newly drawn tile goes on the end and glows once.
@@ -593,7 +645,7 @@ function renderSeats() {
     const mr = el.querySelector('.minirack'), st = rackStyle(p.rc);
     if (mr.getAttribute('style') !== st) mr.setAttribute('style', st);
     // every seat is framed in its player's color
-    el.style.setProperty('--pc', RACKS[p.rc] ? RACKS[p.rc].base : RACKS.yellow.base);
+    el.style.setProperty('--pc', rackOf(p.rc).base);
     const isTiles = S.game === 'tiles' || !S.game;
     el.classList.toggle('cards', !isTiles);
     // Their rack shows the backs of the tiles they still hold, laid out the way they have them.
@@ -616,6 +668,14 @@ function renderSeats() {
     } else if (show && S.game === 'mancala' && S.mc) {
       const n = S.mc.p[S.mc.pl[0] === p.pid ? 6 : 13];
       obHtml = `<span class="seed s1"></span>${n}`; obCls += ' show bgside'; obTitle = `${n} seeds in their store`;
+    } else if (show && S.game === 'idiot' && S.id) {
+      const out = S.id.out.indexOf(p.pid), n = (p.hand || []).length;
+      obHtml = out >= 0 ? `${ic('trophy')}Out` : `${ic('cards')}${n}`; obCls += ' show' + (out >= 0 ? ' yes' : ''); obTitle = out >= 0 ? 'Out' : `${n} cards in hand`;
+    } else if (show && S.game === 'hearts' && S.hr) {
+      obHtml = `♥${S.hr.scores[p.pid] || 0}`; obCls += ' show money'; obTitle = 'Score (lowest wins)';
+    } else if (show && S.game === 'dominoes' && S.dm) {
+      const n = (p.hand || []).length;
+      obHtml = String(n); obCls += ' show' + (n === 1 ? ' last' : ''); obTitle = `${n} tiles in hand · score ${S.dm.scores[p.pid] || 0} (lowest wins)`;
     } else if (show && S.game === 'uno') {
       const n = (p.hand || []).length;
       obHtml = `${ic('cards')}${n}`; obCls += ' show' + (n === 1 ? ' last' : ''); obTitle = `${n} card${n === 1 ? '' : 's'}`;
@@ -624,7 +684,7 @@ function renderSeats() {
     ob.className = obCls;
     ob.title = obTitle;
     let tag = '';
-    const wins = winsOf(p, S.game || 'tiles');
+    const wins = winsFor(p, S.game || 'tiles');
     if (!p.on) tag = '⚠ Lost connection';
     else if (playing && !p.seat) tag = 'Watching';
     else if (wins) tag = `${ic('trophy')} ${wins}`;
@@ -695,16 +755,24 @@ function renderCenter() {
   $('#gameName').hidden = !S.game;
   $('#gameName b').textContent = S.game ? GAMES[S.game].name : '';
   box.parentElement.classList.toggle('cardgame', S.phase === 'play' && S.game !== 'tiles');
-  if (S.phase === 'lobby') { if (lobbyDrag) { lobbyDrag.stale = true; return; } return renderLobby(box); }
+  if (S.phase === 'lobby') {
+    if (lobbyDrag) { lobbyDrag.stale = true; return; }
+    // don't redraw under an open color picker
+    if (document.activeElement && document.activeElement.matches && document.activeElement.matches('#center [data-custom]')) { A.lobbyStale = true; return; }
+    return renderLobby(box);
+  }
   if (S.phase === 'over') return renderOver(box);
   if (S.game === 'bj') return renderBJ(box, viewCtx());
   if (S.game === 'uno') return renderUno(box, viewCtx());
   if (S.game === 'chess') return renderChess(box, viewCtx());
   if (S.game === 'checkers') return renderCheckers(box, viewCtx());
   if (S.game === 'mancala') return renderMancala(box, viewCtx());
+  if (S.game === 'idiot') return renderIdiot(box, viewCtx());
+  if (S.game === 'hearts') return renderHearts(box, viewCtx());
+  if (S.game === 'dominoes') return renderDominoes(box, viewCtx());
   renderBoard(box);
 }
-const viewCtx = () => ({ A, pid, esc, ic, rackStyle });
+const viewCtx = () => ({ A, pid, esc, ic, rackStyle, rackOf });
 
 // A little picture of each game, for the game chooser.
 const GAME_ART = {
@@ -713,6 +781,9 @@ const GAME_ART = {
   uno: () => ccard(7) + ccard(73) + ccard(104),
   chess: () => `<span class="artsq">${chessGlyph('n')}</span><span class="artsq lt">${chessGlyph('K')}</span><span class="artsq">${chessGlyph('q')}</span>`,
   checkers: () => '<span class="ck b"></span><span class="ck a king"><b>♛︎</b></span><span class="ck a"></span>',
+  idiot: () => pcard(1) + pcard(9) + pcard(13),
+  hearts: () => pcard(11) + pcard(13) + pcard(25),
+  dominoes: () => domino(12, 12, 'v') + domino(5, 9, 'v') + domino(1, 7, 'v'),
   mancala: () => '<span class="artpit"><i class="seed s0"></i><i class="seed s1"></i><i class="seed s2"></i></span><span class="artpit"><i class="seed s3"></i><i class="seed s4"></i></span><span class="artpit"><i class="seed s1"></i><i class="seed s2"></i><i class="seed s0"></i><i class="seed s3"></i></span>',
 };
 const gameArt = (g, cls = '') => `<span class="gart gart-${g} ${cls}" aria-hidden="true">${GAME_ART[g]()}</span>`;
@@ -731,7 +802,7 @@ function renderLobby(box) {
   const SIDES = { chess: ['White', 'Black'], checkers: ['Red', 'White'] };
   const role = i => (g && i >= max ? (g.max === 2 ? 'Watches' : 'Watching (full)') : `Player ${i + 1}${g && SIDES[S.game] ? ' · ' + SIDES[S.game][i] : ''}`);
   const chips = here.map((p, i) => `<div class="pchip ${p.cpu ? 'cpu' : ''} ${host ? 'drag' : ''} ${g && i >= max ? 'bench' : ''}" data-pid="${esc(p.pid)}" style="${rackStyle(p.rc)}">${host ? `<span class="grip" title="Drag to change the order" aria-hidden="true"><i></i><i></i><i></i></span>` : ''}<b class="pnum" title="${role(i)}">${g && i >= max ? ic('users') : i + 1}</b><span class="av">${p.cpu ? `${ic('bot')}<i class="lvl">${LEVEL_NAMES[p.cpu][0]}</i>` : esc((p.name || '?').slice(0, 1).toUpperCase())}${p.pid === S.host ? `<i class="crown" title="Host">${ic('crown')}</i>` : ''}</span>
-      <span class="pn">${esc(p.name)}<span class="pt">${[role(i), p.pid === pid ? 'You' : p.cpu ? `Computer · ${LEVEL_NAMES[p.cpu]}` : '', p.pid === S.host ? 'Host' : ''].filter(Boolean).join(' · ')}</span></span>
+      <span class="pn">${esc(p.name)}<span class="pt">${[role(i), p.prof && p.prof !== p.name ? `(${esc(p.prof)})` : '', p.pid === pid ? 'You' : p.cpu ? `Computer · ${LEVEL_NAMES[p.cpu]}` : '', p.pid === S.host ? 'Host' : ''].filter(Boolean).join(' · ')}</span></span>
       ${p.cpu && host ? `<button class="iconbtn rm" data-act="rmcpu" data-pid="${esc(p.pid)}" aria-label="Remove ${esc(p.name)}">${ic('close')}</button>` : ''}
       ${!p.cpu && host && p.pid !== pid ? `<button class="iconbtn rm" data-act="host" data-pid="${esc(p.pid)}" aria-label="Make ${esc(p.name)} the host" title="Make ${esc(p.name)} the host">${ic('crown')}</button>` : ''}</div>`).join('');
   const full = here.length >= 8;
@@ -773,6 +844,7 @@ function renderLobby(box) {
         <div class="players" id="lobbyPlayers">${chips}${empties}</div>
       </div>
       <div class="section"><h3>Your color</h3><div class="swatches row8">${swatches(A.rc, 'setrc', taken)}</div></div>
+      ${host ? `<label class="setrow listrow"><span class="setlabel">${ic('users')}Show this lobby on the start screen</span><input type="checkbox" class="switch" data-listed ${S.unlisted ? '' : 'checked'}></label>` : ''}
       <div class="lobbyfoot"><span class="tip">${ic('cam')}<span>Press <b>Camera</b> so everyone can see you.</span></span><button class="btn small leave" data-act="leave">${ic('logout')}Leave</button></div>
     </div>
     <div class="lcol">${right}</div>
@@ -834,13 +906,16 @@ function endLobbyDrag(drop) {
 document.addEventListener('pointerup', () => endLobbyDrag(true));
 document.addEventListener('pointercancel', () => endLobbyDrag(false));
 
+// Wins by each face: lifetime wins for the family (from the saved records), wins at this table for computers.
+const winsFor = (p, g) => (p && p.prof ? lifeWins(p.prof, g) : winsOf(p, g));
+
 // No points: whoever goes out first wins, and only wins are counted (per game). Blackjack shows the money.
 function renderOver(box) {
   const S = A.S, g = S.game || 'tiles';
   const r = S.result || {};
-  const rows = S.players.filter(p => p.seat || winsOf(p, g)).sort((a, b) => winsOf(b, g) - winsOf(a, g));
+  const rows = S.players.filter(p => p.seat || winsFor(p, g)).sort((a, b) => winsFor(b, g) - winsFor(a, g));
   const bj = g === 'bj' && S.bjEnd;
-  const bg = { chess: S.chess, checkers: S.ck, mancala: S.mc }[g], why = bg && bg.why;
+  const bg = { chess: S.chess, checkers: S.ck, mancala: S.mc, idiot: S.id, hearts: S.hr, dominoes: S.dm }[g], why = bg && bg.why;
   const money2 = n => (n < 0 ? '−' : n > 0 ? '+' : '') + money(Math.abs(n));
   const table = bj ? `<div class="bjend"><div class="bjrow head"><span>Player</span><span>Money</span><span>Buy-backs</span><span>Up / down</span></div>
       ${S.bjEnd.rows.map(x => `<div class="bjrow ${x.pid === r.pid ? 'win' : ''}" style="${rackStyle(x.rc)}"><span class="wn"><i class="dot"></i>${esc(x.name)}</span><span>${money(x.chips)}</span><span>${x.buy}</span><span class="${x.net > 0 ? 'up' : x.net < 0 ? 'down' : ''}">${money2(x.net)}</span></div>`).join('')}</div>` : '';
@@ -848,7 +923,7 @@ function renderOver(box) {
     <div class="winner"><span class="cup">${ic('trophy')}</span><h2>${r.name ? `${esc(r.name)} wins!` : 'No winner this time'}</h2></div>
     ${why ? `<p class="endwhy">${esc(why)}</p>` : ''}
     ${table}
-    <div class="wins">${rows.map(p => `<div class="winrow ${p.pid === r.pid ? 'win' : ''}"><span class="wn">${esc(p.name)}${p.cheats && g === 'tiles' ? ` <i class="cheattag" title="Times they switched on Always show the best play this game">cheat mode ×${p.cheats}</i>` : ''}</span><span class="wc">${ic('trophy')}<b>${winsOf(p, g)}</b></span></div>`).join('')}</div>
+    <div class="wins">${rows.map(p => `<div class="winrow ${p.pid === r.pid ? 'win' : ''}"><span class="wn">${esc(p.name)}${p.cheats && g === 'tiles' ? ` <i class="cheattag" title="Times they switched on Always show the best play this game">cheat mode ×${p.cheats}</i>` : ''}</span><span class="wc" title="${p.prof ? 'Lifetime wins' : 'Wins at this table'}">${ic('trophy')}<b>${winsFor(p, g)}</b></span></div>`).join('')}</div>
     ${g === 'tiles' && rows.some(p => p.cheats) ? `<div class="cheattally"><b>${ic('sortnum')}Cheat mode this game</b>${rows.filter(p => p.cheats).sort((a, b) => b.cheats - a.cheats).map(p => `<span>${esc(p.name)} switched it on <b>${p.cheats}</b> time${p.cheats === 1 ? '' : 's'}</span>`).join('')}</div>` : ''}
     <button class="btn go huge" data-act="newgame">Back to the lobby ${ic('arrow')}</button>
   </div>`;
@@ -985,13 +1060,20 @@ function renderMe() {
   // The card games: no rack, but my cards (Color Clash) and that game's buttons.
   const cards = !!(S && S.phase === 'play' && S.game !== 'tiles');
   $('#rack').hidden = cards;
-  $('#hand').hidden = !(cards && S.game === 'uno' && m && m.seat);
+  $('#hand').hidden = !(cards && (S.game === 'uno' || HAND_GAMES.includes(S.game)) && m && m.seat);
   if (cards) {
     $('#rackTools').innerHTML = '';
-    c.innerHTML = S.game === 'bj' ? bjControls(viewCtx()) : S.game === 'uno' ? unoControls(viewCtx()) : boardControls(viewCtx());
-    if (S.game === 'uno') unoHand($('#hand'), viewCtx());
+    const ctl = { bj: bjControls, uno: unoControls, idiot: idiotControls, hearts: heartsControls, dominoes: dominoControls }[S.game] || boardControls;
+    c.innerHTML = ctl(viewCtx());
+    // Dominoes: the tray's size slider and Fit
+    const dmt = S.game === 'dominoes' && m && m.seat;
+    $('#dmTools').hidden = !dmt;
+    if (dmt) { $('#dmSize').value = A.dz; $('#dmFit').classList.toggle('on', A.fit); $('#dmFit').setAttribute('aria-pressed', A.fit); }
+    const hand = $('#hand'), draw = { uno: unoHand, idiot: idiotHand, hearts: heartsHand, dominoes: dominoHand }[S.game];
+    if (draw && !hand.hidden) { hand.className = 'hand'; draw(hand, viewCtx()); }
     return;
   }
+  $('#dmTools').hidden = true;
   if (!S || !m || S.phase !== 'play') { c.innerHTML = ''; $('#rackTools').innerHTML = ''; renderRack(); return; }
   // Undo, Reset and Fit sit on the rack's edge, on the right of the Sort buttons
   let tools = '';
@@ -1790,6 +1872,7 @@ document.addEventListener('click', e => {
     return;
   }
   if (act === 'bpit') { send({ t: 'g', a: 'move', i: +b.dataset.i }); return; }
+  if (TABLE_ACTS.includes(act)) { const mv = tableTap(A, pid, act, b); if (mv) send({ t: 'g', ...mv }); renderCenter(); renderMe(); return; }
   if (act === 'bresign') {
     if (A.resignArm && Date.now() - A.resignArm < 4000) { A.resignArm = 0; send({ t: 'g', a: 'resign' }); }
     else { A.resignArm = Date.now(); setTimeout(() => { if (A.S) renderMe(); }, 4100); }
@@ -1797,6 +1880,11 @@ document.addEventListener('click', e => {
     return;
   }
   if (act.startsWith('rps')) { rpsAct(act, b); return; }
+  if (act === 'whisper') { openWhisper(b.dataset.pid); return; }
+  if (act === 'wclose') { closeWhisper(); return; }
+  if (act === 'wnoteclose') { $('#wNote').hidden = true; return; }
+  if (act === 'joinlobby') { $('#code').value = b.dataset.code; if (PROFILES.includes($('#prof').value)) $('#joinForm').requestSubmit(); else { $('#prof').focus(); $('#joinErr').textContent = 'Choose your name, then join.'; } return; }
+  if (act === 'lifeclose') { showLife(false); return; }
   if (act === 'pick') { send({ t: 'pick', game: b.dataset.game || null }); return; }
   if (act === 'cfg') { let v; try { v = JSON.parse(b.dataset.v); } catch (er) { return; } send({ t: 'cfg', key: b.dataset.key, value: v }); return; }
   if (act === 'host') { send({ t: 'host', pid: b.dataset.pid }); return; }
@@ -1897,7 +1985,8 @@ function leaveTable(msg) {
   A.net.stop(); A.net = null;
   A.video.stopAll();
   A.camOn = false; A.micOn = true;
-  A.rps = null; showRps(false); seatMenu(null);
+  notice.set(null); showLobbies();
+  A.rps = null; showRps(false); seatMenu(null); closeWhisper(); A.wlog.clear(); if ($('#wNote')) $('#wNote').hidden = true;
   A.S = null; A.W = null; A.lastAlert = null; A.lastDrew = null; A.lastShame = null; A.lastAnn = null; A.wildPick = null; A.bjBet = null; A.hist = []; A.sel.clear(); A.drag = null; A.loose.clear(); A.sortUndo = null; A.status = 'off';
   for (const el of seatEls.values()) el.remove();
   seatEls.clear(); videoEls.clear();
@@ -1947,19 +2036,19 @@ $('#endBtn').addEventListener('click', () => {
 });
 
 /* ---------------- rock paper scissors on the side ----------------
-   During Number Tiles anyone (playing or watching) can challenge someone else. It never touches the game:
+   During any game anyone (playing or watching) can challenge someone else. It never touches the game:
    turns carry on underneath, and the referee keeps the picks private to the two of them. */
 const HANDS = { r: ['✊', 'Rock'], p: ['✋', 'Paper'], s: ['✌️', 'Scissors'] };
-const rpsOn = () => !!(A.S && A.S.phase === 'play' && A.S.game === 'tiles' && me());
+const rpsOn = () => !!(A.S && A.S.phase === 'play' && me());
 function rpsState() {
   const on = rpsOn();
-  document.body.classList.toggle('rps-ok', on);
-  if (!on) { A.rps = null; showRps(false); seatMenu(null); return; }
+  document.body.classList.toggle('rps-ok', !!me());
+  if (!on) { A.rps = null; showRps(false); if (!me()) seatMenu(null); return; }
   if (!$('#rpsBox').hidden) renderRps();
 }
 function showRps(open) {
   $('#rpsBox').hidden = !open;
-  if (open) renderRps();
+  if (open) { $('#rpsBox').classList.add('front'); $('#wBox').classList.remove('front'); renderRps(); }
 }
 function onRps(m) {
   if (!rpsOn()) return;
@@ -2010,14 +2099,17 @@ function rpsAct(act, b) {
   if (act === 'rpsno' && live) { send({ t: 'rps', a: 'no', id: g.id }); A.rps = null; showRps(false); return; }
   if (act === 'rpsback') { A.rps = null; renderRps(); }
 }
-// Tapping someone's face (their webcam) during Number Tiles offers a game of rock paper scissors with them.
+// Tapping someone's face (their webcam) opens a little menu: whisper to them (any time), or rock paper
+// scissors (during any game).
 function seatMenu(seat) {
   let m = $('#seatMenu');
   if (!seat) { if (m) m.hidden = true; return; }
   const p = A.S && A.S.players.find(q => q.pid === seat.dataset.pid);
   if (!p) return;
   if (!m) { m = document.createElement('div'); m.id = 'seatMenu'; m.className = 'card seatmenu'; m.setAttribute('role', 'menu'); document.body.appendChild(m); }
-  m.innerHTML = `<button class="btn" role="menuitem" data-act="rpsask" data-pid="${esc(p.pid)}"><span class="rpsico" aria-hidden="true">✊✋✌️</span>Rock paper scissors with ${esc(p.name)}</button>`;
+  m.innerHTML = (p.cpu ? '' : `<button class="btn" role="menuitem" data-act="whisper" data-pid="${esc(p.pid)}"><span class="rpsico" aria-hidden="true">🤫</span>Whisper to ${esc(p.name)}</button>`)
+    + (rpsOn() ? `<button class="btn" role="menuitem" data-act="rpsask" data-pid="${esc(p.pid)}"><span class="rpsico" aria-hidden="true">✊✋✌️</span>Rock paper scissors with ${esc(p.name)}</button>` : '');
+  if (!m.innerHTML) { m.hidden = true; return; }
   m.hidden = false;
   const r = seat.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
   const below = r.bottom + 8 + h < innerHeight;
@@ -2030,7 +2122,7 @@ document.addEventListener('click', e => {
   const seat = e.target.closest && e.target.closest('.seat[data-pid]');
   const open = $('#seatMenu') && !$('#seatMenu').hidden;
   seatMenu(null);
-  if (!seat || !rpsOn() || seat.dataset.pid === pid || A.drag) return;
+  if (!seat || !me() || seat.dataset.pid === pid || A.drag) return;
   const p = A.S.players.find(q => q.pid === seat.dataset.pid);
   if (!p || !p.on || (open && A.menuFor === p.pid)) { A.menuFor = null; return; }
   A.menuFor = p.pid;
@@ -2038,6 +2130,63 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') seatMenu(null); });
 window.addEventListener('resize', () => seatMenu(null));
+
+/* ---------------- whispers ----------------
+   A private message to one person. The referee passes it to that person only (and back to the sender, so both
+   screens show the same thread). Nothing is kept once you leave the table. */
+A.wlog = new Map();   // pid -> [{ mine, text, at }]
+A.wwith = null;       // who the whisper box is open for
+function onWhisper(m) {
+  const mine = m.from === pid, other = mine ? m.to : m.from;
+  const log = A.wlog.get(other) || [];
+  log.push({ mine, text: m.text, at: m.at });
+  A.wlog.set(other, log.slice(-40));
+  if (mine) { if (A.wwith === other) renderWhisper(); return; }
+  beep(880, 0.08); setTimeout(() => beep(660, 0.1), 90);
+  if (A.wwith === other && !$('#wBox').hidden) { renderWhisper(); return; }
+  whisperNote(m);
+}
+// A whisper while the box is closed: a card at the top with the message and a Reply button.
+function whisperNote(m) {
+  let el = $('#wNote');
+  if (!el) { el = document.createElement('div'); el.id = 'wNote'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.setAttribute('style', rackStyle(m.rc));
+  el.innerHTML = `<div class="wn-card"><span class="wn-ico" aria-hidden="true">🤫</span><div class="wn-txt"><b>${esc(m.name)} whispers</b><span>${esc(m.text)}</span></div>
+    <button class="btn small go" data-act="whisper" data-pid="${esc(m.from)}">Reply</button><button class="iconbtn" data-act="wnoteclose" aria-label="Close">${ic('close')}</button></div>`;
+  el.hidden = false;
+  clearTimeout(A.wNoteT); A.wNoteT = setTimeout(() => { el.hidden = true; }, 12000);
+}
+function openWhisper(to) {
+  A.wwith = to;
+  const n = $('#wNote'); if (n) n.hidden = true;
+  $('#wBox').hidden = false;
+  $('#wBox').classList.add('front'); $('#rpsBox').classList.remove('front');
+  renderWhisper();
+  const i = $('#wBox input'); if (i) i.focus();
+}
+function closeWhisper() { A.wwith = null; $('#wBox').hidden = true; }
+function renderWhisper() {
+  const box = $('#wBox'), p = A.S && A.S.players.find(q => q.pid === A.wwith);
+  if (!p) { closeWhisper(); return; }
+  const old = box.querySelector('input'), draft = old ? old.value : '', focused = old && document.activeElement === old;
+  const log = A.wlog.get(p.pid) || [];
+  box.innerHTML = `<div class="pophead"><b>🤫 Whisper to <span class="turnchip" style="${rackStyle(p.rc)}">${esc(p.name)}</span></b><button class="iconbtn" data-act="wclose" aria-label="Close">${ic('close')}</button></div>
+    <div class="wthread">${log.length ? log.map(x => `<div class="wmsg ${x.mine ? 'mine' : ''}">${esc(x.text)}</div>`).join('') : `<p class="fieldhint">Only ${esc(p.name)} will see what you write here.</p>`}</div>
+    ${p.on ? `<form class="wform"><input maxlength="300" autocomplete="off" placeholder="Type a message" aria-label="Message to ${esc(p.name)}"><button class="btn go" type="submit">${ic('arrow')}<span>Send</span></button></form>` : `<p class="fieldhint">${esc(p.name)} has left.</p>`}`;
+  const i = box.querySelector('input');
+  if (i) { i.value = draft; if (focused) i.focus(); }
+  const t = box.querySelector('.wthread'); t.scrollTop = t.scrollHeight;
+}
+document.addEventListener('submit', e => {
+  if (!e.target.closest('#wBox')) return;
+  e.preventDefault();
+  const i = e.target.querySelector('input'), text = i.value.trim();
+  if (!text || !A.wwith) return;
+  send({ t: 'whisper', to: A.wwith, text });
+  i.value = ''; i.focus();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#wBox').hidden) closeWhisper(); });
+
 
 // The signature move: a big signed "MJ!" across everyone's screen.
 let mjT = 0;
@@ -2158,8 +2307,40 @@ $('#rackSize').addEventListener('input', e => {
   renderRack();
 });
 
+setTrayHooks({ A, rerender: () => { renderCenter(); renderMe(); } });
+// the dominoes tray's size (remembered on this device) and Fit (shared with the Number Tiles Fit)
+A.dz = Math.min(1.6, Math.max(0.7, +store.get('dz', 1) || 1));
+$('#dmSize').addEventListener('input', e => { A.dz = +e.target.value; store.set('dz', A.dz); renderMe(); });
+$('#dmFit').addEventListener('click', () => { A.fit = !A.fit; try { localStorage.setItem('jg-fit', A.fit ? '1' : ''); } catch (e) { /* private */ } renderCenter(); renderMe(); });
 const stats = initStats({ A, pid, esc, ic, send });
 stats.unlock(true);   // statistics are open to everyone, from Settings
 const help = initHelp({ A, pid, send, toast, esc, ic });
 $('#statsBtn').addEventListener('click', () => stats.open());
+// the lobby's custom color, and the host's "show on the start screen" switch
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.matches && t.matches('#center [data-custom]')) {
+    const v = t.value.toLowerCase();
+    if (isHex(v)) { A.rc = v; saveRc(); send({ t: 'rc', rc: v }); }
+    A.lobbyStale = false; t.blur(); renderAll();
+  } else if (t.matches && t.matches('[data-listed]')) send({ t: 'listed', on: t.checked });
+});
+document.addEventListener('focusout', e => { if (A.lobbyStale && e.target.matches && e.target.matches('#center [data-custom]')) { A.lobbyStale = false; setTimeout(renderCenter); } });
+
+/* ---------------- lifetime stats ---------------- */
+function renderLife() { $('#lifeBody').innerHTML = lifeTable(A.prof || store.get('prof', ''), esc); }
+function showLife(open) { $('#lifeBox').hidden = !open; if (open) { renderLife(); showSettings(false); } }
+$('#lifeBtn').addEventListener('click', () => showLife(true));
+$('#lifeJoinBtn').addEventListener('click', () => showLife(true));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#lifeBox').hidden) showLife(false); });
+
+/* ---------------- this lobby on the start screen ----------------
+   The browser running the referee keeps a short notice up (lobby name, game, how many people): see lobbies.js. */
+const notice = lobbyNotice();
+function updateNotice() {
+  const S = A.S;
+  if (!A.net || !A.net.room || !S || S.unlisted) return notice.set(null);
+  notice.set(A.code, { game: S.game || null, phase: S.phase === 'play' ? 'play' : 'lobby', n: S.players.filter(q => q.on && !q.cpu).length });
+}
+setInterval(updateNotice, 30000);
 setupJoin();

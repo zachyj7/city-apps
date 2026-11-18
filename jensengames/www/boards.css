@@ -195,3 +195,89 @@ body.rps-ok .seat:not(.me):not(.off):hover .face { box-shadow: 0 0 0 3px var(--g
 .seatmenu { position: fixed; z-index: 60; padding: 6px; border-radius: 16px; }
 .seatmenu .btn { gap: 10px; white-space: nowrap; }
 .seatmenu .rpsico { font-size: 1.1em; letter-spacing: -.1em; }
+.seatmenu { display: flex; flex-direction: column; gap: 6px; }
+.seatmenu .btn { justify-content: flex-start; }
+
+/* ---------- joining: your name, a nickname, open lobbies ---------- */
+.profsel {
+  width: 100%; min-height: 52px; padding: 0 14px; border-radius: 12px; border: 2px solid var(--line-strong); cursor: pointer;
+  background: rgba(0,0,0,.3); color: #fff; font-family: var(--display); font-weight: 600; font-size: 1.15em;
+}
+.profsel:focus { border-color: var(--gold); outline: none; }
+.profsel option { background: #0b2a1d; color: #fff; }
+.joinbox label .opt { font-weight: 400; color: var(--soft); }
+.openlobbies { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding: 10px; border-radius: 14px; background: rgba(255,207,51,.08); border: 1px solid rgba(255,207,51,.35); }
+.openlobbies[hidden] { display: none; }
+.openlobbies .olabel { font-family: var(--display); font-weight: 600; font-size: .95em; color: var(--gold-hi); }
+.olobby {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border-radius: 12px; cursor: pointer; text-align: left;
+  border: 2px solid var(--line-strong); background: rgba(255,255,255,.07); color: #fff; font: inherit;
+}
+.olobby:hover { border-color: var(--gold); background: rgba(255,207,51,.12); }
+.olobby:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.olobby b { font-family: var(--display); font-size: 1.15em; color: var(--gold-hi); }
+.olobby span { flex: 1; min-width: 0; color: var(--muted); font-size: .9em; }
+.olobby .ic { flex: none; color: var(--gold); }
+.lifejoin { align-self: center; margin-top: 10px; }
+
+/* the custom color swatch: a color picker in swatch clothing */
+.swatches.row8 { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+.swatch.custom { position: relative; cursor: pointer; }
+.swatch.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.swatch.custom:not(.on) .sw-top { background: conic-gradient(#e3262a, #f7c600, #25a84e, #2472e6, #9257ff, #ff6eb6, #e3262a); display: grid; place-items: center; color: #fff; font-weight: 700; text-shadow: 0 1px 2px #000; }
+.swatch.custom:focus-within { outline: 3px solid var(--gold); outline-offset: 3px; }
+.listrow { margin-top: 6px; }
+
+/* ---------- lifetime stats ---------- */
+.lifemodal { position: fixed; inset: 0; z-index: 85; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.55); }
+.lifemodal[hidden] { display: none; }
+.lifecard { width: min(1100px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 8px 18px 16px; }
+.lifewrap { overflow-x: auto; margin: 10px 0 6px; }
+.lifetable { border-collapse: separate; border-spacing: 0 4px; width: 100%; min-width: 760px; font-variant-numeric: tabular-nums; }
+.lifetable th, .lifetable td { padding: 8px 10px; text-align: center; white-space: nowrap; }
+.lifetable thead th { font-size: .78em; letter-spacing: .05em; text-transform: uppercase; color: var(--soft); font-weight: 700; white-space: normal; }
+.lifetable tbody tr { background: rgba(255,255,255,.06); }
+.lifetable tbody th { text-align: left; font-family: var(--display); font-size: 1.1em; border-radius: 10px 0 0 10px; }
+.lifetable tbody td:last-child { border-radius: 0 10px 10px 0; }
+.lifetable tbody tr.me { background: rgba(255,207,51,.14); }
+.lifetable tbody tr.me th { color: var(--gold-hi); }
+.lifetable td b { font-size: 1.2em; }
+.lifetable td small { color: var(--muted); }
+.lifetable td i { display: block; font-style: normal; font-size: .75em; color: var(--soft); }
+.lifetable td em { display: block; font-style: normal; font-size: .8em; font-weight: 700; }
+.lifetable td em.up { color: #7ee2a2; }
+.lifetable td em.down { color: #ffb4ae; }
+.lifetable td.none { color: var(--soft); }
+.lifetable td:nth-child(2) { background: rgba(0,0,0,.15); }
+
+/* ---------- whispers ---------- */
+.wbox { width: min(400px, calc(100vw - 24px)); z-index: 46; display: flex; flex-direction: column; }
+/* on wider screens the whisper box sits on the left, so it never covers rock paper scissors (top right) */
+@media (min-width: 860px) { .wbox { right: auto; left: 12px; } }
+.popover.front { z-index: 47; }
+.wbox .pophead b { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wbox .pophead .turnchip { max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wthread { display: flex; flex-direction: column; gap: 6px; max-height: min(320px, 42vh); overflow-y: auto; padding: 10px 2px; }
+.wthread .fieldhint { margin: 4px 0; }
+.wmsg {
+  align-self: flex-start; max-width: 85%; padding: .45em .8em; border-radius: 16px 16px 16px 4px; background: rgba(255,255,255,.14);
+  font-size: 1.05em; line-height: 1.3; overflow-wrap: anywhere;
+}
+.wmsg.mine { align-self: flex-end; border-radius: 16px 16px 4px 16px; background: linear-gradient(var(--gold-hi), var(--gold)); color: #2a1f00; }
+.wform { display: flex; gap: 8px; }
+.wform input {
+  flex: 1; min-width: 0; min-height: 46px; padding: 0 14px; border-radius: 12px; border: 2px solid var(--line-strong);
+  background: rgba(0,0,0,.3); color: #fff; font: inherit; font-size: 1.05em;
+}
+.wform input:focus { border-color: var(--gold); outline: none; }
+#wNote { position: fixed; left: 0; right: 0; top: 70px; z-index: 79; display: flex; justify-content: center; padding: 0 12px; pointer-events: none; }
+#wNote[hidden] { display: none; }
+.wn-card {
+  pointer-events: auto; display: flex; align-items: center; gap: 12px; max-width: 520px; width: 100%; padding: 10px 10px 10px 14px; border-radius: 18px;
+  background: linear-gradient(180deg, var(--glass-hi), var(--glass)); border: 3px solid var(--rk); box-shadow: var(--shadow-3);
+  animation: alin .4s cubic-bezier(.2, 1.5, .4, 1) both;
+}
+.wn-ico { font-size: 1.8em; line-height: 1; }
+.wn-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wn-txt b { font-family: var(--display); color: var(--gold-hi); }
+.wn-txt span { font-size: 1.1em; overflow-wrap: anywhere; }

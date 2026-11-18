@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="games.css">
 <link rel="stylesheet" href="boards.css">
+<link rel="stylesheet" href="cardtable.css">
 </head>
 <body>
 
@@ -64,8 +65,12 @@
     <div class="logo" id="joinLogo" aria-hidden="true"></div>
     <h1 class="title">Jensen Games</h1>
     <p class="tagline">Game night with the whole family, faces all around the table.</p>
-    <label for="name">Your name</label>
-    <input id="name" autocomplete="nickname" maxlength="18" placeholder="Grandma">
+    <label for="prof">Who's playing?</label>
+    <select id="prof" class="profsel"></select>
+    <label for="name">Play as a different name <span class="opt">(optional)</span></label>
+    <input id="name" autocomplete="off" maxlength="18" placeholder="Leave blank to use your own name">
+    <p class="fieldhint">Your stats are always saved under your own name.</p>
+    <div id="openLobbies" class="openlobbies" hidden></div>
     <label for="code">Lobby name</label>
     <input id="code" autocomplete="off" autocapitalize="none" maxlength="20" placeholder="family">
     <p class="fieldhint">Everyone types the same lobby name to play together.</p>
@@ -73,8 +78,9 @@
     <div id="rcPick" class="swatches row8"></div>
     <p id="joinErr" class="err" role="alert"></p>
     <button class="btn go huge" type="submit">Join the lobby <svg class="ic"><use href="#i-arrow"/></svg></button>
+    <button class="btn small lifejoin" type="button" id="lifeJoinBtn"><svg class="ic"><use href="#i-trophy"/></svg>Lifetime stats</button>
   </form>
-  <p class="joinfoot">Number Tiles, Blackjack, Color Clash, Chess, Checkers and Mancala. Phones, tablets and computers, up to 8 players.</p>
+  <p class="joinfoot">Number Tiles, Blackjack, Color Clash, Idiot, Hearts, Dominoes, Chess, Checkers and Mancala. Phones, tablets and computers, up to 8 players.</p>
 </section>
 
 <section id="game" hidden>
@@ -90,6 +96,7 @@
   </header>
   <div id="settings" class="card popover" hidden>
     <div class="pophead"><b>Settings</b><button class="iconbtn" id="setClose" aria-label="Close settings"><svg class="ic"><use href="#i-close"/></svg></button></div>
+    <button type="button" class="setrow setlink" id="lifeBtn"><span class="setlabel"><svg class="ic"><use href="#i-trophy"/></svg>Lifetime stats</span><svg class="ic"><use href="#i-arrow"/></svg></button>
     <button type="button" class="setrow setlink" id="statsBtn"><span class="setlabel"><svg class="ic"><use href="#i-trophy"/></svg>Statistics and coach</span><svg class="ic"><use href="#i-arrow"/></svg></button>
     <div class="setrow">
       <span class="setlabel"><svg class="ic"><use href="#i-text"/></svg>Text size</span>
@@ -97,6 +104,7 @@
     </div>
     <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-shapes"/></svg>Color shapes on tiles</span><input type="checkbox" class="switch" id="shapesOn"></label>
     <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-sound"/></svg>Game sounds</span><input type="checkbox" class="switch" id="soundOn"></label>
+    <label class="setrow" id="listedRow" hidden><span class="setlabel"><svg class="ic"><use href="#i-users"/></svg>Show this lobby on the start screen</span><input type="checkbox" class="switch" id="listedOn" data-listed></label>
     <div class="setgroup">
       <span class="setlabel"><svg class="ic"><use href="#i-users"/></svg>Volume of each person</span>
       <div id="volList"></div>
@@ -108,6 +116,7 @@
       <button class="btn muted" id="closeAllBtn"><svg class="ic"><use href="#i-close"/></svg><span>Close for everyone</span></button>
     </div>
   </div>
+  <div id="wBox" class="card popover wbox" hidden role="dialog" aria-label="Whisper"></div>
   <div id="rpsBox" class="card popover rpsbox" hidden role="dialog" aria-label="Rock paper scissors"></div>
   <aside id="seatsL" class="seats"></aside>
   <main>
@@ -126,6 +135,10 @@
           <span id="rackTools"></span>
         </div>
       </div>
+      <div id="dmTools" class="dmtools" hidden>
+        <label title="Size of your dominoes"><svg class="ic"><use href="#i-shapes"/></svg><input type="range" id="dmSize" min="0.7" max="1.6" step="0.05" value="1" aria-label="Size of your dominoes"></label>
+        <button type="button" class="sortbtn" id="dmFit" aria-pressed="false" title="Fit every train on screen"><svg class="ic"><use href="#i-fit"/></svg><span class="long">Fit</span></button>
+      </div>
       <div id="hand" class="hand" hidden></div>
     </div>
     <!-- the turn buttons (Done, Draw, ...) float over the bottom of the table, just above the rack -->
@@ -133,6 +146,9 @@
   </footer>
 </section>
 
+<div id="lifeBox" class="lifemodal" hidden role="dialog" aria-label="Lifetime stats">
+  <div class="card lifecard"><div class="pophead"><b>Lifetime stats</b><button class="iconbtn" data-act="lifeclose" aria-label="Close"><svg class="ic"><use href="#i-close"/></svg></button></div><div id="lifeBody"></div></div>
+</div>
 <div id="toast" role="status" hidden></div>
 <div id="confetti" aria-hidden="true"></div>
 <div id="mj" role="status" hidden>

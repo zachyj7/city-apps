@@ -29,6 +29,24 @@ export const GAMES = {
       { key: 'draw', label: 'When you draw', def: 'one', options: [['one', 'Draw one'], ['until', 'Draw till you can play']] },
     ],
   },
+  idiot: {
+    id: 'idiot', name: 'Idiot', blurb: 'Play higher or pick up the pile. 2 resets, 10 burns. Don’t be the last one holding cards!',
+    min: 2, max: 8, icon: 'cards', settings: [],
+  },
+  hearts: {
+    id: 'hearts', name: 'Hearts', blurb: 'Dodge the hearts and the queen of spades. Lowest score wins.',
+    min: 3, max: 4, icon: 'cards',
+    settings: [
+      { key: 'to', label: 'Game ends at', def: 100, options: [[50, '50 points'], [100, '100 points']] },
+    ],
+  },
+  dominoes: {
+    id: 'dominoes', name: 'Dominoes', blurb: 'Double-twelve trains: build yours toward you, share the community trains, cover your doubles. Lowest score wins.',
+    min: 2, max: 8, icon: 'board',
+    settings: [
+      { key: 'rounds', label: 'Rounds', def: 13, options: [[13, 'All 13 (12 down to 0)'], [7, '7'], [3, '3'], [1, '1']] },
+    ],
+  },
   // The board games are for two. Everyone else in the lobby watches; the host's order picks who plays.
   chess: {
     id: 'chess', name: 'Chess', blurb: 'Checkmate the other king. Player 1 has white and moves first.',
@@ -65,8 +83,31 @@ export function cfgFor(game, saved) {
   return out;
 }
 
-// Player colors: everyone at the table has their own.
+// Player colors: everyone at the table has their own. Besides these, anyone can pick a custom color ('#rrggbb').
 export const COLORS = ['yellow', 'red', 'blue', 'green', 'pink', 'purple', 'black', 'white'];
+export const isHex = c => typeof c === 'string' && /^#[0-9a-f]{6}$/.test(c);
+export const okColor = c => COLORS.includes(c) || isHex(c);
+
+// The family: everyone picks their own name, and lifetime stats are kept under it (whatever name they play as).
+export const PROFILES = ['Audrey', 'Gabe', 'Josh', 'Matt', 'Nina', 'Shiloh', 'Zach'];
+// Lifetime records also cover rock paper scissors.
+export const RPS_ID = 'rps';
+
+// A lifetime record is one finished game: { id, at, g (game), ps (profiles who played), cpu (computers that
+// played), win (a profile, 'cpu' or null), net (Blackjack: money up or down per profile) }.
+export function cleanRec(r) {
+  if (!r || typeof r !== 'object' || typeof r.id !== 'string' || r.id.length > 24 || !Number.isFinite(r.at)) return null;
+  if (!GAMES[r.g] && r.g !== RPS_ID) return null;
+  const ps = Array.isArray(r.ps) ? [...new Set(r.ps.filter(x => PROFILES.includes(x)))] : [];
+  if (!ps.length) return null;
+  const win = PROFILES.includes(r.win) || r.win === 'cpu' ? r.win : null;
+  const out = { id: r.id, at: r.at, g: r.g, ps, cpu: Math.max(0, Math.min(8, Math.floor(+r.cpu) || 0)), win };
+  if (r.net && typeof r.net === 'object') {
+    out.net = {};
+    for (const k of ps) if (Number.isFinite(r.net[k])) out.net[k] = Math.round(r.net[k]);
+  }
+  return out;
+}
 
 // Wins are counted per game: p.w = { tiles: 2, bj: 1, ... }
 export const winsOf = (p, g) => (p && p.w && p.w[g]) || 0;

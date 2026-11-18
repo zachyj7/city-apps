@@ -4,17 +4,20 @@
 import { makePool, checkTurn, isMJ, DEAL, groupsOf, tidyPos, layoutPos, packPos } from './rules.js';
 import { aiTurn } from './ai.js';
 import { check } from './help.js';
-import { GAMES, cfgFor, COLORS } from './games.js';
+import { GAMES, cfgFor, COLORS, PROFILES, RPS_ID, okColor, cleanRec } from './games.js';
 import { BJ } from './bj.js';
 import { UNO } from './uno.js';
 import { CHESS } from './chess.js';
 import { CHECKERS } from './checkers.js';
 import { MANCALA } from './mancala.js';
+import { IDIOT } from './idiot.js';
+import { HEARTS_GAME } from './hearts.js';
+import { DOMINOES } from './dominoes.js';
 
 const CPU_NAMES = ['Ruby', 'Otto', 'Pip', 'Juno', 'Ziggy', 'Nova', 'Bolt', 'Echo'];
 const LEVELS = ['easy', 'medium', 'hard'];
 // The other games' referees (Number Tiles is the code in this file).
-const MODS = { bj: BJ, uno: UNO, chess: CHESS, checkers: CHECKERS, mancala: MANCALA };
+const MODS = { bj: BJ, uno: UNO, chess: CHESS, checkers: CHECKERS, mancala: MANCALA, idiot: IDIOT, hearts: HEARTS_GAME, dominoes: DOMINOES };
 const RPS = ['r', 'p', 's'];
 const rpsBeats = (x, y) => (x === 'r' && y === 's') || (x === 'p' && y === 'r') || (x === 's' && y === 'p');
 
@@ -67,8 +70,8 @@ export class Room {
   // A color nobody else at the table has (their own choice if it's free).
   freeColor(want, pid) {
     const taken = new Set(this.s.players.filter(q => q.pid !== pid && (q.on || q.seat)).map(q => q.rc));
-    if (COLORS.includes(want) && !taken.has(want)) return want;
-    return COLORS.find(c => !taken.has(c)) || (COLORS.includes(want) ? want : 'yellow');
+    if (okColor(want) && !taken.has(want)) return want;
+    return COLORS.find(c => !taken.has(c)) || (okColor(want) ? want : 'yellow');
   }
 
   push() {
@@ -169,7 +172,7 @@ export class Room {
         if (s.phase === 'lobby') this.note(`${clean(m.name)} sat down`);
         else this.note(`${clean(m.name)} is watching`);
       }
-      p.name = clean(m.name); p.rc = this.freeColor(cleanColor(m.rc), p.pid); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true;
+      p.name = clean(m.name); p.prof = PROFILES.includes(m.prof) ? m.prof : null; p.rc = this.freeColor(cleanColor(m.rc), p.pid); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true;
       return this.push();
     }
     const p = c.pid && this.player(c.pid);
@@ -217,6 +220,31 @@ export class Room {
     }
     // Rock paper scissors on the side, during Number Tiles. Nothing in the game changes.
     if (m.t === 'rps') return this.rpsMsg(p, m);
+    // Someone's lifetime records: keep the ones we didn't have (and pass them on to everyone), and send them the
+    // ones they are missing.
+    if (m.t === 'ledger') {
+      this.ledger = this.ledger || new Map();
+      const theirs = new Set(), fresh = [];
+      for (const r of Array.isArray(m.recs) ? m.recs.slice(0, 20000) : []) {
+        const x = cleanRec(r);
+        if (!x) continue;
+        theirs.add(x.id);
+        if (!this.ledger.has(x.id)) { this.ledger.set(x.id, x); fresh.push(x); }
+      }
+      const missing = [...this.ledger.values()].filter(r => !theirs.has(r.id));
+      if (missing.length) c.send({ t: 'ledger', recs: missing });
+      if (fresh.length) this.each(k => { if (k !== c) k.send({ t: 'ledger', recs: fresh }); });
+      return;
+    }
+    // A whisper: a private message passed to one person (and back to the sender). Nothing in the game changes.
+    if (m.t === 'whisper') {
+      const to = this.player(m.to), text = String(m.text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+      if (!to || to.cpu || !to.on || to.pid === p.pid || !text) return;
+      const out = { t: 'whisper', from: p.pid, to: to.pid, name: p.name, rc: p.rc, text, at: Date.now() };
+      this.each(k => { if (k.pid === to.pid || k.pid === p.pid) k.send(out); });
+      return;
+    }
+    if (m.t === 'listed') { if (!isHost) return; s.unlisted = !m.on; return this.push(); }
     if (m.t === 'host') {
       const to = this.player(m.pid);
       if (!isHost || !to || to.cpu || !to.on) return;
@@ -228,8 +256,11 @@ export class Room {
     if (m.t === 'end') {
       if (!isHost || s.phase !== 'play') return;
       this.note(`${p.name} ended the game`);
-      if (MODS[s.game]) return MODS[s.game].end(this);
-      return this.finish(null);
+      this.endedEarly = s.game !== 'bj';
+      try {
+        if (MODS[s.game]) return MODS[s.game].end(this);
+        return this.finish(null);
+      } finally { this.endedEarly = false; }
     }
     // They switched the best-play helper on: marked as a cheater, and everyone is told. Switched off, the mark
     // comes off straight away. Each time it is switched on is counted, for the end of the game.
@@ -321,7 +352,7 @@ export class Room {
     if (m.t === 'newgame') {
       if (s.phase !== 'over') return;
       s.phase = 'lobby'; s.table = []; s.pos = {}; s.work = null; s.result = null; s.bj = null; s.uno = null; s.bjEnd = null;
-      s.chess = null; s.ck = null; s.mc = null;
+      s.chess = null; s.ck = null; s.mc = null; s.id = null; s.hr = null; s.dm = null;
       s.players = s.players.filter(q => q.on);
       for (const q of s.players) { q.seat = false; q.rack = []; q.hand = []; }
       return this.push();
@@ -403,7 +434,7 @@ export class Room {
   }
   rpsMsg(p, m) {
     const s = this.s;
-    if (s.phase !== 'play' || s.game !== 'tiles') return;
+    if (s.phase !== 'play') return;
     this.rps = this.rps || new Map(); this.rpsScore = this.rpsScore || {};
     const live = g => g.stage === 'ask' || g.stage === 'play';
     if (m.a === 'ask') {
@@ -430,6 +461,8 @@ export class Room {
         g.stage = 'done';
         const key = [g.a, g.b].sort().join('|'), sc = this.rpsScore[key] = this.rpsScore[key] || {};
         if (g.win) sc[g.win] = (sc[g.win] || 0) + 1;
+        const A = this.player(g.a), B = this.player(g.b), W = g.win && this.player(g.win);
+        this.addRec({ g: RPS_ID, ps: [A, B].filter(q => q && q.prof).map(q => q.prof), cpu: [A, B].filter(q => q && q.cpu).length, win: W ? (W.cpu ? 'cpu' : W.prof || null) : null });
       }
       return this.rpsSend(g);
     }
@@ -501,11 +534,26 @@ export class Room {
     s.result = winner ? { pid: winner.pid, name: winner.name } : { pid: null, name: '' };
     s.phase = 'over'; s.turn = null; s.work = null;
     this.note(winner ? `${winner.name} wins!` : 'No winner this time');
+    if (!this.endedEarly) {
+      const seats = this.seated();
+      const rec = { g: s.game, ps: seats.filter(q => q.prof).map(q => q.prof), cpu: seats.filter(q => q.cpu).length, win: winner ? (winner.cpu ? 'cpu' : winner.prof || null) : null };
+      if (s.game === 'bj' && s.bjEnd) { rec.net = {}; for (const r of s.bjEnd.rows) { const q = this.player(r.pid); if (q && q.prof) rec.net[q.prof] = (rec.net[q.prof] || 0) + r.net; } }
+      this.addRec(rec);
+    }
     this.push();
+  }
+
+  // A finished game for the lifetime stats: everyone at the table keeps a copy.
+  addRec(r) {
+    const rec = cleanRec({ ...r, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), at: Date.now() });
+    if (!rec) return;
+    this.ledger = this.ledger || new Map();
+    this.ledger.set(rec.id, rec);
+    this.each(k => k.send({ t: 'ledger', recs: [rec] }));
   }
 }
 
-function cleanColor(c) { return COLORS.includes(c) ? c : 'yellow'; }
+function cleanColor(c) { c = typeof c === 'string' ? c.toLowerCase() : c; return okColor(c) ? c : 'yellow'; }
 function clean(n) { return String(n || 'Player').replace(/[<>&"]/g, '').trim().slice(0, 18) || 'Player'; }
 
 // A table position sent by a player: { tileId: [x, y] } with sensible numbers only.
