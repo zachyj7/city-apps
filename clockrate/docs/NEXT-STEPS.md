@@ -40,7 +40,7 @@ What it has to do:
 - **Runs.** The server, not the phone, decides whether you still have today's run, your retry, and your gauntlet run. Otherwise changing the phone's clock gives unlimited runs.
 - **Times.** Leaderboard times are checked on the server. Right now the time comes straight from the device, which is easy to fake. At minimum the server should issue the run and reject impossible times.
 - **Leaderboards.** Per game and gauntlet, today and all-time, friends, group and global.
-- **Friends and groups.** Friend codes, share links, school or group codes.
+- **Friends and groups.** Invite links and friend codes already work in the prototype, synced through a free public MQTT broker (`www/js/friends.js`). That broker is a test service with no accounts: anyone with a code can read or overwrite that player's times, and it can wipe stored data. Move friends to the real backend, then add school or group codes.
 - **Tiers from real data.** The tier cut-offs are currently my guesses (`par` in each game file). Once there are real times, set them from actual percentiles.
 - **Names.** A filter for offensive display names, and a way to report one.
 

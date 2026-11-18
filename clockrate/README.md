@@ -2,7 +2,7 @@
 
 Clock Rate is a City Apps game: five speedrun skill games in one app. One official run per game per day, one retry a day, and a gauntlet that runs all five back to back. The point is who is fastest among your friends.
 
-**Status: prototype.** Everything runs on one device. Other players are demo data, and ads and purchases are switched off. See [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md) for what it takes to launch.
+**Status: prototype.** Run rules are kept on each device. Friends are real: add them with an invite link or a friend code and their times sync (see `www/js/friends.js`). The global board is still demo data, and ads and purchases are switched off. See [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md) for what it takes to launch.
 
 ## Try it
 
@@ -10,7 +10,9 @@ Clock Rate is a City Apps game: five speedrun skill games in one app. One offici
 python -m http.server 8124 --directory www
 ```
 
-Then open http://localhost:8124 in a browser (phone-sized window recommended).
+Run that from this `clockrate/` folder, then open http://localhost:8124 in a browser (phone-sized window recommended). Live at https://zachyj7.github.io/city-apps/clockrate/ .
+
+To test friends locally, open http://localhost:8124 and http://127.0.0.1:8124 side by side: they keep separate saves, so they act as two players.
 
 ## Games
 
@@ -38,6 +40,7 @@ Then open http://localhost:8124 in a browser (phone-sized window recommended).
 - `www/index.html`, `www/app.css` — the app page and styles
 - `www/js/core.js` — settings (`testMode`, `demo`, token prices), helpers, sound
 - `www/js/store.js` — daily-run rules, saved data, leaderboard data, ads and purchase hooks
+- `www/js/friends.js` — invite links, friend codes, and syncing friends' times through a free public MQTT broker (until there is a real backend)
 - `www/js/app.js` — screens: home, game page, the run, results, profiles
 - `www/js/games/` — one file per game
 - `capacitor.config.json`, `package.json` — wrapper config for the iOS and Android builds (not yet run)

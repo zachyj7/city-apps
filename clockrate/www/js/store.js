@@ -1,5 +1,5 @@
 /* Daily-run rules, saved progress, and the data layer.
-   Everything here is local to the device for now. CA.net and CA.services are the two seams
+   Run rules are local to the device for now; friends' times sync through friends.js. CA.net and CA.services are the two seams
    that get swapped for the real backend, ad network and store billing (see docs/NEXT-STEPS.md). */
 (() => {
 'use strict';
@@ -10,7 +10,8 @@ const blank = () => ({
   me: {id: 'u' + Math.random().toString(36).slice(2, 10), name: ''},
   tokens: C.starterTokens, sound: true,
   day: '', today: null,
-  history: {}                // history[gameId][day] = official time that day
+  history: {},               // history[gameId][day] = official time that day
+  friends: {}                // friends[CODE] = {name, b: bests, h: h[gameId][day] = time}, synced by friends.js
 });
 const freshDay = () => ({runs: {}, retryUsed: false});
 
@@ -19,7 +20,7 @@ try {
   const p = JSON.parse(localStorage.getItem(KEY));
   if (p && p.v === 1 && p.me && p.me.id) S = Object.assign(blank(), p);
 } catch (e) {}
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} if (CA.onsave) CA.onsave(); };
 
 function rollover() {
   const d = CA.dayKey();
@@ -70,7 +71,7 @@ CA.tier = (g, t) => { const p = CA.par(g), r = TIERS.find(x => t <= p * x[2]); r
 CA.tierCuts = g => TIERS.map(x => ({key: x[0], name: x[1], under: CA.par(g) * x[2]}));   // fastest tier first
 CA.tierOrder = TIERS.map(x => ({key: x[0], name: x[1]}));
 
-/* ---------- data layer (local + demo players) ---------- */
+/* ---------- data layer (you, your friends, and demo players) ---------- */
 const NAMES = 'Maya,Jordan,Leo,Ava,Noah,Zoe,Eli,Mia,Kai,Ivy,Owen,Ruby,Finn,Lena,Theo,Nora,Jude,Isla,Max,Elle,Remy,Tess,Cole,Wren,Dane,Faye,Reid,Skye,Beau,June,Nico,Cleo,Seth,Vera,Troy,Gwen,Abel,Dara,Zane,Lux'.split(',');
 const demo = !C.demo ? [] : NAMES.map((n, i) => {
   const r = CA.rng(CA.hash('player' + i));
@@ -94,23 +95,39 @@ CA.lastDays = n => {
 const myTime = (g, period) => period === 'today' ? (store.run(g).status === 'done' ? store.run(g).time : null) : store.best(g);
 const allIds = () => ['gauntlet'].concat(CA.games.map(g => g.id));
 
+/* Real friends (synced by friends.js) have ids 'f' + their friend code. */
+const friends = () => Object.keys(S.friends || {}).map(c => ({id: 'f' + c, name: S.friends[c].name || 'New friend', f: S.friends[c], friend: true}));
+const friendTime = (f, g, day) => {
+  if (day !== 'best') { const t = (f.h[g] || {})[day]; return t == null ? null : t; }
+  const v = Object.values(f.h[g] || {}).concat(f.b[g] != null ? [f.b[g]] : []);
+  return v.length ? Math.min(...v) : null;
+};
+const timeOf = (p, g, day) => p.f ? friendTime(p.f, g, day) : demoTime(p, g, day);
+/* Demo friends fill the friends board only until you add a real one. */
+const people = scope => {
+  const real = friends();
+  if (scope === 'friends') return real.length ? real : demo.filter(p => p.friend);
+  return real.concat(demo);
+};
+
 CA.net = {
   /* scope: 'friends' | 'global'.  period: 'today' | 'best'.  Returns rows fastest first. */
   board(g, scope, period) {
-    const rows = demo.filter(p => scope !== 'friends' || p.friend)
-      .map(p => ({id: p.id, name: p.name, time: demoTime(p, g, period === 'today' ? S.day : 'best')}));
+    const rows = people(scope).map(p => ({id: p.id, name: p.name, time: timeOf(p, g, period === 'today' ? S.day : 'best')}));
     rows.push({id: S.me.id, name: S.me.name || 'You', time: myTime(g, period), me: true});
     return rows.filter(r => r.time != null).sort((a, b) => a.time - b.time);
   },
+  /* True while the friends board is showing demo players. */
+  demoFriends: () => !friends().length && !!demo.length,
   profile(pid) {
-    const mine = pid === S.me.id, p = mine ? {id: S.me.id, name: S.me.name || 'You'} : demo.find(x => x.id === pid);
+    const mine = pid === S.me.id, p = mine ? {id: S.me.id, name: S.me.name || 'You'} : friends().concat(demo).find(x => x.id === pid);
     if (!p) return null;
     /* days: the previous 6 days plus today. series[g][i] is the official time on days[i], or null. */
-    const days = CA.lastDays(7), out = {id: p.id, name: p.name, mine, friend: !!p.friend, days, best: {}, series: {}};
+    const days = CA.lastDays(7), out = {id: p.id, name: p.name, mine, friend: !!p.friend, real: !!p.f, days, best: {}, series: {}};
     allIds().forEach(g => {
-      out.best[g] = mine ? myTime(g, 'best') : demoTime(p, g, 'best');
+      out.best[g] = mine ? myTime(g, 'best') : timeOf(p, g, 'best');
       out.series[g] = days.map(d => {
-        const t = mine ? (S.history[g] || {})[d.key] : demoTime(p, g, d.key);
+        const t = mine ? (S.history[g] || {})[d.key] : timeOf(p, g, d.key);
         return t == null ? null : t;
       });
     });

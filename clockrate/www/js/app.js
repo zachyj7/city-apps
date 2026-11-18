@@ -88,10 +88,19 @@ function renderHome() {
   $('s-home').innerHTML =
     `<header class="top"><div><h1>Clock Rate</h1><p class="sub">${now.toLocaleDateString(undefined, {weekday: 'long', month: 'short', day: 'numeric'})} · times reset in ${left}</p></div>` +
     `<button class="me" data-act="profile" data-pid="${esc(st.s.me.id)}">${esc(st.s.me.name || 'You')}</button></header>` +
+    friendBar() +
     `<h2>Run each game solo</h2><ul class="games">${cards}</ul>` +
     `<div class="total"><span>Solo total today<small>${soloDone.length} of ${CA.games.length} games run</small></span><b class="tn">${soloDone.length ? fmt(soloTotal) : '–'}</b></div>` +
     `<h2>Or run all five back to back</h2>` + gaunt + tierLegend() +
-    `<p class="foot">A City Apps game.${C.demo || C.testMode ? ` Test build. ${C.demo ? 'Other players are demo data.' : ''} ${C.testMode ? 'Ads and purchases are switched off.' : ''}` : ''}</p>`;
+    `<p class="foot">A City Apps game.${C.demo || C.testMode ? ` Test build. ${C.demo ? 'Global players are demo data.' : ''} ${C.testMode ? 'Ads and purchases are switched off.' : ''}` : ''}</p>`;
+}
+/* Home: the way in to friends. Big when you have none, a summary when you do. */
+function friendBar() {
+  const fl = CA.friends.list();
+  if (!fl.length) return `<button class="fbar add" data-act="friends"><b>Add friends</b><span>Send a link and race them every day</span><i aria-hidden="true">+</i></button>`;
+  const ids = ['gauntlet'].concat(CA.games.map(g => g.id));
+  const ran = fl.filter(f => ids.some(g => (f.h[g] || {})[st.s.day] != null)).length;
+  return `<button class="fbar" data-act="friends"><b>${plural(fl.length, 'friend')}</b><span>${ran} ran today · add more</span><i aria-hidden="true">›</i></button>`;
 }
 
 /* ---------- game page ---------- */
@@ -125,6 +134,7 @@ function renderGame() {
     tabs('scope', ui.scope, [['friends', 'Friends'], ['global', 'Global']]) +
     tabs('period', ui.period, [['today', 'Today'], ['best', 'All-time best']]) +
     boardHTML(g.id, ui.scope, ui.period, 20) +
+    (ui.scope === 'friends' ? `<button class="link" data-act="friends">Add friends<span>${CA.net.demoFriends() ? 'Demo players show until you do' : 'Send your invite link'}</span></button>` : '') +
     `<h2>Tiers, fastest first</h2><ol class="cutlist">${cuts}</ol></div>`;
 }
 
@@ -186,13 +196,14 @@ function renderProfile() {
   const settings = !p.mine ? '' :
     `<h2>You</h2>` +
     `<button class="setrow" data-act="rename">Name<span>${esc(p.name)}</span></button>` +
-    `<button class="setrow" data-act="friends">Add friends<span>Share your code</span></button>` +
+    `<button class="setrow" data-act="friends">Friends<span>${CA.friends.list().length || 'Add'}</span></button>` +
     `<button class="setrow" data-act="sound">Sound<span>${st.s.sound ? 'On' : 'Off'}</span></button>` +
     `<button class="setrow" data-act="tokens">Practice tokens<span>${st.s.tokens}</span></button>`;
+  const unfriend = p.real ? `<button class="link" data-act="unfriend" data-code="${esc(p.id.slice(1))}">Remove ${esc(first)} from friends</button>` : '';
   $('s-profile').innerHTML =
     `<button class="back" data-act="back">‹ Back</button>` +
     `<h1 class="pname">${esc(p.name)}</h1>${score}${total}` +
-    `<h2>Times over the last week</h2>` + cards + tierLegend() + settings;
+    `<h2>Times over the last week</h2>` + cards + tierLegend() + settings + unfriend;
 }
 /* Tap or hover a day on a chart to read its times. */
 function chartTip(e) {
@@ -231,6 +242,37 @@ function tokenSheet(need) {
     `<button class="btn" data-act="ad">Watch a short ad for 1 token</button>${packs}` +
     (C.testMode ? `<p class="note">Test build: no ad is shown and nothing is charged.</p>` : '') +
     `<button class="link" data-act="close">Not now</button>`);
+}
+
+/* Friends: an invite link to send, your code, a box for theirs, and the list. */
+const NET_NOTE = 'Connecting… friends\u2019 times update once you\u2019re online.';
+function friendRows() {
+  const fl = CA.friends.list().sort((a, b) => (a.name || '~').localeCompare(b.name || '~'));
+  if (!fl.length) return '';
+  const ids = ['gauntlet'].concat(CA.games.map(g => g.id));
+  return '<h4>Your friends</h4><ul class="flist">' + fl.map(f => {
+    const n = ids.filter(g => (f.h[g] || {})[st.s.day] != null).length;
+    const sub = !f.seen ? 'Waiting for their first sync' : n ? `${n} of ${ids.length} run today` : 'No runs yet today';
+    return `<li><button class="frow" data-act="profile" data-pid="f${esc(f.code)}"><b>${esc(f.name || 'New friend')}</b><span>${sub}</span></button></li>`;
+  }).join('') + '</ul>';
+}
+function friendsSheet(msg, bad) {
+  openSheet(`<h3>Friends</h3>` + (msg ? `<p class="${bad ? 'err' : 'ok'}">${esc(msg)}</p>` : '') +
+    `<p>Send your invite link. When a friend opens it, you land on each other's leaderboards.</p>` +
+    `<button class="btn" data-act="invite">Send invite link</button><div class="ok" id="inviteOk" aria-live="polite"></div>` +
+    `<p class="or">Or swap codes. Yours:</p><div class="code">${esc(CA.friends.code)}</div>` +
+    `<div class="addrow"><input id="codeIn" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Friend's code" aria-label="Friend's code">` +
+    `<button data-act="addcode">Add</button></div><div class="err" id="codeErr"></div>` +
+    `<div id="flist">${friendRows()}</div><p class="note" id="fnet">${CA.friends.online ? '' : NET_NOTE}</p>` +
+    `<button class="btn quiet" data-act="close">Done</button>`);
+}
+let pendingAdd = '';
+function addFromLink() {
+  const c = pendingAdd; pendingAdd = '';
+  const err = CA.friends.add(c);
+  if (err === 'Already on your list.') return friendsSheet("You're already friends.");
+  if (err === "That's your own code.") return friendsSheet('That was your own invite link. Send it to a friend.');
+  friendsSheet(err ? 'That invite link is broken. Ask for their code instead.' : 'Friend added. Their times show up as soon as they sync.', !!err);
 }
 
 /* ---------- the run ---------- */
@@ -413,7 +455,7 @@ document.addEventListener('keydown', e => {
 const acts = {
   open(d) { ui.gid = d.gid; ui.period = 'today'; go('game'); },
   back() { go(ui.screen === 'profile' && ui.prev === 'game' ? 'game' : 'home'); },
-  profile(d) { ui.pid = d.pid; go('profile'); },
+  profile(d) { closeSheet(); ui.pid = d.pid; go('profile'); },
   tab(d) { ui[d.key] = d.val; renderGame(); },
   run(d) {
     const gid = d.gid || ui.gid, g = def(gid);
@@ -450,12 +492,27 @@ const acts = {
     const v = $('nameIn').value.replace(/\s+/g, ' ').trim();
     if (v.length < 2) { $('nameErr').textContent = 'Use at least 2 characters.'; return; }
     st.setName(v.slice(0, 16)); sheetLocked = false; closeSheet(); go(ui.screen);
+    if (pendingAdd) addFromLink();
   },
   sound() { st.setSound(!st.s.sound); renderProfile(); },
   tokens() { tokenSheet(0); },
-  friends() {
-    openSheet(`<h3>Add friends</h3><p>Friends add you with this code.</p><div class="code">${esc(st.s.me.id.slice(1).toUpperCase())}</div>` +
-      `<p>Friend codes start working once online accounts are connected. Until then the friends list shows demo players.</p><button class="btn" data-act="close">OK</button>`);
+  friends() { friendsSheet(); },
+  invite() {
+    const url = CA.friends.link(), text = 'Race me on Clock Rate. One run a day, who is faster?';
+    const copied = () => { $('inviteOk').textContent = 'Link copied. Paste it to a friend.'; };
+    if (navigator.share) navigator.share({title: 'Clock Rate', text, url}).catch(() => {});
+    else if (navigator.clipboard) navigator.clipboard.writeText(text + ' ' + url).then(copied, () => { $('inviteOk').textContent = url; });
+    else $('inviteOk').textContent = url;
+  },
+  addcode() {
+    const err = CA.friends.add($('codeIn').value);
+    if (err) { $('codeErr').textContent = err; return; }
+    friendsSheet('Friend added. Their times show up as soon as they sync.');
+  },
+  unfriend(d) {
+    const f = CA.friends.get(d.code), name = (f && f.name) || 'this friend';
+    confirmSheet('Remove friend?', `${esc(name)} comes off your friends leaderboard. You can add them again with their code.`, 'Remove', 'Keep',
+      () => { CA.friends.remove(d.code); go('home'); });
   },
   ad() {
     CA.services.rewardedAd().then(ok => {
@@ -484,6 +541,7 @@ $('scrim').addEventListener('click', () => acts.close());
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && $('sheetwrap').classList.contains('open')) acts.close();
   if (e.key === 'Enter' && e.target && e.target.id === 'nameIn') acts.savename();
+  if (e.key === 'Enter' && e.target && e.target.id === 'codeIn') acts.addcode();
 });
 document.addEventListener('keyup', e => {
   if ((e.key === ' ' || e.key === 'Enter') && P && P.inst && P.inst.up && P.def.keys === 'hold') P.inst.up();
@@ -498,6 +556,20 @@ if (window.matchMedia) {
 CA.tick = tick;                        // exposed so tests can drive frames by hand
 CA.debug = {get P() { return P; }};
 readCol();
+/* Opened from an invite link (?add=CODE): add that friend, then tidy the address bar. */
+try {
+  const q = new URLSearchParams(location.search);
+  if (q.get('add')) { pendingAdd = q.get('add'); q.delete('add'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); }
+} catch (e) {}
+/* Friends' times arrive in the background: redraw whatever is on screen. */
+CA.friends.onchange = () => {
+  if ($('flist')) { $('flist').innerHTML = friendRows(); $('fnet').textContent = CA.friends.online ? '' : NET_NOTE; }
+  if (ui.screen === 'home') renderHome();
+  else if (ui.screen === 'game') renderGame();
+  else if (ui.screen === 'profile') { if (CA.net.profile(ui.pid)) renderProfile(); else go('home'); }
+};
+CA.friends.start();
 go('home');
 if (!st.s.me.name) nameSheet(true);
+else if (pendingAdd) addFromLink();
 })();
