@@ -1,8 +1,8 @@
 # Jensen Games
 
-Family game night online for up to 8 people, with everyone's face around the table. Three games:
-**Number Tiles** (tile rummy), **Blackjack** against a computer dealer, and **Color Clash** (a match-the-color
-card game where +2s and +4s stack).
+Family game night online for up to 8 people, with everyone's face around the table. Six games:
+**Number Tiles** (tile rummy), **Blackjack** against a computer dealer, **Color Clash** (a match-the-color
+card game where +2s and +4s stack), and three two-player board games: **Chess**, **Checkers** and **Mancala**.
 
 ## The lobby
 
@@ -15,6 +15,9 @@ card game where +2s and +4s stack).
 - The first person in is the **host** (crown). Only the host picks the game, changes its settings, adds or
   removes computer players and starts it. The host can hand the crown to someone else (crown button on their
   name); if the host leaves, the next person still here takes over.
+- The host puts the lobby in order by dragging people (with a mouse, anywhere on their card; on a touch screen,
+  by the grip on its left). The numbers are Player 1, 2, 3...: the order of play, and in the two-player board
+  games Players 1 and 2 play and everyone else watches. Dragging never moves the crown.
 - After picking a game the lobby shows that game's settings (everyone sees them; only the host can change them).
   **Change** goes back to the list of games.
 - **End this game** (host only, in Settings, tap twice) stops the game for everyone. After any game,
@@ -52,6 +55,30 @@ card game where +2s and +4s stack).
 - Reverse with two players works like Skip. First to play their last card wins; everyone sees a notice when
   someone is down to one card.
 - Settings: cards to start (5, 7 or 10), +2 on a +2, draw one or draw until you can play.
+
+## Chess, Checkers and Mancala
+
+- Two players: Players 1 and 2 in the lobby order (a computer player can take either spot). Anyone else in the
+  lobby watches the board live. Each player sees the board from their own side; watchers see Player 1's side.
+- Tap a piece (the ones that can move glow), then tap where it goes. **Give up** (tap twice) ends it with the
+  other player winning; the host can also end it from Settings.
+- **Chess**: Player 1 has white. Full rules: castling, en passant, promotion (pick the piece), check,
+  checkmate, and draws by stalemate, too few pieces, 50 moves or the same position three times.
+- **Checkers**: Player 1 has red and moves first. Pieces move forward diagonally, kings both ways; a piece that
+  can keep jumping must, and reaching the far row makes a king (which ends the turn). Setting: must jump when
+  you can (yes/no). 40 moves each with no jump is a draw.
+- **Mancala** (Kalah rules): six pits a side, store on your right. Last seed in your store: go again. Last seed
+  in an empty pit of yours: capture it and the pit across. When a side runs out, each side keeps its own seeds
+  and the bigger store wins. Setting: 3–6 seeds per pit.
+- Computers: Easy looks one move ahead with plenty of luck, Medium a few moves, Hard deeper (`chess.js`,
+  `checkers.js`, `mancala.js`; the screens are in `boardview.js` and `boards.css`).
+
+## Rock paper scissors on the side
+
+- During Number Tiles, the **✊** button (top right) lets anyone, playing or watching, challenge someone else
+  (or a computer). They get the challenge as a small card and can pick or say no thanks. The tile game carries
+  on underneath and nobody leaves their seat. Picks stay private (the referee only tells the two players), and
+  a running score is kept for each pair.
 
 ## Number Tiles
 

@@ -7,11 +7,16 @@ import { check } from './help.js';
 import { GAMES, cfgFor, COLORS } from './games.js';
 import { BJ } from './bj.js';
 import { UNO } from './uno.js';
+import { CHESS } from './chess.js';
+import { CHECKERS } from './checkers.js';
+import { MANCALA } from './mancala.js';
 
 const CPU_NAMES = ['Ruby', 'Otto', 'Pip', 'Juno', 'Ziggy', 'Nova', 'Bolt', 'Echo'];
 const LEVELS = ['easy', 'medium', 'hard'];
-// The card games' referees (Number Tiles is the code in this file).
-const MODS = { bj: BJ, uno: UNO };
+// The other games' referees (Number Tiles is the code in this file).
+const MODS = { bj: BJ, uno: UNO, chess: CHESS, checkers: CHECKERS, mancala: MANCALA };
+const RPS = ['r', 'p', 's'];
+const rpsBeats = (x, y) => (x === 'r' && y === 's') || (x === 'p' && y === 'r') || (x === 's' && y === 'p');
 
 const MAX_SEATS = 8;
 
@@ -145,6 +150,7 @@ export class Room {
       const p = c.pid && this.player(c.pid);
       if (p && ![...this.conns].some(o => o.pid === p.pid)) {
         p.on = false;
+        this.rpsGone(p.pid);
         if (this.s.phase === 'lobby') this.s.players = this.s.players.filter(q => q !== p);
         this.push();
       }
@@ -200,6 +206,17 @@ export class Room {
       s.cfg[s.game] = { ...cfgFor(s.game, s.cfg[s.game]), [m.key]: m.value };
       return this.push();
     }
+    // The host puts the lobby in order (Player 1, 2, 3, ...): that is the order of play, and in a two-player
+    // game the first two play and everyone else watches. Being host doesn't move with it.
+    if (m.t === 'order') {
+      if (!isHost || s.phase === 'play' || !Array.isArray(m.pids)) return;
+      const rank = new Map(m.pids.slice(0, 40).map((x, i) => [String(x), i]));
+      const r = q => (rank.has(q.pid) ? rank.get(q.pid) : 1e3 + s.players.indexOf(q));
+      s.players = s.players.slice().sort((a, b) => r(a) - r(b));
+      return this.push();
+    }
+    // Rock paper scissors on the side, during Number Tiles. Nothing in the game changes.
+    if (m.t === 'rps') return this.rpsMsg(p, m);
     if (m.t === 'host') {
       const to = this.player(m.pid);
       if (!isHost || !to || to.cpu || !to.on) return;
@@ -304,6 +321,7 @@ export class Room {
     if (m.t === 'newgame') {
       if (s.phase !== 'over') return;
       s.phase = 'lobby'; s.table = []; s.pos = {}; s.work = null; s.result = null; s.bj = null; s.uno = null; s.bjEnd = null;
+      s.chess = null; s.ck = null; s.mc = null;
       s.players = s.players.filter(q => q.on);
       for (const q of s.players) { q.seat = false; q.rack = []; q.hand = []; }
       return this.push();
@@ -357,6 +375,67 @@ export class Room {
       const why = checkTurn(s.table, p.rack, w.table, w.rack, p.opened);
       if (why) return c.send({ t: 'nope', why });
       return this.commit(p, w);
+    }
+  }
+
+  /* ---- rock paper scissors on the side ----
+     Kept out of the game snapshot (so nobody can peek at a pick): only the two players get each update. */
+  rpsSend(g) {
+    const who = pid => { const q = this.player(pid); return q ? { pid, name: q.name, rc: q.rc, cpu: !!q.cpu } : { pid, name: '?', rc: 'white' }; };
+    const key = [g.a, g.b].sort().join('|'), sc = (this.rpsScore && this.rpsScore[key]) || {};
+    for (const me of [g.a, g.b]) {
+      const view = {
+        id: g.id, stage: g.stage, me, a: who(g.a), b: who(g.b),
+        mine: g.pick[me] || null, picked: { [g.a]: !!g.pick[g.a], [g.b]: !!g.pick[g.b] },
+        res: g.stage === 'done' ? { pick: g.pick, win: g.win } : null,
+        score: { [g.a]: sc[g.a] || 0, [g.b]: sc[g.b] || 0 },
+      };
+      this.each(k => { if (k.pid === me) k.send({ t: 'rps', g: view }); });
+    }
+  }
+  rpsGone(pid) {
+    if (!this.rps) return;
+    for (const g of [...this.rps.values()]) {
+      if (g.a !== pid && g.b !== pid) continue;
+      this.rps.delete(g.id);
+      if (g.stage === 'ask' || g.stage === 'play') { g.stage = 'gone'; g.by = pid; this.rpsSend(g); }
+    }
+  }
+  rpsMsg(p, m) {
+    const s = this.s;
+    if (s.phase !== 'play' || s.game !== 'tiles') return;
+    this.rps = this.rps || new Map(); this.rpsScore = this.rpsScore || {};
+    const live = g => g.stage === 'ask' || g.stage === 'play';
+    if (m.a === 'ask') {
+      const to = this.player(m.to);
+      if (!to || to.pid === p.pid || !to.on) return;
+      const busy = q => [...this.rps.values()].some(g => live(g) && (g.a === q.pid || g.b === q.pid));
+      if (busy(p)) return;
+      if (busy(to)) { this.each(k => { if (k.pid === p.pid) k.send({ t: 'rps', busy: to.name }); }); return; }
+      for (const g of [...this.rps.values()]) if ([g.a, g.b].some(x => x === p.pid || x === to.pid)) this.rps.delete(g.id);
+      const g = { id: Math.random().toString(36).slice(2, 9), a: p.pid, b: to.pid, pick: {}, stage: 'ask' };
+      if (to.cpu) { g.pick[to.pid] = RPS[Math.floor(Math.random() * 3)]; g.stage = 'play'; }
+      this.rps.set(g.id, g);
+      return this.rpsSend(g);
+    }
+    const g = this.rps.get(m.id);
+    if (!g || (g.a !== p.pid && g.b !== p.pid)) return;
+    if (m.a === 'pick') {
+      if (!live(g) || g.pick[p.pid] || !RPS.includes(m.v)) return;
+      g.pick[p.pid] = m.v;
+      g.stage = 'play';
+      if (g.pick[g.a] && g.pick[g.b]) {
+        const x = g.pick[g.a], y = g.pick[g.b];
+        g.win = rpsBeats(x, y) ? g.a : rpsBeats(y, x) ? g.b : null;
+        g.stage = 'done';
+        const key = [g.a, g.b].sort().join('|'), sc = this.rpsScore[key] = this.rpsScore[key] || {};
+        if (g.win) sc[g.win] = (sc[g.win] || 0) + 1;
+      }
+      return this.rpsSend(g);
+    }
+    if (m.a === 'no' || m.a === 'close') {
+      this.rps.delete(g.id);
+      if (live(g)) { g.stage = m.a === 'no' ? 'no' : 'gone'; g.by = p.pid; this.rpsSend(g); }
     }
   }
 

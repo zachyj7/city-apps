@@ -5,7 +5,8 @@ import { Video } from './video.js';
 import { initHelp } from './help.js';
 import { initStats } from './stats.js';
 import { tile, analyze, openingPoints, checkTurn, groupsOf, tidyPos, autoSplit, COLOR_NAMES, OPEN_POINTS, BOARD_W } from './rules.js';
-import { GAMES, GAME_IDS, COLORS, cfgFor, winsOf } from './games.js';
+import { GAMES, GAME_IDS, COLORS, cfgFor, winsOf, BOARD_GAMES } from './games.js';
+import { renderChess, renderCheckers, renderMancala, boardControls, boardTap, chessGlyph } from './boardview.js';
 import { renderBJ, bjControls, renderUno, unoHand, unoControls, pcard, ccard, money, isWild } from './cardview.js';
 
 // Rack colors to pick from. hi/base/lo/deep shade the plastic, ink is the pressed-in name, text is printing on it.
@@ -106,6 +107,7 @@ function start(name, code) {
       else if (m.t === 'nope') { toast(m.why); beep(220, 0.25); }
       else if (m.t === 'relay') help.rx(m.from, m.m);
       else if (m.t === 'hand') onHand(m);
+      else if (m.t === 'rps') onRps(m);
       else if (m.t === 'closed') {
         // Someone closed the table: forget this game so it can't come back, and go to the join screen.
         try { sessionStorage.removeItem(snapKey()); sessionStorage.removeItem(gridKey()); } catch (e) { /* ignore */ }
@@ -157,6 +159,8 @@ function setState(S) {
   }
   if (m) A.rcAsked = null;
   if (S.phase !== 'play' || S.game !== 'uno') A.wildPick = null;
+  if (!was || was.turnNo !== S.turnNo || S.phase !== 'play') { A.bsel = null; A.promo = null; A.resignArm = 0; }
+  rpsState();
   // Blackjack: each new round of bets starts from my last bet; the first chip tapped starts a new amount.
   if (S.bj && S.bj.stage === 'bet' && !(was && was.bj && was.bj.stage === 'bet' && was.round === S.round)) { A.bjBet = null; A.betFresh = true; }
   // Keep my own rack order; a newly drawn tile goes on the end and glows once.
@@ -592,6 +596,15 @@ function renderSeats() {
       obTitle = p.opened ? 'Has made their first 30' : 'Has not made their first 30 yet';
     } else if (show && S.game === 'bj') {
       obHtml = `${ic('chip')}${money(p.chips || 0)}`; obCls += ' show money'; obTitle = 'Money';
+    } else if (show && S.game === 'chess' && S.chess) {
+      const w = S.chess.w === p.pid;
+      obHtml = chessGlyph(w ? 'K' : 'k'); obCls += ' show bgside'; obTitle = w ? 'Plays white' : 'Plays black';
+    } else if (show && S.game === 'checkers' && S.ck) {
+      const sd = S.ck.a === p.pid ? 'a' : 'b', n = S.ck.b.filter(x => x && x.toLowerCase() === sd).length;
+      obHtml = `<span class="ck mini ${sd}"></span>${n}`; obCls += ' show bgside'; obTitle = `${n} pieces left`;
+    } else if (show && S.game === 'mancala' && S.mc) {
+      const n = S.mc.p[S.mc.pl[0] === p.pid ? 6 : 13];
+      obHtml = `<span class="seed s1"></span>${n}`; obCls += ' show bgside'; obTitle = `${n} seeds in their store`;
     } else if (show && S.game === 'uno') {
       const n = (p.hand || []).length;
       obHtml = `${ic('cards')}${n}`; obCls += ' show' + (n === 1 ? ' last' : ''); obTitle = `${n} card${n === 1 ? '' : 's'}`;
@@ -671,10 +684,13 @@ function renderCenter() {
   $('#gameName').hidden = !S.game;
   $('#gameName b').textContent = S.game ? GAMES[S.game].name : '';
   box.parentElement.classList.toggle('cardgame', S.phase === 'play' && S.game !== 'tiles');
-  if (S.phase === 'lobby') return renderLobby(box);
+  if (S.phase === 'lobby') { if (lobbyDrag) { lobbyDrag.stale = true; return; } return renderLobby(box); }
   if (S.phase === 'over') return renderOver(box);
   if (S.game === 'bj') return renderBJ(box, viewCtx());
   if (S.game === 'uno') return renderUno(box, viewCtx());
+  if (S.game === 'chess') return renderChess(box, viewCtx());
+  if (S.game === 'checkers') return renderCheckers(box, viewCtx());
+  if (S.game === 'mancala') return renderMancala(box, viewCtx());
   renderBoard(box);
 }
 const viewCtx = () => ({ A, pid, esc, ic, rackStyle });
@@ -684,6 +700,9 @@ const GAME_ART = {
   tiles: () => `<span class="tile c1"><span class="num">7</span></span><span class="tile c2"><span class="num">8</span></span><span class="tile c3"><span class="num">9</span></span>`,
   bj: () => pcard(0) + pcard(25),
   uno: () => ccard(7) + ccard(73) + ccard(104),
+  chess: () => `<span class="artsq">${chessGlyph('n')}</span><span class="artsq lt">${chessGlyph('K')}</span><span class="artsq">${chessGlyph('q')}</span>`,
+  checkers: () => '<span class="ck b"></span><span class="ck a king"><b>♛︎</b></span><span class="ck a"></span>',
+  mancala: () => '<span class="artpit"><i class="seed s0"></i><i class="seed s1"></i><i class="seed s2"></i></span><span class="artpit"><i class="seed s3"></i><i class="seed s4"></i></span><span class="artpit"><i class="seed s1"></i><i class="seed s2"></i><i class="seed s0"></i><i class="seed s3"></i></span>',
 };
 const gameArt = (g, cls = '') => `<span class="gart gart-${g} ${cls}" aria-hidden="true">${GAME_ART[g]()}</span>`;
 const players = g => (g.min === g.max ? `${g.min}` : `${g.min}–${g.max}`) + ' players';
@@ -697,8 +716,11 @@ function renderLobby(box) {
   const g = S.game && GAMES[S.game];
   const link = location.origin + location.pathname + '?room=' + A.code;
   const max = g ? g.max : 8;
-  const chips = here.map((p, i) => `<div class="pchip ${p.cpu ? 'cpu' : ''}" style="${rackStyle(p.rc)}"><span class="av">${p.cpu ? `${ic('bot')}<i class="lvl">${LEVEL_NAMES[p.cpu][0]}</i>` : esc((p.name || '?').slice(0, 1).toUpperCase())}${p.pid === S.host ? `<i class="crown" title="Host">${ic('crown')}</i>` : ''}</span>
-      <span class="pn">${esc(p.name)}<span class="pt">${[p.pid === pid ? 'You' : p.cpu ? `Computer · ${LEVEL_NAMES[p.cpu]}` : '', p.pid === S.host ? 'Host' : '', i >= max ? 'Watching (full)' : ''].filter(Boolean).join(' · ') || 'Ready'}</span></span>
+  // The host drags people into order: Player 1, 2, 3... In a two-player game the first two play.
+  const SIDES = { chess: ['White', 'Black'], checkers: ['Red', 'White'] };
+  const role = i => (g && i >= max ? (g.max === 2 ? 'Watches' : 'Watching (full)') : `Player ${i + 1}${g && SIDES[S.game] ? ' · ' + SIDES[S.game][i] : ''}`);
+  const chips = here.map((p, i) => `<div class="pchip ${p.cpu ? 'cpu' : ''} ${host ? 'drag' : ''} ${g && i >= max ? 'bench' : ''}" data-pid="${esc(p.pid)}" style="${rackStyle(p.rc)}">${host ? `<span class="grip" title="Drag to change the order" aria-hidden="true"><i></i><i></i><i></i></span>` : ''}<b class="pnum" title="${role(i)}">${g && i >= max ? ic('users') : i + 1}</b><span class="av">${p.cpu ? `${ic('bot')}<i class="lvl">${LEVEL_NAMES[p.cpu][0]}</i>` : esc((p.name || '?').slice(0, 1).toUpperCase())}${p.pid === S.host ? `<i class="crown" title="Host">${ic('crown')}</i>` : ''}</span>
+      <span class="pn">${esc(p.name)}<span class="pt">${[role(i), p.pid === pid ? 'You' : p.cpu ? `Computer · ${LEVEL_NAMES[p.cpu]}` : '', p.pid === S.host ? 'Host' : ''].filter(Boolean).join(' · ')}</span></span>
       ${p.cpu && host ? `<button class="iconbtn rm" data-act="rmcpu" data-pid="${esc(p.pid)}" aria-label="Remove ${esc(p.name)}">${ic('close')}</button>` : ''}
       ${!p.cpu && host && p.pid !== pid ? `<button class="iconbtn rm" data-act="host" data-pid="${esc(p.pid)}" aria-label="Make ${esc(p.name)} the host" title="Make ${esc(p.name)} the host">${ic('crown')}</button>` : ''}</div>`).join('');
   const full = here.length >= 8;
@@ -718,7 +740,7 @@ function renderLobby(box) {
     const need = g.min - here.length;
     right = `<div class="section gamehead">${gameArt(S.game, 'small')}<div class="gh"><h3>Game</h3><b class="gname">${g.name}</b><small>${players(g)}</small></div>
         ${host ? `<button class="btn small" data-act="pick" data-game="">${ic('undo')}Change</button>` : ''}</div>
-      <div class="section"><h3>Settings${host ? '' : ` · set by ${hostName}`}</h3><div class="gsets">${sets}</div></div>
+      ${g.settings.length ? `<div class="section"><h3>Settings${host ? '' : ` · set by ${hostName}`}</h3><div class="gsets">${sets}</div></div>` : ''}
       ${host ? `<div class="section cpusec ${full ? 'full' : ''}"><h3>Add a computer player</h3>
         <div class="cpuadd">
           <button class="btn" data-act="addcpu" data-level="easy" ${full ? 'disabled' : ''}>${ic('plus')}<span><b>Easy</b><small>Learning</small></span></button>
@@ -736,7 +758,8 @@ function renderLobby(box) {
         <div class="linkrow"><input readonly value="${esc(link)}" aria-label="Lobby link"><button class="btn" data-act="copy">${ic('link')}Copy link</button>${navigator.share ? `<button class="btn" data-act="share">${ic('share')}Share</button>` : ''}</div>
       </div>
       <div class="section"><h3>In the lobby · ${here.length} of 8</h3>
-        <div class="players">${chips}${empties}</div>
+        ${host && here.length > 1 ? `<p class="fieldhint draghint">Drag people to put them in order.${g && g.max === 2 && here.length > 2 ? ' Players 1 and 2 play; the rest watch.' : ''}</p>` : g && g.max === 2 && here.length > 2 ? '<p class="fieldhint draghint">Players 1 and 2 play; the rest watch.</p>' : ''}
+        <div class="players" id="lobbyPlayers">${chips}${empties}</div>
       </div>
       <div class="section"><h3>Your color</h3><div class="swatches row8">${swatches(A.rc, 'setrc', taken)}</div></div>
       <div class="lobbyfoot"><span class="tip">${ic('cam')}<span>Press <b>Camera</b> so everyone can see you.</span></span><button class="btn small leave" data-act="leave">${ic('logout')}Leave</button></div>
@@ -745,17 +768,74 @@ function renderLobby(box) {
   </div>`;
 }
 
+/* The host drags people in the lobby into order. With a mouse, any part of a person's card picks it up; on a
+   touch screen, the grip on its left (so the lobby still scrolls with a finger). The order is sent when it is
+   put down; while carrying, lobby updates wait. */
+let lobbyDrag = null;
+const lobbyChips = () => [...document.querySelectorAll('#lobbyPlayers .pchip[data-pid]')];
+function renumberChips() { lobbyChips().forEach((c, i) => { const n = c.querySelector('.pnum'); if (n && !c.classList.contains('bench')) n.textContent = i + 1; }); }
+document.addEventListener('pointerdown', e => {
+  const chip = e.target.closest && e.target.closest('#lobbyPlayers .pchip.drag');
+  if (!chip || e.button > 0 || e.target.closest('button') || !isHost()) return;
+  if (e.pointerType !== 'mouse' && !e.target.closest('.grip')) return;
+  e.preventDefault();
+  const r = chip.getBoundingClientRect();
+  lobbyDrag = { chip, x0: e.clientX, y0: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, on: false };
+});
+document.addEventListener('pointermove', e => {
+  const d = lobbyDrag;
+  if (!d) return;
+  if (!d.on) {
+    if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 6) return;
+    d.on = true;
+    d.ghost = d.chip.cloneNode(true);
+    d.ghost.classList.add('chipghost');
+    d.ghost.style.width = d.w + 'px';
+    document.body.appendChild(d.ghost);
+    d.chip.classList.add('lifted');
+    document.body.classList.add('chipdragging');
+  }
+  e.preventDefault();
+  d.ghost.style.transform = `translate(${e.clientX - d.dx}px, ${e.clientY - d.dy}px) rotate(-2deg)`;
+  const over = document.elementFromPoint(e.clientX, e.clientY);
+  const t = over && over.closest('#lobbyPlayers .pchip[data-pid]');
+  if (!t || t === d.chip) return;
+  const list = lobbyChips();
+  if (list.indexOf(t) > list.indexOf(d.chip)) t.after(d.chip); else t.before(d.chip);
+  renumberChips();
+}, { passive: false });
+function endLobbyDrag(drop) {
+  const d = lobbyDrag;
+  if (!d) return;
+  lobbyDrag = null;
+  document.body.classList.remove('chipdragging');
+  if (d.ghost) d.ghost.remove();
+  if (d.on && drop && A.S && A.S.phase === 'lobby') {
+    const pids = lobbyChips().map(c => c.dataset.pid);
+    // show the new order straight away; the referee's update follows
+    const rank = new Map(pids.map((x, i) => [x, i]));
+    A.S.players.sort((a, b) => (rank.has(a.pid) ? rank.get(a.pid) : 99) - (rank.has(b.pid) ? rank.get(b.pid) : 99));
+    send({ t: 'order', pids });
+    noClickUntil = Date.now() + 250;
+  }
+  if (d.on || d.stale) renderCenter();
+}
+document.addEventListener('pointerup', () => endLobbyDrag(true));
+document.addEventListener('pointercancel', () => endLobbyDrag(false));
+
 // No points: whoever goes out first wins, and only wins are counted (per game). Blackjack shows the money.
 function renderOver(box) {
   const S = A.S, g = S.game || 'tiles';
   const r = S.result || {};
   const rows = S.players.filter(p => p.seat || winsOf(p, g)).sort((a, b) => winsOf(b, g) - winsOf(a, g));
   const bj = g === 'bj' && S.bjEnd;
+  const bg = { chess: S.chess, checkers: S.ck, mancala: S.mc }[g], why = bg && bg.why;
   const money2 = n => (n < 0 ? '−' : n > 0 ? '+' : '') + money(Math.abs(n));
   const table = bj ? `<div class="bjend"><div class="bjrow head"><span>Player</span><span>Money</span><span>Buy-backs</span><span>Up / down</span></div>
       ${S.bjEnd.rows.map(x => `<div class="bjrow ${x.pid === r.pid ? 'win' : ''}" style="${rackStyle(x.rc)}"><span class="wn"><i class="dot"></i>${esc(x.name)}</span><span>${money(x.chips)}</span><span>${x.buy}</span><span class="${x.net > 0 ? 'up' : x.net < 0 ? 'down' : ''}">${money2(x.net)}</span></div>`).join('')}</div>` : '';
   box.innerHTML = `<div class="card over">
     <div class="winner"><span class="cup">${ic('trophy')}</span><h2>${r.name ? `${esc(r.name)} wins!` : 'No winner this time'}</h2></div>
+    ${why ? `<p class="endwhy">${esc(why)}</p>` : ''}
     ${table}
     <div class="wins">${rows.map(p => `<div class="winrow ${p.pid === r.pid ? 'win' : ''}"><span class="wn">${esc(p.name)}${p.cheats && g === 'tiles' ? ` <i class="cheattag" title="Times they switched on Always show the best play this game">cheat mode ×${p.cheats}</i>` : ''}</span><span class="wc">${ic('trophy')}<b>${winsOf(p, g)}</b></span></div>`).join('')}</div>
     ${g === 'tiles' && rows.some(p => p.cheats) ? `<div class="cheattally"><b>${ic('sortnum')}Cheat mode this game</b>${rows.filter(p => p.cheats).sort((a, b) => b.cheats - a.cheats).map(p => `<span>${esc(p.name)} switched it on <b>${p.cheats}</b> time${p.cheats === 1 ? '' : 's'}</span>`).join('')}</div>` : ''}
@@ -897,7 +977,7 @@ function renderMe() {
   $('#hand').hidden = !(cards && S.game === 'uno' && m && m.seat);
   if (cards) {
     $('#rackTools').innerHTML = '';
-    c.innerHTML = S.game === 'bj' ? bjControls(viewCtx()) : unoControls(viewCtx());
+    c.innerHTML = S.game === 'bj' ? bjControls(viewCtx()) : S.game === 'uno' ? unoControls(viewCtx()) : boardControls(viewCtx());
     if (S.game === 'uno') unoHand($('#hand'), viewCtx());
     return;
   }
@@ -1685,6 +1765,27 @@ document.addEventListener('click', e => {
     renderMe();
     return;
   }
+  if (act === 'bsq') {
+    A.why = null;
+    const mv = boardTap(A, pid, +b.dataset.sq);
+    if (mv) send({ t: 'g', ...mv });
+    if (A.why) toast(A.why, 2500);
+    renderCenter();
+    return;
+  }
+  if (act === 'bpromo') {
+    if (A.promo) send({ t: 'g', a: 'move', f: A.promo.f, to: A.promo.t, p: b.dataset.p });
+    A.promo = null; A.bsel = null; renderCenter();
+    return;
+  }
+  if (act === 'bpit') { send({ t: 'g', a: 'move', i: +b.dataset.i }); return; }
+  if (act === 'bresign') {
+    if (A.resignArm && Date.now() - A.resignArm < 4000) { A.resignArm = 0; send({ t: 'g', a: 'resign' }); }
+    else { A.resignArm = Date.now(); setTimeout(() => { if (A.S) renderMe(); }, 4100); }
+    renderMe();
+    return;
+  }
+  if (act.startsWith('rps')) { rpsAct(act, b); return; }
   if (act === 'pick') { send({ t: 'pick', game: b.dataset.game || null }); return; }
   if (act === 'cfg') { let v; try { v = JSON.parse(b.dataset.v); } catch (er) { return; } send({ t: 'cfg', key: b.dataset.key, value: v }); return; }
   if (act === 'host') { send({ t: 'host', pid: b.dataset.pid }); return; }
@@ -1785,6 +1886,7 @@ function leaveTable(msg) {
   A.net.stop(); A.net = null;
   A.video.stopAll();
   A.camOn = false; A.micOn = true;
+  A.rps = null; showRps(false); $('#rpsBtn').hidden = true;
   A.S = null; A.W = null; A.lastAlert = null; A.lastDrew = null; A.lastShame = null; A.lastAnn = null; A.wildPick = null; A.bjBet = null; A.hist = []; A.sel.clear(); A.drag = null; A.loose.clear(); A.sortUndo = null; A.status = 'off';
   for (const el of seatEls.values()) el.remove();
   seatEls.clear(); videoEls.clear();
@@ -1832,6 +1934,74 @@ $('#endBtn').addEventListener('click', () => {
   send({ t: 'end' });
   showSettings(false);
 });
+
+/* ---------------- rock paper scissors on the side ----------------
+   During Number Tiles anyone (playing or watching) can challenge someone else. It never touches the game:
+   turns carry on underneath, and the referee keeps the picks private to the two of them. */
+const HANDS = { r: ['✊', 'Rock'], p: ['✋', 'Paper'], s: ['✌️', 'Scissors'] };
+const rpsOn = () => !!(A.S && A.S.phase === 'play' && A.S.game === 'tiles' && me());
+function rpsState() {
+  const on = rpsOn();
+  $('#rpsBtn').hidden = !on;
+  if (!on) { A.rps = null; showRps(false); return; }
+  if (!$('#rpsBox').hidden) renderRps();
+}
+function showRps(open) {
+  $('#rpsBox').hidden = !open;
+  $('#rpsBtn').setAttribute('aria-expanded', open);
+  $('#rpsBtn').classList.toggle('on', open);
+  if (open) renderRps();
+}
+function onRps(m) {
+  if (!rpsOn()) return;
+  if (m.busy) { toast(`${m.busy} is already playing rock paper scissors. Try again in a moment.`); return; }
+  const g = m.g;
+  if ((g.stage === 'gone' || g.stage === 'no') && g.by === pid) return;
+  const incoming = g.stage === 'ask' && g.b.pid === pid && !(A.rps && A.rps.id === g.id);
+  A.rps = g;
+  if (incoming) { beep(523, 0.12); setTimeout(() => beep(784, 0.15), 120); }
+  if (g.stage === 'done') [g.res.win === pid ? 784 : 440, g.res.win === pid ? 1047 : 330].forEach((f, i) => setTimeout(() => beep(f, 0.14), i * 120));
+  showRps(true);
+}
+function renderRps() {
+  const box = $('#rpsBox'), g = A.rps;
+  const head = `<div class="pophead"><b>✊ ✋ ✌️ Rock Paper Scissors</b><button class="iconbtn" data-act="rpsclose" aria-label="Close">${ic('close')}</button></div>`;
+  const hand = (v, cls = '') => `<span class="rpshand ${cls}" title="${HANDS[v][1]}">${HANDS[v][0]}</span>`;
+  const picks = `<div class="rpspicks">${Object.keys(HANDS).map(v => `<button class="rpspick" data-act="rpspick" data-v="${v}">${hand(v)}<b>${HANDS[v][1]}</b></button>`).join('')}</div>`;
+  let body;
+  const opp = g && (g.a.pid === pid ? g.b : g.a);
+  const chipOf = q => `<span class="turnchip" style="${rackStyle(q.rc)}">${q.cpu ? ic('bot') : ''}${esc(q.name)}</span>`;
+  if (!g) {
+    const people = A.S.players.filter(p => p.on && p.pid !== pid);
+    body = `<p class="fieldhint">Play someone while the game carries on. Nobody leaves the table.</p>
+      <div class="rpslist">${people.length ? people.map(p => `<button class="btn rpswho" data-act="rpsask" data-pid="${esc(p.pid)}" style="${rackStyle(p.rc)}"><i class="dot"></i>${p.cpu ? ic('bot') : ''}${esc(p.name)}<span>${ic('arrow')}</span></button>`).join('') : '<p class="fieldhint">No one else is here.</p>'}</div>`;
+  } else if (g.stage === 'ask' || g.stage === 'play') {
+    const askedMe = g.stage === 'ask' && g.b.pid === pid && !g.mine;
+    body = g.mine
+      ? `<div class="rpsvs">${hand(g.mine, 'me')}<span class="vs">vs</span><span class="rpshand wait">?</span></div><p class="rpsmsg">Waiting for ${chipOf(opp)}…</p>`
+      : `<p class="rpsmsg">${askedMe ? `${chipOf(opp)} wants to play!` : g.picked[opp.pid] ? `${chipOf(opp)} has picked. Your turn!` : `You vs ${chipOf(opp)}`}</p>${picks}
+        ${askedMe ? '<button class="btn small rpsno" data-act="rpsno">No thanks</button>' : ''}`;
+  } else if (g.stage === 'done') {
+    const mine = g.res.pick[pid], theirs = g.res.pick[opp.pid];
+    const won = g.res.win === pid, tie = !g.res.win;
+    body = `<div class="rpsvs">${hand(mine, won ? 'win' : tie ? '' : 'lose')}<span class="vs">vs</span>${hand(theirs, !won && !tie ? 'win' : tie ? '' : 'lose')}</div>
+      <p class="rpsres ${won ? 'won' : tie ? '' : 'lost'}">${won ? 'You win!' : tie ? "It's a tie!" : `${esc(opp.name)} wins!`}</p>
+      <p class="rpsscore">You <b>${g.score[pid] || 0}</b> – <b>${g.score[opp.pid] || 0}</b> ${esc(opp.name)}</p>
+      <div class="rpsacts"><button class="btn go" data-act="rpsask" data-pid="${esc(opp.pid)}">${ic('reset')}Again</button><button class="btn" data-act="rpsback">Someone else</button></div>`;
+  } else {
+    body = `<p class="rpsmsg">${chipOf(opp)} ${g.stage === 'no' ? 'said no thanks.' : 'stopped playing.'}</p><div class="rpsacts"><button class="btn" data-act="rpsback">OK</button></div>`;
+  }
+  box.innerHTML = head + `<div class="rpsbody">${body}</div>`;
+}
+function rpsAct(act, b) {
+  const g = A.rps, live = g && (g.stage === 'ask' || g.stage === 'play');
+  if (act === 'rpsclose') { if (live) send({ t: 'rps', a: 'close', id: g.id }); A.rps = null; showRps(false); return; }
+  if (act === 'rpsask') { send({ t: 'rps', a: 'ask', to: b.dataset.pid }); return; }
+  if (act === 'rpspick' && live && !g.mine) { g.mine = b.dataset.v; send({ t: 'rps', a: 'pick', id: g.id, v: g.mine }); renderRps(); return; }
+  if (act === 'rpsno' && live) { send({ t: 'rps', a: 'no', id: g.id }); A.rps = null; showRps(false); return; }
+  if (act === 'rpsback') { A.rps = null; renderRps(); }
+}
+$('#rpsBtn').addEventListener('click', () => showRps($('#rpsBox').hidden));
 
 // The signature move: a big signed "MJ!" across everyone's screen.
 let mjT = 0;

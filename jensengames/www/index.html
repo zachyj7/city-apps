@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Jensen Games</title>
-<meta name="description" content="Family game night online: number tiles, blackjack and Color Clash, with everyone's face around the table.">
+<meta name="description" content="Family game night online: number tiles, blackjack, Color Clash, chess, checkers and mancala, with everyone's face around the table.">
 <meta name="theme-color" content="#06231a">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.json">
@@ -15,6 +15,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700&text=0&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="games.css">
+<link rel="stylesheet" href="boards.css">
 </head>
 <body>
 
@@ -73,7 +74,7 @@
     <p id="joinErr" class="err" role="alert"></p>
     <button class="btn go huge" type="submit">Join the lobby <svg class="ic"><use href="#i-arrow"/></svg></button>
   </form>
-  <p class="joinfoot">Number Tiles, Blackjack and Color Clash. Phones, tablets and computers, up to 8 players.</p>
+  <p class="joinfoot">Number Tiles, Blackjack, Color Clash, Chess, Checkers and Mancala. Phones, tablets and computers, up to 8 players.</p>
 </section>
 
 <section id="game" hidden>
@@ -85,6 +86,7 @@
     <span class="spacer"></span>
     <button id="camBtn" class="btn hbtn"></button>
     <button id="micBtn" class="btn hbtn" hidden></button>
+    <button id="rpsBtn" class="btn hbtn" hidden aria-expanded="false" title="Rock paper scissors with someone (the game carries on)"><span class="rpsico" aria-hidden="true">✊</span><span class="hlabel">Rock Paper Scissors</span></button>
     <button id="setBtn" class="btn hbtn" aria-label="Settings" aria-expanded="false"><svg class="ic"><use href="#i-settings"/></svg><span class="hlabel">Settings</span></button>
   </header>
   <div id="settings" class="card popover" hidden>
@@ -107,6 +109,7 @@
       <button class="btn muted" id="closeAllBtn"><svg class="ic"><use href="#i-close"/></svg><span>Close for everyone</span></button>
     </div>
   </div>
+  <div id="rpsBox" class="card popover rpsbox" hidden role="dialog" aria-label="Rock paper scissors"></div>
   <aside id="seatsL" class="seats"></aside>
   <main>
     <div id="center"></div>

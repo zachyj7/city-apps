@@ -29,7 +29,28 @@ export const GAMES = {
       { key: 'draw', label: 'When you draw', def: 'one', options: [['one', 'Draw one'], ['until', 'Draw till you can play']] },
     ],
   },
+  // The board games are for two. Everyone else in the lobby watches; the host's order picks who plays.
+  chess: {
+    id: 'chess', name: 'Chess', blurb: 'Checkmate the other king. Player 1 has white and moves first.',
+    min: 2, max: 2, icon: 'board', settings: [],
+  },
+  checkers: {
+    id: 'checkers', name: 'Checkers', blurb: 'Jump and take every piece. Reach the far side to get a king.',
+    min: 2, max: 2, icon: 'board',
+    settings: [
+      { key: 'must', label: 'Must jump', def: 'yes', options: [['yes', 'Yes'], ['no', 'No']] },
+    ],
+  },
+  mancala: {
+    id: 'mancala', name: 'Mancala', blurb: 'Sow seeds around the board and fill your store. Most seeds wins.',
+    min: 2, max: 2, icon: 'board',
+    settings: [
+      { key: 'seeds', label: 'Seeds per pit', def: 4, options: [[3, '3'], [4, '4'], [5, '5'], [6, '6']] },
+    ],
+  },
 };
+// Two-player board games: the rest of the lobby watches.
+export const BOARD_GAMES = ['chess', 'checkers', 'mancala'];
 
 export const GAME_IDS = Object.keys(GAMES);
 
