@@ -24,8 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-      # Each game has its own folder: /clockrate/, /hourfall/, /bigmoney/, /jensengames/. The site root forwards to Clock Rate so old links keep working.
-      # (the old Family Tiles address, /familytiles/, sends people on to it).
+      # Each game has its own folder: /clockrate/, /hourfall/, /bigmoney/, /jensengames/. Nothing is served at the site root.
+      # The old Family Tiles address, /familytiles/, sends people on to /jensengames/.
       - name: Assemble site
         run: |
           mkdir _site
@@ -34,7 +34,6 @@ jobs:
           cp -r bigmoney/www _site/bigmoney
           cp -r jensengames/www _site/jensengames
           mkdir -p _site/familytiles
-          printf %s "<!doctype html><meta charset=utf-8><title>Clock Rate</title><script>location.replace('clockrate/'+location.search+location.hash)</script><a href=clockrate/>Clock Rate</a>" > _site/index.html
           printf %s "<!doctype html><meta charset=utf-8><title>Jensen Games</title><script>location.replace('../jensengames/'+location.search)</script><a href=../jensengames/>Family Tiles is now Jensen Games</a>" > _site/familytiles/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
