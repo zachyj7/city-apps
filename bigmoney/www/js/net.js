@@ -1,7 +1,9 @@
 // Online play with no server of our own. Players in a room find each other through the public PeerJS broker;
 // the first one in hosts the Room (the referee) in their browser and everyone else connects to them.
 // If the host leaves, whoever notices first takes over. With no internet you get a private room and it keeps trying.
+// Players on cellular need the TURN relay from ice.js to reach a host on wifi (or another phone).
 import { Room } from './room.js';
+import { iceServers } from './ice.js';
 
 const copy = m => JSON.parse(JSON.stringify(m));
 
@@ -33,13 +35,16 @@ export class Net {
     this.room.close(); this.room = null; this.loop = null;
     this.h.onLost();
   }
-  goSolo() { if (!this.room) this.makeLocal(); this.status('solo'); this.retryAt = Date.now() + 20000; }
+  // stuck: the room exists but we could not get through to its host, so say so rather than look offline.
+  goSolo(stuck) { if (!this.room) this.makeLocal(); this.status(stuck ? 'stuck' : 'solo'); this.retryAt = Date.now() + (stuck ? 8000 : 20000); }
 
-  tryHost() {
+  async tryHost() {
     const gen = ++this.gen;
     if (!window.Peer) return this.goSolo();
+    const ice = await iceServers();
+    if (gen !== this.gen) return;
     let peer, done = false;
-    try { peer = new window.Peer(this.hostId, { debug: 0 }); } catch (e) { return this.goSolo(); }
+    try { peer = new window.Peer(this.hostId, { debug: 0, config: { iceServers: ice } }); } catch (e) { return this.goSolo(); }
     const fail = type => {
       if (done || gen !== this.gen) return;
       done = true; clearTimeout(to);
@@ -59,25 +64,30 @@ export class Net {
         c.on('close', () => k.onclose && k.onclose());
         c.on('error', () => k.onclose && k.onclose());
       });
-      peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) { /* ignore */ } });
+      peer.on('disconnected', () => {
+        if (gen !== this.gen || peer.destroyed) return;
+        setTimeout(() => { if (gen === this.gen && !peer.destroyed) try { peer.reconnect(); } catch (e) { /* ignore */ } }, 300);
+      });
       this.status('host');
     });
     peer.on('error', e => fail(e.type));
   }
 
-  join() {
+  async join() {
     const gen = ++this.gen;
     this.dropLocal();
     this.status('joining');
+    const ice = await iceServers();
+    if (gen !== this.gen) return;
     let peer;
-    try { peer = new window.Peer({ debug: 0 }); } catch (e) { return this.goSolo(); }
+    try { peer = new window.Peer({ debug: 0, config: { iceServers: ice } }); } catch (e) { return this.goSolo(); }
     this.peer = peer;
     const giveUp = () => {
       if (gen !== this.gen || this.conn) return;
       try { peer.destroy(); } catch (e) { /* ignore */ }
-      if (++this.tries >= 3) { this.tries = 0; this.goSolo(); } else this.tryHost();
+      if (++this.tries >= 3) { this.tries = 0; this.goSolo(true); } else this.tryHost();
     };
-    const to = setTimeout(giveUp, 9000);
+    const to = setTimeout(giveUp, 15000);   // a relayed (cellular) connection can take several seconds
     peer.on('error', () => { clearTimeout(to); giveUp(); });
     peer.on('open', () => {
       if (gen !== this.gen) return;
@@ -107,6 +117,6 @@ export class Net {
   watch() {
     const n = Date.now();
     if (this.state === 'client' && n - this.lastRx > 10000) this.lost();
-    else if (this.state === 'solo' && n > this.retryAt) { this.retryAt = n + 20000; this.tryHost(); }
+    else if ((this.state === 'solo' || this.state === 'stuck') && n > this.retryAt) { this.retryAt = n + 20000; this.tryHost(); }
   }
 }

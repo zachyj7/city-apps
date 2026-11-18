@@ -209,6 +209,25 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-acti
 .pack{display:flex;justify-content:space-between;align-items:center;width:100%;box-sizing:border-box;height:54px;padding:0 18px;border-radius:18px;
   box-shadow:inset 0 0 0 2px var(--line);font-weight:700;font-size:16px;margin-top:8px}
 .pack span{color:var(--muted)}
+/* friends */
+.fbar{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;width:100%;box-sizing:border-box;margin-top:18px;padding:14px 52px 14px 18px;border-radius:22px;background:var(--surface);text-align:left;position:relative}
+.fbar b{font-size:17px;font-weight:800}
+.fbar span{font-size:14px;font-weight:600;color:var(--muted)}
+.fbar i{position:absolute;right:18px;top:50%;transform:translateY(-50%);font-style:normal;font-size:26px;font-weight:700;color:var(--muted)}
+.fbar.add{background:var(--ink);color:var(--bg)}
+.fbar.add span,.fbar.add i{color:var(--bg);opacity:.8}
+.fbar:active{transform:scale(.985)}
+.sheet p.ok,.sheet .ok{color:var(--arc);font-weight:700}
+.sheet #inviteOk{font-size:14px;text-align:center;min-height:18px;margin:8px 0 6px;word-break:break-all}
+.sheet p.or{margin:6px 0 8px;text-align:center}
+.addrow{display:flex;gap:8px}
+.addrow input{flex:1;min-width:0;text-transform:uppercase;letter-spacing:.08em}
+.addrow button{flex:0 0 auto;height:56px;padding:0 22px;border-radius:18px;background:var(--ink);color:var(--bg);font-weight:700;font-size:17px}
+.addrow+.err{margin:6px 0 4px}
+.sheet h4{font-size:14px;font-weight:700;color:var(--muted);margin:14px 0 8px}
+.flist{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.frow{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;box-sizing:border-box;padding:12px 16px;border-radius:16px;background:var(--bg);font-size:16px;text-align:left}
+.frow span{font-size:13px;font-weight:600;color:var(--muted);text-align:right}
 .code{font-size:28px;font-weight:800;letter-spacing:.12em;text-align:center;background:var(--bg);border-radius:18px;padding:14px;margin-bottom:14px}
 
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
