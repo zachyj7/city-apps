@@ -16,7 +16,7 @@ board games: **Chess**, **Checkers** and **Mancala**.
   are in it, never names or faces. Anyone who knows where to look could see it, so the host can switch off
   **Show this lobby on the start screen** in the lobby. The notice is cleared when the lobby closes.
 - Everyone opens the same link (or types the same lobby name) and joins the lobby. The page used to be called
-  Family Tiles, then Jensen Games; the old addresses (`/familytiles/`, `/jensengames/`) send people to the new one.
+  something else; old addresses and invite links still bring people here.
   Saved settings and lifetime stats carry over (they keep their old `jg-` names on each device).
 - Each player has their own color, picked on the join screen and changeable in the lobby. Two people can't have
   the same color: taken colors are greyed out with the owner's initial, and if yours was taken when you joined

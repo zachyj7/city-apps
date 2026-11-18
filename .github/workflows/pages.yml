@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       # Each game has its own folder: /clockrate/, /hourfall/, /bigmoney/, /gamenight/. Nothing is served at the site root.
-      # Game Night's old addresses (Family Tiles, then Jensen Games) send people on to /gamenight/.
+      # Game Night's older addresses send people (and their invite links) on to /gamenight/.
       - name: Assemble site
         run: |
           mkdir _site
