@@ -1,5 +1,5 @@
 /* Packs the app in www/ into one self-contained file: dist/clock-rate.html.
-   Run from the repo root:  node scripts/build-single.js
+   Run from the clockrate folder:  node scripts/build-single.js
    The single file can be opened straight from disk in a desktop browser, or hosted anywhere. */
 const fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..'), www = path.join(root, 'www');
