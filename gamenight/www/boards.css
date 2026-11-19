@@ -222,7 +222,7 @@ body.rps-ok .seat:not(.me):not(.off):hover .face { box-shadow: 0 0 0 3px var(--g
 
 /* the custom color swatch: a color picker in swatch clothing */
 .swatches.row8 { grid-template-columns: repeat(9, minmax(0, 1fr)); }
-.swatch.custom { position: relative; cursor: pointer; }
+.swatch.custom { position: relative; cursor: pointer; margin: 0; font: inherit; color: inherit; }
 .swatch.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
 .swatch.custom:not(.on) .sw-top { background: conic-gradient(#e3262a, #f7c600, #25a84e, #2472e6, #9257ff, #ff6eb6, #e3262a); display: grid; place-items: center; color: #fff; font-weight: 700; text-shadow: 0 1px 2px #000; }
 .swatch.custom:focus-within { outline: 3px solid var(--gold); outline-offset: 3px; }

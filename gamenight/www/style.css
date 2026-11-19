@@ -605,7 +605,7 @@ body.moving #controls { display: none; }
 }
 .swatch:hover { transform: translateY(-2px); }
 .swatch .sw-top { height: 20px; background: linear-gradient(var(--rk-hi), var(--rk)); box-shadow: inset 0 1px 0 rgba(255,255,255,.4); }
-.swatch .sw-edge { height: 24px; background: linear-gradient(var(--rk), var(--rk-lo)); color: var(--rk-text); font-family: var(--display); font-weight: 600; font-size: 11px; display: grid; place-items: center; }
+.swatch .sw-edge { flex: 1 0 auto; height: 24px; background: linear-gradient(var(--rk), var(--rk-lo)); color: var(--rk-text); font-family: var(--display); font-weight: 600; font-size: 11px; display: grid; place-items: center; }
 .swatch.on { box-shadow: 0 0 0 2px #06231a, 0 0 0 5px var(--gold); }
 @media (max-width: 520px) { .swatches.row8 .sw-edge { font-size: 0; height: 16px; } .swatches.row8 .sw-top { height: 12px; } }
 
