@@ -175,7 +175,9 @@ export function heartsControls(x) {
 
 // A double-twelve color-dot set, like the family's Cardinal box: each number has its own pip color and layout.
 // Pip positions are [x, y] in percent of the half (three columns; three rows up to 9, four rows above that).
-const L = 25, M = 50, R = 75, T = 25, C = 50, B = 75, Y4 = [14, 38, 62, 86];   // even margins; 10-12 use four rows
+const L = 25, M = 50, R = 75, T = 25, C = 50, B = 75;   // even margins
+// 10-12 use a square 4-row grid (same span both ways), kept clear of the bar between the halves
+const L4 = 20, R4 = 80, Y4 = [20, 40, 60, 80];
 const PIPS = [
   [],
   [[M, C]],
@@ -187,9 +189,9 @@ const PIPS = [
   [[L, T], [L, C], [L, B], [R, T], [R, C], [R, B], [M, C]],
   [[L, T], [M, T], [R, T], [L, C], [R, C], [L, B], [M, B], [R, B]],
   [[L, T], [M, T], [R, T], [L, C], [M, C], [R, C], [L, B], [M, B], [R, B]],
-  [...Y4.map(y => [L, y]), ...Y4.map(y => [R, y]), [M, 17], [M, 83]],
-  [...Y4.map(y => [L, y]), ...Y4.map(y => [R, y]), [M, 17], [M, 50], [M, 83]],
-  [...Y4.map(y => [L, y]), ...Y4.map(y => [M, y]), ...Y4.map(y => [R, y])],
+  [...Y4.map(y => [L4, y]), ...Y4.map(y => [R4, y]), [M, 20], [M, 80]],
+  [...Y4.map(y => [L4, y]), ...Y4.map(y => [R4, y]), [M, 20], [M, 50], [M, 80]],
+  [...Y4.map(y => [L4, y]), ...Y4.map(y => [M, y]), ...Y4.map(y => [R4, y])],
 ];
 const half = n => `<span class="dh n${n}"><span class="pp">${PIPS[n].map(([x, y]) => `<i style="left:${x}%;top:${y}%"></i>`).join('')}</span></span>`;
 export const domino = (a, b, cls = '') => `<span class="dm ${cls}" role="img" aria-label="${a} and ${b}">${half(a)}${half(b)}</span>`;
