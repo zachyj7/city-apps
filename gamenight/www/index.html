@@ -90,9 +90,11 @@
     <span class="chip tname"><svg class="ic"><use href="#i-users"/></svg><b id="tableName"></b></span>
     <span id="status" class="status"><i></i><span></span></span>
     <span class="spacer"></span>
-    <button id="camBtn" class="btn hbtn"></button>
-    <button id="micBtn" class="btn hbtn" hidden></button>
-    <button id="setBtn" class="btn hbtn" aria-label="Settings" aria-expanded="false"><svg class="ic"><use href="#i-settings"/></svg><span class="hlabel">Settings</span></button>
+    <div class="hright">
+      <button id="camBtn" class="btn hbtn"></button>
+      <button id="micBtn" class="btn hbtn" hidden></button>
+      <button id="setBtn" class="btn hbtn" aria-label="Settings" aria-expanded="false"><svg class="ic"><use href="#i-settings"/></svg><span class="hlabel">Settings</span></button>
+    </div>
   </header>
   <div id="settings" class="card popover" hidden>
     <div class="pophead"><b>Settings</b><button class="iconbtn" id="setClose" aria-label="Close settings"><svg class="ic"><use href="#i-close"/></svg></button></div>
@@ -137,7 +139,6 @@
       </div>
       <div id="dmTools" class="dmtools" hidden>
         <label title="Size of your dominoes"><svg class="ic"><use href="#i-shapes"/></svg><input type="range" id="dmSize" min="0.7" max="1.6" step="0.05" value="1" aria-label="Size of your dominoes"></label>
-        <button type="button" class="sortbtn" id="dmFit" aria-pressed="false" title="Fit every train on screen"><svg class="ic"><use href="#i-fit"/></svg><span class="long">Fit</span></button>
       </div>
       <div id="hand" class="hand" hidden></div>
     </div>

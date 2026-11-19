@@ -1,6 +1,8 @@
 // Dominoes, the Mexican Train way (double-twelve set), with the family's house rules: the shared trains are
 // "community trains", and there can be several. The referee side, for 2-8 players.
-// Each round's engine is a double (12, then 11, ... down to blank) in the middle. Everyone builds their own
+// Each round's engine is a double (12, then 11, ... down to blank) in the middle. Everyone draws their tiles first;
+// whoever holds the round's double lays it in the middle and so has gone first (play carries on to their left).
+// If nobody holds it, that round is skipped and the next double down is looked for. Everyone builds their own
 // train from it. One tile a turn (or a double and the tile that covers it): on your first turn on your own
 // train; after that on your own train, any community train (anyone may start a new one after their first turn,
 // up to six), or another player's train only if it has a penny on it. If someone couldn't start their own train, someone
@@ -80,19 +82,33 @@ export const DOMINOES = {
   end(room) { if (room.s.dm) room.s.dm.why = 'The host ended the game'; room.finish(null); },
 };
 
+const doubleOf = n => TILES.findIndex(([a, b]) => a === n && b === n);
+
 function deal(room) {
   const s = room.s, d = s.dm, seats = seated(s), n = seats.length;
-  d.engine = 12 - d.roundNo;
-  const bone = shuffle(Array.from({ length: TILES.length }, (_, i) => i).filter(id => !(TILES[id][0] === d.engine && TILES[id][1] === d.engine)));
+  // everyone draws from the whole set
+  const bone = shuffle(Array.from({ length: TILES.length }, (_, i) => i));
   for (const q of seats) q.hand = bone.splice(0, DEAL[Math.max(2, Math.min(8, n))]);
+  // whoever holds this round's double lays it in the middle; nobody has it: that round is skipped
+  let holder = null;
+  for (; d.roundNo < d.rounds; d.roundNo++) {
+    d.engine = 12 - d.roundNo;
+    holder = seats.find(q => q.hand.includes(doubleOf(d.engine)));
+    if (holder) break;
+    room.note(`Nobody drew double ${d.engine}: round ${d.roundNo + 1} is skipped`);
+  }
+  if (!holder) return finishGame(room);
+  holder.hand.splice(holder.hand.indexOf(doubleOf(d.engine)), 1);
   d.bone = bone;
   d.trains = {};
   for (const q of seats) d.trains[q.pid] = { tiles: [], marker: false };
   Object.assign(d, { stage: 'play', first: {}, open: null, passes: 0, ending: false, last: null, roundPts: null });
   d.turn = { played: 0, drew: false, cover: null };
-  s.turn = seats[(d.roundNo + s.round - 1) % n].pid;
+  // laying the engine was the holder's go: the next player plays first
+  s.turn = seats[(seats.indexOf(holder) + 1) % n].pid;
   s.turnNo++;
-  room.note(`Round ${d.roundNo + 1} of ${d.rounds}: the engine is double ${d.engine}. ${room.player(s.turn).name} goes first.`);
+  s.ann = { pid: holder.pid, name: holder.name, rc: holder.rc, kind: 'dbl', text: `${holder.name} had double ${d.engine} and laid it in the middle`, sub: 'Engine!', k: s.v + 1 };
+  room.note(`Round ${d.roundNo + 1} of ${d.rounds}: ${holder.name} laid the engine, double ${d.engine}. ${room.player(s.turn).name} plays first.`);
   room.push();
 }
 
@@ -182,14 +198,17 @@ function endRound(room, outP) {
   if (outP) s.ann = { pid: outP.pid, name: outP.name, rc: outP.rc, kind: 'last', text: `${outP.name} played their last tile!`, sub: 'Out!', k: s.v + 1 };
   room.note(outP ? `${outP.name} went out` : 'Nobody can play: the round is over');
   d.roundNo++;
-  if (d.roundNo >= d.rounds) {
-    const order = seats.slice().sort((a, b) => d.scores[a.pid] - d.scores[b.pid]);
-    d.why = 'Final scores: ' + order.map(q => `${q.name} ${d.scores[q.pid]}`).join(', ');
-    const tie = order.length > 1 && d.scores[order[0].pid] === d.scores[order[1].pid];
-    return room.finish(tie ? null : order[0]);
-  }
+  if (d.roundNo >= d.rounds) return finishGame(room);
   d.stage = 'scored'; s.turn = null; s.turnNo++;
   room.push();
+}
+
+function finishGame(room) {
+  const s = room.s, d = s.dm, seats = seated(s);
+  const order = seats.slice().sort((a, b) => d.scores[a.pid] - d.scores[b.pid]);
+  d.why = 'Final scores: ' + order.map(q => `${q.name} ${d.scores[q.pid]}`).join(', ');
+  const tie = order.length > 1 && d.scores[order[0].pid] === d.scores[order[1].pid];
+  return room.finish(tie ? null : order[0]);
 }
 
 /* ---------------- computer players ---------------- */

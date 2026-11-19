@@ -198,11 +198,26 @@ header { grid-area: head; }
 main { grid-area: main; }
 footer { grid-area: foot; }
 
+/* No band across the top: its buttons float in their places over the table, which runs right up to the top.
+   The players' columns start below the buttons. */
+#game { position: relative; grid-template-rows: minmax(0, 1fr) auto; grid-template-areas: "left main right" "left foot right"; }
 header {
-  display: flex; align-items: center; gap: 10px; padding: 8px 14px; position: relative; z-index: 20;
-  background: rgba(2, 15, 9, .82); border-bottom: 1px solid var(--line);
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  display: flex; align-items: center; gap: 10px; padding: 8px 14px; position: absolute; top: 0; left: 0; right: 0; z-index: 20;
+  pointer-events: none;   /* only the buttons themselves catch taps; the table shows (and works) between them */
 }
+header > * { pointer-events: auto; }
+header > .spacer { pointer-events: none; }
+.seats:not(:empty) { padding-top: 62px; }
+/* just the buttons: no game or lobby name, and the connection only shows when something is wrong */
+header .gname, header .tname, header .status.good { display: none !important; }
+/* camera and settings together are no wider than the webcam column under them, and line up with it */
+header { padding-right: 10px; }
+.hright { display: flex; gap: 8px; justify-content: flex-end; width: 200px; flex: none; }
+.hright .hbtn { min-width: 0; justify-content: center; }
+.hright #camBtn { flex: 1 1 auto; overflow: hidden; }
+.hright #camBtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hright #setBtn, .hright #micBtn { flex: none; padding-left: .7em; padding-right: .7em; }
+.hright #setBtn .hlabel, .hright #micBtn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brandname { font-family: var(--display); font-weight: 700; font-size: 1.2em; color: var(--gold); letter-spacing: .005em; }
 .mark { display: inline-flex; gap: 2px; }
@@ -251,7 +266,8 @@ header {
 
 /* the playing area; during a game the table is a felt mat exactly as big as the space tiles can go */
 main { min-height: 0; overflow: auto; padding: 12px 14px; position: relative; }
-main.mat { margin: 10px 0 0; }
+main.mat { margin: 10px 0 0; padding-bottom: 18px; }   /* room for the table's edge and a strip of felt above the rack */
+#game:has(main.mat) footer { padding-top: 0; }
 main.mat .board {
   --edge: 10px; border-radius: 8px; background: rgba(0, 0, 0, .2);
   box-shadow: 0 0 0 var(--edge) rgba(0, 0, 0, .2), 0 0 0 calc(var(--edge) + 1.5px) rgba(255,255,255,.12), 0 6px 30px calc(var(--edge) - 4px) rgba(0,0,0,.25);
@@ -448,7 +464,7 @@ footer {
    screen, each with its own shadow. */
 footer { position: relative; }
 #controls {
-  position: absolute; z-index: 25; left: 50%; bottom: calc(100% - 4px); transform: translateX(-50%);
+  position: absolute; z-index: 25; left: 50%; bottom: calc(100% + 26px); transform: translateX(-50%);
   display: flex; gap: 10px; align-items: center; justify-content: center; max-width: 100%; width: max-content;
 }
 #controls:empty { display: none; }
@@ -742,7 +758,8 @@ body.moving #controls { display: none; }
 /* ---------- phones, tablets and narrow windows: one slim strip of faces across the top ---------- */
 @media (max-width: 1099px) {
   body { font-size: calc(17px * var(--zoom)); }
-  header { padding: 6px 8px; gap: 8px; }
+  header { padding: 6px 8px; gap: 8px; position: relative; }
+  .hright { width: auto; }   /* phones: the faces strip sits just under the buttons */
   .brandname, .tname, .hlabel { display: none; }
   .hbtn { min-height: 40px; padding: .25em .7em; font-size: .88em; }
   .popover { top: 54px; right: 8px; padding: 6px 14px 12px; }

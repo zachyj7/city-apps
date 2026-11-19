@@ -91,7 +91,11 @@
 /* Dominoes: ivory tiles with black pips */
 .dm {
   --dw: calc(clamp(22px, min(3.2vw, 4.6vh), 40px) * var(--zoom)); display: inline-flex; flex: none; border-radius: calc(var(--dw) * .16); padding: calc(var(--dw) * .06);
-  background: linear-gradient(180deg, #fffdf6, #eee6d2); box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), 0 2px 0 #b9ae93, 0 3px 8px rgba(0,0,0,.4);
+  /* the light comes from the top of the screen and the tile's thickness shows below it, whichever way the tile
+     is turned: --rot is how far it is turned, so the shading is turned back by as much */
+  --sx: sin(var(--rot, 0deg)); --sy: cos(var(--rot, 0deg));
+  background: linear-gradient(calc(180deg - var(--rot, 0deg)), #fffdf6, #eee6d2);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), calc(var(--sx) * 2px) calc(var(--sy) * 2px) 0 #b9ae93, calc(var(--sx) * 3px) calc(var(--sy) * 3px) 8px rgba(0,0,0,.4);
 }
 .dm .dh { position: relative; width: var(--dw); height: var(--dw); }
 .dm .dh .pp { position: absolute; inset: 0; }
@@ -113,7 +117,7 @@
 .dh.n9 { --nc: #3f2b7a; } .dh.n10 { --nc: #f07c1c; } .dh.n11 { --nc: #7d1530; } .dh.n12 { --nc: #9b9b9b; }
 .dm.v, .dm.dbl { flex-direction: column; }
 
-.dm.landed { animation: ccland .35s cubic-bezier(.2, 1.4, .4, 1) both; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), 0 0 0 3px var(--gold), 0 3px 8px rgba(0,0,0,.4); }
+.dm.landed { animation: ccland .35s cubic-bezier(.2, 1.4, .4, 1) both; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), 0 0 0 3px var(--gold), calc(var(--sx) * 3px) calc(var(--sy) * 3px) 8px rgba(0,0,0,.4); }
 .dm-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 3px; max-width: 100%; padding: 14px; min-height: 90px; border-radius: 18px; background: rgba(0,0,0,.18); }
 .dm-end {
   min-width: 2.2em; height: 2.2em; border-radius: 50%; border: 2px dashed var(--line-strong); background: transparent; color: var(--muted);
@@ -139,15 +143,21 @@
 .mt-round { color: var(--muted); font-weight: 700; font-size: .9em; }
 .mt-hub { position: relative; flex: none; }
 /* the station: a black octagon, with a white slot in the middle for the engine */
-.mt-station { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
-.mt-station polygon { fill: #161616; stroke: #000; stroke-width: 2; filter: drop-shadow(0 6px 10px rgba(0,0,0,.5)); }
-.mt-engine { position: absolute; z-index: 3; transform: translate(-50%, -50%); padding: 5px; border-radius: 6px; background: #fff; box-shadow: inset 0 0 0 2px #d8d8d8; }
+.mt-station { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none; overflow: visible; }
+.mt-station path { fill: #161616; stroke: #000; stroke-width: 2; filter: drop-shadow(0 6px 10px rgba(0,0,0,.5)); }
+.mt-engine { position: absolute; z-index: 3; transform: translate(-50%, -50%); display: grid; }
+.mt-it.mt-under { opacity: 0; }   /* gone under the octagon (it slides there, fading) */
 .mt-engine .dm { --dw: inherit; }
-.mt-spoke { position: absolute; left: 0; top: 0; z-index: 2; width: 0; height: 0; transform-origin: 0 0; }
+.mt-spoke { position: absolute; left: 0; top: 0; z-index: 1; width: 0; height: 0; transform-origin: 0 0; }
 /* each piece of a train sits on the grid of half-tile squares: placed by its centre, turned in 90 degree steps */
 .mt-it { position: absolute; left: 0; top: 0; display: grid; place-items: center; }
 .mt-spoke .dm { --dw: inherit; flex: none; }
-.mt-spoke .dm.h { box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), 0 2px 0 #b9ae93, 0 2px 5px rgba(0,0,0,.35); }
+/* on the table the tile's thickness is a solid band straight down the screen: a train out to a corner shows it on
+   both of its lower sides */
+.mt-spoke .dm:not(.endpip), .mt-engine .dm {
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), calc(var(--sx) * 1px) calc(var(--sy) * 1px) 0 #cfc5aa, calc(var(--sx) * 2px) calc(var(--sy) * 2px) 0 #bdb295,
+    calc(var(--sx) * 3px) calc(var(--sy) * 3px) 0 #a99d80, calc(var(--sx) * 3px) calc(var(--sy) * 4px) 6px rgba(0,0,0,.4);
+}
 .mt-spoke.open .dm:not(.endpip) { box-shadow: 0 0 0 3px var(--bad), 0 0 14px rgba(255,77,64,.55); }
 .mt-spoke.dropok .dm:not(.endpip) { box-shadow: 0 0 0 3px var(--gold), 0 0 14px rgba(255,207,51,.6); }
 .mt-spoke.mt-new .dm-end { outline: 2px dashed var(--gold); outline-offset: 3px; }

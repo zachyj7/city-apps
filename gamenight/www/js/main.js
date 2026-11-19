@@ -217,6 +217,7 @@ function setState(S) {
   }
   if (m) A.rcAsked = null;
   if (S.phase !== 'play' || S.game !== 'uno') A.wildPick = null;
+  A.dsent = null;   // the referee has answered: the hand now shows what is really left
   if (!was || was.turnNo !== S.turnNo || S.phase !== 'play') { A.bsel = null; A.promo = null; A.resignArm = 0; A.isel = new Set(); A.pending = null; if (!(S.dm && S.phase === 'play')) A.dsel = null; }
   if (!was || S.phase !== 'play' || (S.hr && was.hr && S.hr.handNo !== was.hr.handNo) || (S.hr && S.hr.passed && S.hr.passed[pid])) A.hsel = new Set();
   if (S.phase !== 'play' || !S.id || S.id.stage !== 'swap') A.iswap = null;
@@ -1080,7 +1081,7 @@ function renderMe() {
     // Dominoes: the tray's size slider and Fit
     const dmt = S.game === 'dominoes' && m && m.seat;
     $('#dmTools').hidden = !dmt;
-    if (dmt) { $('#dmSize').value = A.dz; $('#dmFit').classList.toggle('on', A.fit); $('#dmFit').setAttribute('aria-pressed', A.fit); }
+    if (dmt) $('#dmSize').value = A.dz;
     const hand = $('#hand'), draw = { uno: unoHand, idiot: idiotHand, hearts: heartsHand, dominoes: dominoHand }[S.game];
     if (draw && !hand.hidden) { hand.className = 'hand'; draw(hand, viewCtx()); }
     return;
@@ -1099,8 +1100,9 @@ function renderMe() {
   let html = '';
   if (myTurn()) {
     // Done only shows once at least one tile has gone from my rack onto the table this turn.
+    // one button at a time: Done once a tile has gone from the rack to the table, Draw (or Pass) until then
     if (A.W && A.W.rack.length < A.W.startRack.length) html += `<button class="btn go" data-act="done">${ic('check')}Done</button>`;
-    html += `<button class="btn draw" data-act="draw" title="Tiles left to draw: ${S.pool.length}">${S.pool.length ? `${ic('draw')}Draw<b class="cnt">${S.pool.length}</b>` : `${ic('skip')}Pass`}</button>`;
+    else html += `<button class="btn draw" data-act="draw" title="Tiles left to draw: ${S.pool.length}">${S.pool.length ? `${ic('draw')}Draw<b class="cnt">${S.pool.length} left</b>` : `${ic('skip')}Pass`}</button>`;
   } else {
     const cur = S.players.find(p => p.pid === S.turn);
     if (cur) html += `<span class="turnchip" style="${rackStyle(cur.rc)}">${cur.cpu ? ic('bot') : ''}${esc(cur.name)}</span>`;
@@ -1884,7 +1886,7 @@ document.addEventListener('click', e => {
     return;
   }
   if (act === 'bpit') { send({ t: 'g', a: 'move', i: +b.dataset.i }); return; }
-  if (TABLE_ACTS.includes(act)) { const mv = tableTap(A, pid, act, b); if (mv) send({ t: 'g', ...mv }); renderCenter(); renderMe(); return; }
+  if (TABLE_ACTS.includes(act)) { const mv = tableTap(A, pid, act, b); if (mv) for (const one of [].concat(mv)) send({ t: 'g', ...one }); renderCenter(); renderMe(); return; }
   if (act === 'bresign') {
     if (A.resignArm && Date.now() - A.resignArm < 4000) { A.resignArm = 0; send({ t: 'g', a: 'resign' }); }
     else { A.resignArm = Date.now(); setTimeout(() => { if (A.S) renderMe(); }, 4100); }
@@ -2319,11 +2321,23 @@ $('#rackSize').addEventListener('input', e => {
   renderRack();
 });
 
+// The table always reaches down to the rack: whenever the space above the rack changes height (the rack's size
+// slider, a row more or less on the rack, the window), the table is drawn again to fill it.
+if (window.ResizeObserver) {
+  let lastH = 0, raf = 0;
+  new ResizeObserver(() => {
+    const h = $('main').clientHeight;
+    if (h === lastH) return;
+    lastH = h;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => { if (A.S && A.S.phase === 'play' && A.S.game === 'tiles' && !A.drag) renderCenter(); });
+  }).observe($('main'));
+}
+
 setTrayHooks({ A, rerender: () => { renderCenter(); renderMe(); } });
 // the dominoes tray's size (remembered on this device) and Fit (shared with the Number Tiles Fit)
 A.dz = Math.min(1.6, Math.max(0.7, +store.get('dz', 1) || 1));
 $('#dmSize').addEventListener('input', e => { A.dz = +e.target.value; store.set('dz', A.dz); renderMe(); });
-$('#dmFit').addEventListener('click', () => { A.fit = !A.fit; try { localStorage.setItem('jg-fit', A.fit ? '1' : ''); } catch (e) { /* private */ } renderCenter(); renderMe(); });
 const stats = initStats({ A, pid, esc, ic, send });
 stats.unlock(true);   // statistics are open to everyone, from Settings
 const help = initHelp({ A, pid, send, toast, esc, ic });
