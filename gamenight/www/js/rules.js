@@ -8,6 +8,10 @@ export const SYMBOLS = ['♣', '♥', '♠', '◆'];
 export const JOKER_POINTS = 30;
 export const OPEN_POINTS = 30;
 export const DEAL = 14;
+// One red 4 (the first set's) is made a little bigger than the rest. It plays like any other red 4.
+export const BIG_TILE = 26;
+// Drawing for who goes first: the number on the tile, with a joker above a 13.
+export const pickValue = id => { const t = tile(id); return t.j ? 14 : t.n; };
 
 export function tile(id) {
   const i = id % PER_SET;

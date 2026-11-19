@@ -76,6 +76,21 @@
   color-scheme: dark;
 }
 
+/* dark mode (Settings): the felt and the glass over it turn dark grey, nearly black, in every game */
+html.dark {
+  --felt: #2b2d2f;
+  --felt-mid: #1c1d1f;
+  --felt-dark: #0e0e0f;
+  --bg: #080809;
+  --glass: rgba(14, 14, 16, .82);
+  --glass-hi: rgba(30, 31, 34, .9);
+  --muted: #dcdcdc;
+  --soft: #b0b0b0;
+}
+html.dark .seat { background: linear-gradient(180deg, rgba(30,31,34,.92), rgba(12,12,14,.94)); }
+html.dark .face, html.dark .avatar { background-color: #111; }
+html.dark .stcard { background: linear-gradient(180deg, #26272a, #141416); }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
@@ -195,6 +210,8 @@ b, strong { font-weight: 700; }
 header { grid-area: head; }
 #seatsL { grid-area: left; }
 #seatsR { grid-area: right; }
+/* the faces stack from the top, but your own stays down in the bottom left corner */
+@media (min-width: 1100px) { #seatsL > .seat.me { margin-top: auto; } }
 main { grid-area: main; }
 footer { grid-area: foot; }
 
@@ -446,6 +463,9 @@ main:not(.mat) #center { min-height: 100%; display: grid; align-items: center; }
 /* tiles played this turn: a thick, bright gold ring with a soft glow, easy to spot */
 .tile.placed { box-shadow: inset 0 0 0 2px #ffd21f, inset 0 1px 0 3px rgba(255,255,255,.6), 0 0 0 6px #ffd21f, 0 0 0 8px #6b4600, 0 0 18px 7px rgba(255, 210, 31, .6), 0 4px 0 var(--tile-side-dark), 0 7px 10px rgba(0,0,0,.35); }
 .tile.fresh { animation: fresh .9s ease-in-out 2; }
+/* the one oversized red 4: drawn a little bigger, taking up the same slot as any other tile */
+.tile.big { scale: 1.12; z-index: 1; }
+.ghost .tile.big { scale: 1.12; }
 @keyframes fresh { 50% { box-shadow: 0 0 0 4px var(--gold), 0 0 20px var(--gold); } }
 /* the tile being held, a little above the table, with a soft shadow that moves with it */
 .ghost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; display: block; --gap: 4px; --rgap: 12px; opacity: .97; filter: drop-shadow(4px 12px 9px rgba(0,0,0,.4)) drop-shadow(0 2px 2px rgba(0,0,0,.2)); }
@@ -878,6 +898,44 @@ body.moving #controls { display: none; }
 .helplist { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .helplist .btn { min-height: 38px; font-size: .9em; padding: 0 .9em; }
 .helpnone { color: var(--soft); font-size: .9em; }
+.helpshare { margin-top: 10px; }
+.helpshare .btn { min-height: 40px; font-size: .9em; padding: 0 1em; }
+.helpshare .btn.on { --b-top: #ffd0cc; --b-bot: #ffb4ae; --b-ink: #7a1008; }
+
+/* the helper's screen, shared with everyone: big over the table, or small in the bottom right corner */
+#shareView { position: fixed; inset: 12px; z-index: 80; display: flex; flex-direction: column; border-radius: 16px; overflow: hidden;
+  background: rgba(3, 14, 10, .96); box-shadow: 0 0 0 3px var(--gold), var(--shadow-3); }
+#shareView[hidden] { display: none; }
+.shhead { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; }
+.shtitle { flex: 1 1 0; min-width: 0; font-family: var(--display); font-weight: 700; font-size: 1.15em; color: var(--gold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shhead .btn { min-height: 40px; padding: 0 1em; font-size: .9em; flex: none; }
+.shstage { position: relative; flex: 1 1 0; min-height: 0; background: #000; display: grid; place-items: center; overflow: hidden; }
+.shnote { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+.shnote[hidden], .shwrap[hidden] { display: none; }
+.shwrap { position: relative; overflow: hidden; }
+.shwrap iframe { display: block; border: 0; transform-origin: 0 0; pointer-events: none; }
+/* their mouse: a big white arrow with a dark edge and a gold glow, easy to follow; it pulses when they click */
+.shptr { position: absolute; left: 0; top: 0; z-index: 2; width: 46px; height: 46px; margin: -3px 0 0 -6px; pointer-events: none;
+  fill: #fff; stroke: #111; stroke-width: 2; stroke-linejoin: round; overflow: visible;
+  filter: drop-shadow(0 0 5px rgba(255,207,51,.95)) drop-shadow(0 3px 4px rgba(0,0,0,.6));
+  transform-origin: 6px 3px; transition: left .07s linear, top .07s linear; }
+.shptr[hidden] { display: none; }
+.shptr.down { animation: ptrdown .45s ease-out; }
+@keyframes ptrdown { 0% { transform: scale(1); } 30% { transform: scale(.78); fill: var(--gold); } 100% { transform: scale(1); } }
+#shareView.small { inset: auto 12px 12px auto; width: min(340px, 45vw); height: auto; }
+#shareView.small .shhead { padding: 4px 4px 4px 10px; }
+#shareView.small .shtitle { font-size: .85em; }
+#shareView.small .shhead .btn { min-height: 32px; font-size: .8em; }
+#shareView.small .shstage { flex: none; aspect-ratio: var(--ar, 16 / 10); cursor: zoom-in; }
+#shareView.small .shptr { width: 30px; height: 30px; }
+#shareMine {
+  position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 85; max-width: calc(100vw - 16px);
+  display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 14px; border-radius: 999px;
+  background: #fff7d6; color: #2a2000; border: 2px solid var(--gold); box-shadow: var(--shadow-2); font-size: .9em;
+}
+#shareMine[hidden] { display: none; }
+#shareMine .ic { width: 1.2em; height: 1.2em; vertical-align: -.22em; margin-right: .45em; }
+#shareMine .btn { min-height: 34px; padding: 0 1em; font-size: .9em; flex: none; }
 #helpBox .helpstats { margin-top: 10px; padding-bottom: 0; border-top: 1px solid var(--line); border-bottom: 0; }
 #statsBtn:disabled { opacity: .5; cursor: not-allowed; }
 
@@ -1087,7 +1145,7 @@ body.banding, body.banding * { cursor: crosshair !important; user-select: none !
   position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; z-index: 1;
   box-shadow: 0 0 0 3.5px var(--rk), 0 0 0 5px var(--rk-deep), 0 0 14px 4px var(--rk);
 }
-.board .byname {
+.board .byname, .pickboard .byname {
   position: absolute; z-index: 4; transform: translate(-50%, -50%); pointer-events: none; white-space: nowrap;
   max-width: 12em; overflow: hidden; text-overflow: ellipsis;
   padding: 2px 9px; border-radius: 999px; background: linear-gradient(var(--rk-hi), var(--rk)); color: var(--rk-text);
@@ -1095,7 +1153,91 @@ body.banding, body.banding * { cursor: crosshair !important; user-select: none !
   font-family: var(--display); font-weight: 800; font-size: max(11px, calc(var(--tw) * .24)); line-height: 1.15;
 }
 @keyframes byOut { to { opacity: 0; } }
+
+/* drawing for who goes first: face-down tiles scattered over the table, turned over one by one */
+.pickboard { position: relative; margin: 0 auto; border-radius: 8px; background: rgba(0, 0, 0, .2);
+  box-shadow: 0 0 0 10px rgba(0, 0, 0, .2), 0 0 0 11.5px rgba(255,255,255,.12); }
+.pkmsg { position: absolute; left: 0; right: 0; top: 12px; z-index: 6; text-align: center; pointer-events: none;
+  font-family: var(--display); font-weight: 700; font-size: clamp(20px, 3.2vw, 34px); color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+.pkmsg b { color: var(--gold); }
+.pkmsg.won { animation: pkpop .5s ease both; }
+@keyframes pkpop { from { transform: scale(.7); opacity: 0; } }
+.pkw { position: absolute; width: var(--tw); height: var(--th); }
+.pk { position: absolute; inset: 0; padding: 0; margin: 0; border: 0; background: none; font: inherit; color: inherit;
+  transform: rotate(var(--rot)); perspective: 700px; cursor: default; transition: transform .25s; }
+.pkw.up .pk, .pkw.anim .pk { transform: rotate(0deg); }   /* turned over: straightened up so it reads easily */
+.pkw.can .pk { cursor: pointer; }
+.pkw.can .pk:hover, .pkw.can .pk:focus-visible { transform: rotate(var(--rot)) translateY(-6px) scale(1.06); outline: none; }
+.pkw.can .pk-back { box-shadow: inset 0 0 0 2px rgba(255,207,51,.0), 0 2px 0 var(--tile-side), 0 3px 0 var(--tile-side-dark), 0 5px 7px rgba(0,0,0,.32); }
+.pkw.can .pk:hover .pk-back { box-shadow: 0 0 0 3px var(--gold), 0 3px 0 var(--tile-side-dark), 0 0 18px rgba(255,207,51,.6); }
+.pk-in { position: absolute; inset: 0; transform-style: preserve-3d; }
+.pkw.up .pk-in { transform: rotateY(180deg); }
+.pkw.anim .pk-in { animation: pkflip 1.1s cubic-bezier(.3,.7,.3,1) var(--age, 0ms) both; }
+@keyframes pkflip {
+  0% { transform: translateZ(0) rotateY(0); }
+  35% { transform: translateZ(90px) rotateY(80deg); }
+  70% { transform: translateZ(40px) rotateY(195deg); }
+  100% { transform: translateZ(0) rotateY(180deg); }
+}
+.pk-back, .pk-front { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.pk-front { transform: rotateY(180deg); }
+.pk-front .tile { cursor: default; }
+.pk-back {
+  border-radius: calc(var(--tw) * .16);
+  background: radial-gradient(circle at 50% 50%, rgba(0,0,0,.08) 0 18%, transparent 19%), repeating-linear-gradient(135deg, #efe5ca 0 6px, #e2d6b5 6px 12px);
+  box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgba(150,125,70,.25), 0 2px 0 var(--tile-side), 0 3px 0 var(--tile-side-dark), 0 5px 7px rgba(0,0,0,.32);
+}
+.pkname { left: 50%; top: calc(100% + 14px); }
+.pkw.anim .pkname { animation: pkname .3s ease calc(var(--age, 0ms) + .8s) both; }
+@keyframes pkname { from { opacity: 0; } }
+.pkw.old { opacity: .4; }
+.pkw.lose { opacity: .55; }
+.pkw.win { z-index: 5; }
+.pkw.win .pk-front .tile { box-shadow: 0 0 0 4px var(--gold), 0 0 26px 8px rgba(255,207,51,.7), 0 4px 0 var(--tile-side-dark); }
+.pkw.tie .pk-front .tile { box-shadow: 0 0 0 3px #ff9a3d, 0 0 16px 4px rgba(255,154,61,.6), 0 4px 0 var(--tile-side-dark); }
 /* someone else's turn: the tiles they are carrying, and the faded spots they were lifted from */
 .board .tile.peerlifted { opacity: .3; }
 .peerhand { position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none; transition: transform .1s linear; filter: drop-shadow(4px 12px 9px rgba(0,0,0,.4)); }
 .peerhand .tile { position: absolute; }
+
+/* (kept last so it wins over the normal tile styles; highlights like a selected or just-placed tile still show) */
+/* dark tiles: charcoal faces with light numbers; the black tiles' numbers turn white, the colors brighten a little */
+html.dark {
+  --tile-face: #3a3c40;
+  --tile-mid: #303236;
+  --tile-low: #26282b;
+  --tile-side: #17181a;
+  --tile-side-dark: #050506;
+  --t0: #f4f4f4;
+  --t1: #ff4d5e;
+  --t2: #5cb8ff;
+  --t3: #ff8a33;
+}
+:where(html.dark) .tile { box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 0 0 1px rgba(255,255,255,.08), 0 2px 0 var(--tile-side), 0 3px 0 var(--tile-side-dark), 0 5px 7px rgba(0,0,0,.5); }
+:where(html.dark) .tile.sel { background: linear-gradient(#24364f, #1a2a40); box-shadow: 0 3px 0 #0c1626, 0 12px 16px rgba(0,0,0,.55); }
+:where(html.dark) .tile.hid { background: repeating-linear-gradient(135deg, #34363a 0 6px, #2a2c2f 6px 12px); }
+html.dark .pk-back { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.06) 0 18%, transparent 19%), repeating-linear-gradient(135deg, #36383c 0 6px, #2b2d30 6px 12px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 0 0 1px rgba(255,255,255,.08), 0 2px 0 var(--tile-side), 0 3px 0 var(--tile-side-dark), 0 5px 7px rgba(0,0,0,.5); }
+html.dark .minirack .backs i, html.dark #drewPop .dp-tile, html.dark #alert .al-tiles i {
+  background: linear-gradient(180deg, #55585d 0, var(--tile-face) 20%, var(--tile-low) 75%, var(--tile-side) 100%);
+}
+html.dark #drewPop .dp-tile { color: #d8c79a; }
+
+/* dark mode: a dark tint over your rack's color (the plastic, its edge and its buttons), with light writing */
+html.dark .rack {
+  background:
+    linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.55)),
+    linear-gradient(165deg, rgba(255,255,255,.34) 0%, rgba(255,255,255,0) 26%),
+    linear-gradient(180deg, var(--rk-hi) 0%, var(--rk) 40%, var(--rk) 100%);
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.18), inset 0 -2px 0 rgba(0,0,0,.4), var(--shadow-2);
+}
+html.dark .rack .edge {
+  background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.55)), linear-gradient(180deg, var(--rk) 0%, var(--rk-lo) 65%, color-mix(in srgb, var(--rk-lo), var(--rk-deep)));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 4px 0 color-mix(in srgb, var(--rk-deep), #000 55%);
+}
+html.dark .sortbtn:not(.on):not(.undo) {
+  background: linear-gradient(rgba(0,0,0,.45), rgba(0,0,0,.45)), linear-gradient(var(--rk-hi), var(--rk));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 2px 0 color-mix(in srgb, var(--rk-deep), #000 55%);
+}
+html.dark .rack .rackmsg, html.dark #rackInfo, html.dark .sortbtn:not(.on):not(.undo), html.dark #rackSizeBox { color: #f2f2f2; }
+html.dark #rackSizeBox input { accent-color: #f2f2f2; }

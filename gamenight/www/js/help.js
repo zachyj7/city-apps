@@ -18,7 +18,7 @@ const KEEP_MS = 6000;       // the helper says "still here" this often
 const DROP_MS = 20000;      // and is forgotten after this long without it
 // What a helper in control can never touch: anything to do with playing, private messages, and leaving or
 // closing the table. (During a game, the middle of the screen is blocked too: see allowed().)
-const BLOCKED = '#rack, #hand, #board, #controls, .tile, .pc, .cc, .dm, #rpsBox, #wBox, #wNote, #seatMenu, .seat, #helpBanner, #viewer, #closeAllBtn, #endBtn, #leaveBtn, [data-act=leave], #helpBox';
+const BLOCKED = '#rack, #hand, #board, #pickBoard, #controls, .tile, .pc, .cc, .dm, #rpsBox, #wBox, #wNote, #seatMenu, .seat, #helpBanner, #viewer, #closeAllBtn, #endBtn, #leaveBtn, [data-act=leave], #helpBox';
 
 // Which login this is ('helper'), or null. (The referee uses it too, for the coach switch.)
 export async function check(u, p) {
@@ -55,7 +55,8 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
   function renderBox() {
     const people = cred && A.S ? A.S.players.filter(p => p.on && !p.cpu && p.pid !== pid) : [];
     const statsOn = !(A.S && A.S.statsOff);
-    const key = cred ? cred.role + '|' + statsOn + '|' + people.map(p => p.pid + p.name).join('|') : 'out';
+    const sharing = sharingAll;
+    const key = cred ? cred.role + '|' + statsOn + '|' + sharing + '|' + people.map(p => p.pid + p.name).join('|') : 'out';
     if (key === boxKey) return;
     boxKey = key;
     if (!cred) {
@@ -71,6 +72,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
       <div class="helplist">${people.length
         ? people.map(p => `<button type="button" class="btn" data-view="${esc(p.pid)}">${esc(p.name)}</button>`).join('')
         : '<span class="helpnone">Nobody else is at the table yet.</span>'}</div>
+      <div class="helpshare"><button type="button" class="btn ${sharing ? 'on' : ''}" data-help="share">${ic(sharing ? 'stop' : 'users')}${sharing ? 'Stop sharing my game' : 'Share my game with everyone'}</button></div>
       <label class="setrow helpstats"><span class="setlabel">${ic('trophy')}Statistics and coach for everyone</span>
         <input type="checkbox" class="switch" id="helpStats" ${statsOn ? 'checked' : ''}></label>`;
   }
@@ -97,8 +99,141 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
   box.addEventListener('click', e => {
     const v = e.target.closest('[data-view]');
     if (v) return view(v.dataset.view);
-    if (e.target.closest('[data-help=out]')) { closeViewer(); cred = null; renderBox(); }
+    if (e.target.closest('[data-help=share]')) return void (sharingAll ? stopShare() : startShare());
+    if (e.target.closest('[data-help=out]')) { closeViewer(); stopShare(); cred = null; renderBox(); }
   });
+
+  /* ---------------- the helper sharing their game with everyone ----------------
+     Not the real screen: the same copy of this page the helper view uses, so only the game is shown, as the
+     helper sees it, with the tiles in their hand blanked out (everything else shows, menus included). Where their mouse is
+     goes along too, drawn as a big pointer. The referee checks the helper sign-in first, and everyone's page
+     only shows pictures from the person the referee has marked as sharing. */
+  let sharingAll = false, shareAsk = 0, shareTries = 0, audKey = '';
+  const audience = () => (A.S ? A.S.players.filter(p => p.on && !p.cpu && p.pid !== pid).map(p => p.pid) : []);
+  function startShare() {
+    if (!cred || sharingAll) return;
+    sharingAll = true; audKey = '';
+    shareTries = 0; askShare();
+    document.addEventListener('pointermove', onPtr, true);
+    document.addEventListener('pointerdown', onPtr, true);
+    document.documentElement.addEventListener('pointerleave', onPtrOut);
+    sync();
+    boxKey = null; renderBox(); renderShare();
+    toast('Everyone can see your game now. Your tiles stay hidden.');
+  }
+  function askShare() { shareAsk = Date.now(); shareTries++; send({ t: 'share', on: true, u: cred.u, p: cred.p }); }
+  function stopShare() {
+    if (!sharingAll) return;
+    sharingAll = false;
+    document.removeEventListener('pointermove', onPtr, true);
+    document.removeEventListener('pointerdown', onPtr, true);
+    document.documentElement.removeEventListener('pointerleave', onPtrOut);
+    send({ t: 'share', on: false });
+    sync();
+    boxKey = null; renderBox(); renderShare();
+  }
+  // Where the mouse is, as a share of the window, at most about 15 times a second (a click always goes).
+  let ptrAt = 0, ptrT = 0, ptrLast = null;
+  function ptrSend(m) { ptrAt = Date.now(); for (const to of audience()) relay(to, m); }
+  function onPtr(e) {
+    const m = { k: 'sp', x: +(e.clientX / (window.innerWidth || 1)).toFixed(4), y: +(e.clientY / (window.innerHeight || 1)).toFixed(4) };
+    if (e.type === 'pointerdown') { clearTimeout(ptrT); ptrT = 0; return ptrSend({ ...m, down: 1 }); }
+    ptrLast = m;
+    if (ptrT) return;
+    ptrT = setTimeout(() => { ptrT = 0; if (ptrLast) ptrSend(ptrLast); }, Math.max(0, 66 - (Date.now() - ptrAt)));
+  }
+  function onPtrOut() { clearTimeout(ptrT); ptrT = 0; ptrLast = null; ptrSend({ k: 'sp', out: 1 }); }
+
+  // Everyone else: the helper's game, big over the table, or small in a corner, with their pointer.
+  const shareEl = document.createElement('div');
+  shareEl.id = 'shareView'; shareEl.hidden = true;
+  shareEl.innerHTML = `<div class="shhead"><span class="shtitle"></span><button type="button" class="btn" data-sh="size"></button></div>
+    <div class="shstage"><div class="shnote">Connecting…</div><div class="shwrap" hidden><iframe sandbox="allow-same-origin" title="Shared game" tabindex="-1"></iframe>
+    <svg class="shptr" hidden viewBox="0 0 32 32" aria-hidden="true"><path d="M4 2 L4 26 L10.5 20 L15 30 L19.5 28 L15 18.5 L24 18.5 Z"/></svg></div></div>`;
+  document.body.appendChild(shareEl);
+  const sFrame = shareEl.querySelector('iframe'), sWrap = shareEl.querySelector('.shwrap'), sStage = shareEl.querySelector('.shstage'), sPtr = shareEl.querySelector('.shptr');
+  let shareBig = true, shareFrom = null, sReady = false, sLast = null, sParts = null, sPos = null, sAskT = 0;
+  shareEl.addEventListener('click', e => {
+    if (e.target.closest('[data-sh=size]') || (!shareBig && e.target.closest('.shstage'))) { shareBig = !shareBig; renderShare(); }
+  });
+  sFrame.addEventListener('load', () => { sReady = true; if (sLast) paintShare(sLast); });
+  // The helper's own reminder that they are sharing, with a Stop button.
+  const mineEl = document.createElement('div');
+  mineEl.id = 'shareMine'; mineEl.hidden = true;
+  mineEl.innerHTML = `<span>${ic('users')}Everyone can see your game (your tiles stay hidden)</span><button type="button" class="btn">Stop</button>`;
+  mineEl.querySelector('button').addEventListener('click', () => stopShare());
+  document.body.appendChild(mineEl);
+
+  function renderShare() {
+    const S = A.S;
+    mineEl.hidden = !sharingAll;
+    if (sharingAll) {
+      // Ours didn't get marked as shared (the referee was busy, or we reconnected): ask again, a few times.
+      const meP = S && S.players.find(p => p.pid === pid);
+      if (cred && meP && meP.on && !meP.share && Date.now() - shareAsk > 3000 && shareTries < 4) askShare();
+      // Someone new at the table gets the whole picture straight away.
+      const k = audience().join('|');
+      if (k !== audKey) { audKey = k; sendFrame(true); }
+    }
+    const who = S && S.players.find(p => p.share && p.on && p.pid !== pid);
+    if (!who) {
+      if (shareFrom) { shareFrom = null; sLast = null; sParts = null; clearInterval(sAskT); sAskT = 0; }
+      shareEl.hidden = true;
+      return;
+    }
+    if (shareFrom !== who.pid) {
+      shareFrom = who.pid; shareBig = true; sLast = null; sParts = null; sReady = false; sPos = null;
+      const links = [...document.querySelectorAll('link[rel=stylesheet]')].map(l => l.outerHTML).join('');
+      sFrame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><base href="${esc(location.href)}">${links}<style>html,body{overflow:hidden}</style></head><body></body></html>`;
+      sWrap.hidden = true; sPtr.setAttribute('hidden', '');
+      shareEl.querySelector('.shnote').hidden = false;
+      // ask for a picture until one arrives (we may have joined, or reloaded, after it started)
+      const ask = () => { if (shareFrom && !sLast) relay(shareFrom, { k: 'shareme' }); else { clearInterval(sAskT); sAskT = 0; } };
+      clearInterval(sAskT); ask(); sAskT = setInterval(ask, 4000);
+    }
+    shareEl.hidden = false;
+    shareEl.classList.toggle('small', !shareBig);
+    shareEl.querySelector('.shtitle').textContent = `${who.name} is sharing their game`;
+    shareEl.querySelector('[data-sh=size]').innerHTML = shareBig ? `${ic('close')}<span>Make small</span>` : `<span>Make big</span>`;
+    shareFit();
+  }
+
+  let sK = 1;
+  function shareFit() {
+    if (!sLast || shareEl.hidden) return;
+    const pad = shareBig ? 16 : 0;
+    const k = sK = Math.min(1, (sStage.clientWidth - pad) / sLast.w, (sStage.clientHeight - pad) / sLast.h);
+    sWrap.style.width = sLast.w * k + 'px'; sWrap.style.height = sLast.h * k + 'px';
+    sFrame.style.width = sLast.w + 'px'; sFrame.style.height = sLast.h + 'px';
+    sFrame.style.transform = `scale(${k})`;
+    placePtr();
+  }
+  window.addEventListener('resize', shareFit);
+  function placePtr() {
+    if (!sPos || !sLast || sPos.out) { sPtr.setAttribute('hidden', ''); return; }
+    sPtr.removeAttribute('hidden');
+    sPtr.style.left = (sPos.x * sLast.w * sK).toFixed(1) + 'px';
+    sPtr.style.top = (sPos.y * sLast.h * sK).toFixed(1) + 'px';
+  }
+  function paintShare(f) {
+    sLast = f;
+    if (!sReady) return;
+    const doc = sFrame.contentDocument;
+    if (!doc) return;
+    doc.documentElement.className = f.hc || '';
+    doc.documentElement.setAttribute('style', f.hs || '');
+    doc.body.className = f.bc || '';
+    doc.body.innerHTML = f.html;
+    shareEl.querySelector('.shnote').hidden = true; sWrap.hidden = false;
+    sStage.style.setProperty('--ar', `${f.w} / ${f.h}`);   // used when small: the stage takes the shape of their screen
+    shareFit();
+    for (const el of doc.querySelectorAll('[data-sx]')) { el.scrollLeft = +el.dataset.sx; el.scrollTop = +el.dataset.sy; }
+  }
+  function onSharePtr(m) {
+    sPos = m.out ? { out: true } : { x: Math.min(1, Math.max(0, +m.x || 0)), y: Math.min(1, Math.max(0, +m.y || 0)) };
+    placePtr();
+    if (m.down) { sPtr.classList.remove('down'); void sPtr.getBoundingClientRect(); sPtr.classList.add('down'); }
+  }
 
   // The viewer: their page, drawn in a frame the size of their screen and shrunk to fit mine.
   const viewer = document.createElement('div');
@@ -245,7 +380,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
   });
 
   let obs = null, frameT = 0, lastSent = 0, lastHtml = '', frameId = 0, dropT = 0;
-  const soon = () => { if (!frameT && watchers.size) frameT = setTimeout(sendFrame, Math.max(0, FRAME_MS - (Date.now() - lastSent))); };
+  const soon = () => { if (!frameT && (watchers.size || sharingAll)) frameT = setTimeout(sendFrame, Math.max(0, FRAME_MS - (Date.now() - lastSent))); };
 
   function sync() {
     const names = [...watchers.keys()].map(nameOf);
@@ -257,7 +392,8 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
       : driving.length ? `<span>${ic('users')}<b>${esc(driving.join(', '))}</b> is controlling your screen to help. They can't see or touch your cards or tiles.</span><button type="button" class="btn">Stop</button>`
       : `<span>${ic('users')}<b>${esc(names.join(', '))}</b> can see your screen to help. They can't see or touch your cards or tiles.</span><button type="button" class="btn">Stop</button>`;
     if (banner.innerHTML !== html) banner.innerHTML = html;
-    if (names.length && !obs) {
+    const any = names.length || sharingAll;
+    if (any && !obs) {
       obs = new MutationObserver(soon);
       obs.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
       document.addEventListener('scroll', soon, true);
@@ -268,7 +404,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
         for (const [id, w] of watchers) if (n - w.at > DROP_MS) { watchers.delete(id); gone = true; }
         if (gone) sync();
       }, 5000);
-    } else if (!names.length && obs) {
+    } else if (!any && obs) {
       obs.disconnect(); obs = null;
       document.removeEventListener('scroll', soon, true);
       window.removeEventListener('resize', soon);
@@ -295,7 +431,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
         c.replaceWith(ph);
       }
     }
-    body.querySelectorAll('script, iframe, #viewer, #helpBox').forEach(n => n.remove());
+    body.querySelectorAll('script, iframe, #viewer, #helpBox, #shareView, #shareMine').forEach(n => n.remove());
     // The tiles in the hand (and any being carried) are blanked.
     body.querySelectorAll('#rack .tile, .ghost .tile').forEach(t => {
       t.className = 'tile hid'; t.innerHTML = '';
@@ -310,12 +446,14 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     body.querySelectorAll('#hand .pc').forEach(t => { t.className = 'pc back'; t.innerHTML = ''; t.removeAttribute('aria-label'); });
     body.querySelectorAll('#hand .dm').forEach(t => { t.className = 'dm v hid'; t.innerHTML = '<span class="dh"></span><span class="dh"></span>'; t.removeAttribute('aria-label'); });
     body.querySelectorAll('#hand [data-id]').forEach(t => t.removeAttribute('data-id'));
+    // the face-down tiles in the draw for who goes first stay face down
+    body.querySelectorAll('.pkw:not(.up):not(.anim) .pk-front').forEach(t => { t.innerHTML = ''; });
     return body.innerHTML;
   }
 
   function sendFrame(force) {
     clearTimeout(frameT); frameT = 0;
-    if (!watchers.size) return;
+    if (!watchers.size && !sharingAll) return;
     lastSent = Date.now();
     let html;
     try { html = capture(); } catch (e) { return; }
@@ -331,6 +469,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     });
     const n = Math.ceil(text.length / CHUNK), id = ++frameId;
     for (const to of watchers.keys()) for (let i = 0; i < n; i++) relay(to, { k: 'f', id, i, n, d: text.slice(i * CHUNK, (i + 1) * CHUNK) });
+    if (sharingAll) for (const to of audience()) for (let i = 0; i < n; i++) relay(to, { k: 'sf', id, i, n, d: text.slice(i * CHUNK, (i + 1) * CHUNK) });
   }
 
   // Find the element the helper means on this page, and check it is one they may use.
@@ -405,6 +544,16 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
       if (m.k === 'ctlask') { const w = watchers.get(from); if (w && !w.ctl) { w.ask = true; sync(); } return; }
       if (m.k === 'ctlend') { const w = watchers.get(from); if (w) { w.ctl = false; w.ask = false; sync(); } return; }
       if (m.k === 'do') return onDo(from, m);
+      // the helper's game, shared with everyone
+      if (m.k === 'shareme') { if (sharingAll && Date.now() - lastSent > 1000) sendFrame(true); return; }
+      if (from === shareFrom && m.k === 'sp') return onSharePtr(m);
+      if (from === shareFrom && m.k === 'sf') {
+        let p = sParts;
+        if (!p || p.id !== m.id) p = sParts = { id: m.id, n: m.n, got: 0, d: [] };
+        if (p.d[m.i] == null) { p.d[m.i] = String(m.d); p.got++; }
+        if (p.got === p.n) { sParts = null; try { paintShare(JSON.parse(p.d.join(''))); } catch (e) { /* a broken picture is skipped */ } }
+        return;
+      }
       if (!viewing || from !== viewing.pid) return;
       if (m.k === 'ctlok') { setCtl('on'); toast(`${viewing.name} let you control their screen. Their cards and tiles stay theirs.`); return; }
       if (m.k === 'ctlno') { setCtl('off'); toast(`${viewing.name} said no to control.`); return; }
@@ -421,6 +570,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     // The players changed: tidy the list, and forget anyone who has gone.
     state() {
       renderBox();
+      renderShare();
       let gone = false;
       for (const id of watchers.keys()) { const p = A.S && A.S.players.find(q => q.pid === id); if (!p || !p.on) { watchers.delete(id); gone = true; } }
       if (gone) sync();
@@ -430,7 +580,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
         else if (last) note('');
       }
     },
-    leave() { closeViewer(true); watchers.clear(); sync(); },
+    leave() { closeViewer(true); watchers.clear(); sync(); stopShare(); renderShare(); },
     render: renderBox,
   };
 }

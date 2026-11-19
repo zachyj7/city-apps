@@ -1,7 +1,7 @@
 // The referee. It runs in one player's browser (the host) and holds the true game.
 // Every change is sent to everyone as one full snapshot, so if the host leaves, whoever takes over
 // carries on from their last snapshot.
-import { makePool, checkTurn, isMJ, DEAL, groupsOf, tidyPos, layoutPos, packPos } from './rules.js';
+import { makePool, checkTurn, isMJ, DEAL, groupsOf, tidyPos, layoutPos, packPos, pickValue } from './rules.js';
 import { aiTurn } from './ai.js';
 import { check } from './help.js';
 import { GAMES, cfgFor, COLORS, STAT_PROFILES, RPS_ID, okColor, cleanRec } from './games.js';
@@ -38,7 +38,7 @@ export class Room {
     this.ping = setInterval(() => this.each(c => c.send({ t: 'ping' })), 3000);
   }
 
-  close() { clearInterval(this.ping); clearTimeout(this.cpuT); this.cpuT = null; clearTimeout(this.gT); this.gT = null; this.closed = true; }
+  close() { clearInterval(this.ping); clearTimeout(this.cpuT); this.cpuT = null; clearTimeout(this.gT); this.gT = null; clearTimeout(this.pickT); this.pickT = null; this.closed = true; }
   each(f) { for (const c of this.conns) f(c); }
   player(pid) { return this.s.players.find(p => p.pid === pid); }
   seated() { return this.s.players.filter(p => p.seat); }
@@ -88,6 +88,7 @@ export class Room {
     const s = this.s;
     const mod = MODS[s.game];
     if (mod) return this.scheduleMod(mod);
+    if (s.pick && s.phase === 'play') return this.schedulePick();
     if (this.closed || this.cpuT || s.phase !== 'play') return;
     const p = this.player(s.turn);
     if (!p || !p.cpu) return;
@@ -152,7 +153,7 @@ export class Room {
       this.conns.delete(c);
       const p = c.pid && this.player(c.pid);
       if (p && ![...this.conns].some(o => o.pid === p.pid)) {
-        p.on = false;
+        p.on = false; p.share = false;
         this.rpsGone(p.pid);
         if (this.s.phase === 'lobby') this.s.players = this.s.players.filter(q => q !== p);
         this.push();
@@ -172,7 +173,7 @@ export class Room {
         if (s.phase === 'lobby') this.note(`${clean(m.name)} sat down`);
         else this.note(`${clean(m.name)} is watching`);
       }
-      p.name = clean(m.name); p.prof = STAT_PROFILES.includes(m.prof) ? m.prof : null; p.rc = this.freeColor(cleanColor(m.rc), p.pid); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true;
+      p.name = clean(m.name); p.prof = STAT_PROFILES.includes(m.prof) ? m.prof : null; p.rc = this.freeColor(cleanColor(m.rc), p.pid); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true; p.share = false;
       return this.push();
     }
     const p = c.pid && this.player(c.pid);
@@ -295,6 +296,22 @@ export class Room {
       return;
     }
 
+    // The helper shares their screen with everyone (or stops). The sign-in is checked here before anyone is
+    // shown it, and only one person shares at a time.
+    if (m.t === 'share') {
+      if (!m.on) { if (!p.share) return; p.share = false; this.note(`${p.name} stopped sharing their screen`); return this.push(); }
+      if (p.share || this.checking || Date.now() - (this.lastCheck || 0) < 1500) return;
+      this.checking = true;
+      check(m.u, m.p).then(role => {
+        this.checking = false; this.lastCheck = Date.now();
+        if (role !== 'helper' || this.closed || this.s !== s || !p.on) return;
+        for (const q of s.players) q.share = q === p;
+        this.note(`${p.name} is sharing their screen`);
+        this.push();
+      });
+      return;
+    }
+
     // The shape of their rack (which slots hold a tile), shown on their little rack for everyone.
     if (m.t === 'layout') {
       if (!Array.isArray(m.rows) || !m.rows.length || m.rows.length > 8 || !m.rows.every(x => typeof x === 'string' && /^[01]{1,30}$/.test(x))) return;
@@ -329,7 +346,7 @@ export class Room {
       if (mod) {
         for (const q of s.players) { q.seat = seats.includes(q); q.rack = []; q.hand = []; q.cheat = false; }
         s.round++; s.turnNo++; s.result = null; s.log = []; s.bjEnd = null; s.ann = null; s.drew = null;
-        s.table = []; s.pos = {}; s.work = null; s.played = null;
+        s.table = []; s.pos = {}; s.work = null; s.played = null; s.pick = null;
         s.startedAt = Date.now();
         s.phase = 'play';
         mod.start(this, seats, cfg);
@@ -339,20 +356,20 @@ export class Room {
       s.pool = makePool(s.sets);
       for (const q of s.players) { q.seat = seats.includes(q); q.rack = []; q.opened = false; q.st = { turns: 0, played: 0, drew: 0, best: 0 }; q.cheat = false; q.cheats = 0; }
       s.startedAt = Date.now();
-      for (const q of seats) q.rack = s.pool.splice(0, DEAL);
       s.table = []; s.pos = {}; s.work = null; s.played = null; s.passes = 0; s.result = null; s.round++;
       s.phase = 'play';
       s.log = [];
-      // Take turns starting with a different player each game.
-      s.turn = seats[(s.round - 1) % seats.length].pid; s.turnNo++;
-      this.note(`New game! ${s.sets === 2 ? 'Two sets' : 'One set'} of tiles. ${this.player(s.turn).name} goes first.`);
+      // Nobody's turn yet: first everyone draws a face-down tile from the table, and the highest goes first.
+      s.turn = null; s.turnNo++;
+      this.startPick(seats);
+      this.note(`New game! ${s.sets === 2 ? 'Two sets' : 'One set'} of tiles. Everyone pick a tile: highest goes first.`);
       return this.push();
     }
 
     if (m.t === 'newgame') {
       if (s.phase !== 'over') return;
       s.phase = 'lobby'; s.table = []; s.pos = {}; s.work = null; s.result = null; s.bj = null; s.uno = null; s.bjEnd = null;
-      s.chess = null; s.ck = null; s.mc = null; s.id = null; s.hr = null; s.dm = null;
+      s.chess = null; s.ck = null; s.mc = null; s.id = null; s.hr = null; s.dm = null; s.pick = null;
       s.players = s.players.filter(q => q.on);
       for (const q of s.players) { q.seat = false; q.rack = []; q.hand = []; }
       return this.push();
@@ -375,6 +392,9 @@ export class Room {
       return;
     }
     if (s.game !== 'tiles') return;
+
+    // Drawing for who goes first: they turned over one of the face-down tiles.
+    if (m.t === 'flip') return this.flipTile(p, Number(m.id));
 
     if (s.turn !== p.pid) return;
 
@@ -519,6 +539,89 @@ export class Room {
     this.next();
   }
 
+  /* ---- drawing for who goes first ----
+     s.pick: ids (the face-down tiles on the table) and at (where each lies: x, y as 0..1 of the table, and a
+     tilt), flips { id: { pid, r } } (who turned it over, in which round), r (each round's picks, { pid: id }),
+     who (who picks this round: everyone, then only those tied for highest), first (the first tile each person
+     turned over: it becomes the first tile on their rack), stage 'pick' | 'tie' | 'won'. */
+  startPick(seats) {
+    const s = this.s, n = Math.max(16, seats.length * 3);
+    const ids = s.pool.splice(0, n);
+    s.pick = { ids, at: spreadOut(ids.length), flips: {}, r: [{}], who: seats.map(q => q.pid), first: {}, stage: 'pick', win: null, tie: null };
+  }
+
+  flipTile(p, id) {
+    const s = this.s, k = s.pick;
+    if (!k || k.stage !== 'pick' || !k.who.includes(p.pid)) return;
+    const cur = k.r[k.r.length - 1];
+    if (cur[p.pid] != null || !k.ids.includes(id) || k.flips[id]) return;
+    cur[p.pid] = id;
+    k.flips[id] = { pid: p.pid, r: k.r.length };
+    if (k.first[p.pid] == null) k.first[p.pid] = id;
+    if (k.who.every(x => cur[x] != null)) {
+      const val = x => pickValue(cur[x]);
+      const top = Math.max(...k.who.map(val));
+      const best = k.who.filter(x => val(x) === top);
+      if (best.length === 1) {
+        k.stage = 'won'; k.win = best[0];
+        this.note(`${this.player(best[0]).name} drew the highest tile and goes first`);
+      } else {
+        k.stage = 'tie'; k.tie = best;
+        this.note(`A tie! ${best.map(x => this.player(x).name).join(' and ')} pick again`);
+      }
+    }
+    this.push();
+  }
+
+  // Computers pick after a moment; someone who has lost their connection gets a tile picked for them.
+  // Once everyone has picked, the result stays up for a few seconds before the next round or the deal.
+  schedulePick() {
+    const s = this.s, k = s.pick;
+    if (this.closed || this.pickT) return;
+    if (k.stage !== 'pick') {
+      this.pickT = setTimeout(() => { this.pickT = null; if (!this.closed && this.s === s && s.pick === k) this.pickNext(); }, 3500);
+      return;
+    }
+    const cur = k.r[k.r.length - 1];
+    const q = k.who.map(x => this.player(x)).find(x => x && cur[x.pid] == null && (x.cpu || !x.on));
+    if (!q) return;
+    this.pickT = setTimeout(() => {
+      this.pickT = null;
+      if (this.closed || this.s !== s || s.pick !== k || k.stage !== 'pick') return;
+      if (!q.cpu && q.on) return this.schedule();   // they came back: they can pick for themselves
+      const free = k.ids.filter(id => !k.flips[id]);
+      this.flipTile(q, free[Math.floor(Math.random() * free.length)]);
+    }, q.cpu ? 900 + Math.random() * 1600 : 10000);
+  }
+
+  pickNext() {
+    const s = this.s, k = s.pick;
+    if (k.stage === 'tie') {
+      k.who = k.tie; k.tie = null; k.r.push({}); k.stage = 'pick';
+      // more face-down tiles if there aren't enough left for everyone picking again
+      let free = k.ids.filter(id => !k.flips[id]).length;
+      while (free < k.who.length + 2 && s.pool.length) {
+        k.ids.push(s.pool.pop());
+        k.at.push([0.05 + Math.random() * 0.9, 0.05 + Math.random() * 0.9, Math.round(Math.random() * 50 - 25)]);
+        free++;
+      }
+      return this.push();
+    }
+    if (k.stage !== 'won') return;
+    // Each person keeps the first tile they turned over; every other tile goes back and is mixed in.
+    const keep = new Set(Object.values(k.first));
+    s.pool.push(...k.ids.filter(id => !keep.has(id)));
+    shuffle(s.pool);
+    for (const q of this.seated()) {
+      const f = k.first[q.pid];
+      q.rack = f != null ? [f, ...s.pool.splice(0, DEAL - 1)] : s.pool.splice(0, DEAL);
+    }
+    s.turn = this.player(k.win) && this.player(k.win).seat ? k.win : this.seated()[0].pid;
+    s.turnNo++;
+    s.pick = null;
+    this.push();
+  }
+
   next() {
     const s = this.s, seats = this.seated();
     const i = seats.findIndex(q => q.pid === s.turn);
@@ -532,7 +635,7 @@ export class Room {
     // No points: the first player to play all their tiles (or cards) wins, and only wins are counted.
     if (winner) { winner.w = winner.w || {}; winner.w[s.game] = (winner.w[s.game] || 0) + 1; }
     s.result = winner ? { pid: winner.pid, name: winner.name } : { pid: null, name: '' };
-    s.phase = 'over'; s.turn = null; s.work = null;
+    s.phase = 'over'; s.turn = null; s.work = null; s.pick = null;
     this.note(winner ? `${winner.name} wins!` : 'No winner this time');
     if (!this.endedEarly) {
       const seats = this.seated();
@@ -551,6 +654,23 @@ export class Room {
     this.ledger.set(rec.id, rec);
     this.each(k => k.send({ t: 'ledger', recs: [rec] }));
   }
+}
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); [a[i], a[k]] = [a[k], a[i]]; }
+  return a;
+}
+
+// n tiles scattered over the table: each in its own cell of a loose grid (so they don't pile up), nudged
+// about inside it and turned a little. [x, y, tilt]: x and y run 0..1 across the table.
+function spreadOut(n) {
+  const cols = Math.ceil(Math.sqrt(n * 2.2)), rows = Math.ceil(n / cols);
+  const cells = shuffle(Array.from({ length: cols * rows }, (_, i) => i)).slice(0, n);
+  return cells.map(i => {
+    const c = i % cols, r = Math.floor(i / cols);
+    const x = (c + 0.5 + (Math.random() - 0.5) * 0.5) / cols, y = (r + 0.5 + (Math.random() - 0.5) * 0.4) / rows;
+    return [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000, Math.round(Math.random() * 50 - 25)];
+  });
 }
 
 function cleanColor(c) { c = typeof c === 'string' ? c.toLowerCase() : c; return okColor(c) ? c : 'yellow'; }
@@ -578,6 +698,7 @@ function fixState(s) {
   if (s.game && !GAMES[s.game]) s.game = null;
   if (!s.pos || typeof s.pos !== 'object' || Array.isArray(s.pos)) s.pos = layoutPos({}, s.table || []);
   if (s.work && !s.work.pos) s.work = null;
+  if (s.pick && (s.phase !== 'play' || s.game !== 'tiles')) s.pick = null;
   if (Array.isArray(s.result)) { const w = s.result.find(x => x.win); s.result = w ? { pid: w.pid, name: w.name } : { pid: null, name: '' }; }
   delete s.cells;
   for (const p of s.players) {

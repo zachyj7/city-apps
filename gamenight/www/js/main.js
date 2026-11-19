@@ -4,7 +4,7 @@ import { Net } from './net.js';
 import { Video } from './video.js';
 import { initHelp } from './help.js';
 import { initStats } from './stats.js';
-import { tile, analyze, openingPoints, checkTurn, groupsOf, tidyPos, autoSplit, COLOR_NAMES, OPEN_POINTS, BOARD_W } from './rules.js';
+import { tile, analyze, openingPoints, checkTurn, groupsOf, tidyPos, autoSplit, COLOR_NAMES, OPEN_POINTS, BOARD_W, BIG_TILE } from './rules.js';
 import { GAMES, GAME_IDS, COLORS, cfgFor, winsOf, BOARD_GAMES, PROFILES, GUEST, STAT_PROFILES, isHex } from './games.js';
 import { allRecs, mergeRecs, lifeWins, lifeTable } from './lifetime.js';
 import { watchLobbies, lobbyNotice } from './lobbies.js';
@@ -501,7 +501,7 @@ function tileHTML(id, extra = '', style = '', inner = '') {
     const age = Date.now() - A.fresh.get(id);
     if (age < FRESH_MS) { fresh = 'fresh'; style += `;animation-delay:-${age}ms`; } else A.fresh.delete(id);
   }
-  const cls = ['tile', t.j ? 'joker' : 'c' + t.c, A.sel.has(id) ? 'sel' : '', fresh, extra].join(' ');
+  const cls = ['tile', t.j ? 'joker' : 'c' + t.c, id === BIG_TILE ? 'big' : '', A.sel.has(id) ? 'sel' : '', fresh, extra].join(' ');
   const label = t.j ? 'Joker' : `${COLOR_NAMES[t.c]} ${t.n}`;
   const face = t.j ? `<span class="${jokerFace(id)}" aria-hidden="true"></span><span class="sym">JOKER</span>`
     : `<span class="num">${numHTML(t.n)}</span>${A.shapes ? SHAPES[t.c] : ''}`;
@@ -729,15 +729,18 @@ function renderSeats() {
   const els = others.map(p => fill(p, false));
   const m = me();
   const mine = m ? [fill(m, true)] : [];
+  // You are always in the bottom left corner, and everyone else goes round clockwise from you in the order
+  // of play: up the left side, then down the right side.
+  const all = [...mine, ...els];
   if (wide) {
-    // You sit at the end of the shorter side, so the rack below gets the full width.
-    const all = [...els, ...mine], half = Math.ceil(all.length / 2);
-    syncChildren(left, all.slice(0, half));
+    const half = Math.ceil(all.length / 2);
+    syncChildren(left, all.slice(0, half).reverse());
     syncChildren(right, all.slice(half));
     syncChildren($('#mySeat'), []);
   } else {
+    // narrow screens have one strip of faces across the top: you first, then the order of play
     syncChildren($('#mySeat'), []);
-    syncChildren(left, [...els, ...mine]);
+    syncChildren(left, all);
     syncChildren(right, []);
   }
   left.dataset.n = left.children.length;
@@ -783,8 +786,69 @@ function renderCenter() {
   if (S.game === 'idiot') return renderIdiot(box, viewCtx());
   if (S.game === 'hearts') return renderHearts(box, viewCtx());
   if (S.game === 'dominoes') return renderDominoes(box, viewCtx());
+  if (S.pick) return renderPick(box);
   renderBoard(box);
 }
+
+/* Drawing for who goes first: face-down tiles scattered over the table. Each person taps one and it turns
+   over for everyone, with their name under it. Highest goes first (a joker beats a 13); a tie picks again. */
+const FLIP_MS = 1100;
+const pickedAt = new Map();   // when each tile was first seen turned over here, so its flip plays once
+function renderPick(box) {
+  const S = A.S, k = S.pick, round = k.r.length, cur = k.r[round - 1];
+  const name = x => { const p = S.players.find(q => q.pid === x); return p ? p.name : '?'; };
+  const canPick = k.stage === 'pick' && k.who.includes(pid) && cur[pid] == null;
+  const mainEl = box.parentElement, cs = getComputedStyle(mainEl);
+  const W = box.clientWidth, H = Math.max(240, mainEl.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 4);
+  const u = measureBoard(box, 0);
+  const n = k.ids.length, cols = Math.ceil(Math.sqrt(n * 2.2)), rows = Math.ceil(n / cols);
+  const top = 64, cellW = W / cols, cellH = (H - top - 10) / rows;
+  const tw = Math.max(26, Math.floor(Math.min(u.bw * 1.15, cellW * 0.62, (cellH - 34) / 1.34))), th = Math.round(tw * 1.34);
+  const now = Date.now();
+  for (const id of [...pickedAt.keys()]) if (!k.flips[id]) pickedAt.delete(id);
+  let html = '';
+  k.ids.forEach((id, i) => {
+    const [x, y, rot] = k.at[i] || [0.5, 0.5, 0];
+    const f = k.flips[id];
+    const left = Math.round(Math.min(Math.max(x * W - tw / 2, 4), W - tw - 4));
+    const tp = Math.round(top + Math.min(Math.max(y * (H - top - 10) - th / 2, 0), H - top - 10 - th - 26));
+    let cls = 'pkw', label = '', style = `left:${left}px;top:${tp}px;--rot:${rot}deg`;
+    if (f) {
+      if (!pickedAt.has(id)) pickedAt.set(id, now);
+      const age = now - pickedAt.get(id);
+      cls += age < FLIP_MS ? ' anim' : ' up';
+      if (age < FLIP_MS) style += `;--age:-${age}ms`;
+      const p = S.players.find(q => q.pid === f.pid);
+      const live = f.r === round;   // turned over this round (earlier rounds' tiles are dimmed)
+      if (!live) cls += ' old';
+      else if (k.stage === 'won' && k.win === f.pid) cls += ' win';
+      else if (k.stage === 'tie' && k.tie.includes(f.pid)) cls += ' tie';
+      else if (k.stage !== 'pick') cls += ' lose';
+      label = `<span class="byname pkname" style="${p ? rackStyle(p.rc) : ''}">${esc(name(f.pid))}</span>`;
+    } else if (canPick) cls += ' can';
+    const front = tileHTML(id).replace(' data-id=', ' data-pk=').replace(' role="button"', '');
+    html += `<div class="${cls}" style="${style}"><button class="pk" ${f ? 'disabled' : `data-flip="${id}"`} aria-label="${f ? 'Turned over by ' + esc(name(f.pid)) : 'Face-down tile'}" tabindex="${canPick && !f ? 0 : -1}"><div class="pk-in"><div class="pk-back"></div><div class="pk-front">${front}</div></div></button>${label}</div>`;
+  });
+  // what is happening, across the top of the table
+  const waiting = k.who.filter(x => cur[x] == null);
+  let msg;
+  if (k.stage === 'won') msg = `<b>${esc(name(k.win))}</b> goes first!`;
+  else if (k.stage === 'tie') msg = `A tie! <b>${k.tie.map(x => esc(name(x))).join(' and ')}</b> pick again`;
+  else if (canPick) msg = round > 1 ? 'A tie! Pick another tile' : 'Pick a tile! Highest goes first';
+  else msg = `Waiting for ${waiting.map(x => `<b>${esc(name(x))}</b>`).join(', ')}…`;
+  box.innerHTML = `<div id="pickBoard" class="pickboard ${canPick ? 'mine' : ''}" style="--tw:${tw}px;--th:${th}px;width:${Math.floor(W)}px;height:${Math.floor(H)}px">
+    <div class="pkmsg ${k.stage}">${msg}</div>${html}</div>`;
+  // redraw once the newest flip has finished, so it settles face up
+  const last = Math.max(0, ...[...pickedAt.values()].map(t => t + FLIP_MS - now));
+  clearTimeout(renderPick.t);
+  if (last > 0) renderPick.t = setTimeout(() => { if (A.S && A.S.pick) renderCenter(); }, last + 30);
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('#pickBoard .pkw.can [data-flip]');
+  if (!b || !A.S || !A.S.pick) return;
+  b.closest('.pkw').classList.remove('can');
+  send({ t: 'flip', id: +b.dataset.flip });
+});
 const viewCtx = () => ({ A, pid, esc, ic, rackStyle, rackOf });
 
 // A little picture of each game, for the game chooser.
@@ -1298,7 +1362,22 @@ function sortRack(by) {
   const blank = () => Array(cols).fill(null);
   let g = null;
   if (by === 'col') {
-    // Keep each color together on one row, with a gap between colors, when they fit in 3 rows.
+    // Two colors on the top row and two on the second, with a gap between them, and the jokers on the third
+    // row (or beside a color, if every row is taken), as long as each row fits.
+    const colored = groups.filter(a => tile(a[0]).c < 4), jokers = groups.find(a => tile(a[0]).c === 4);
+    const rows = [];
+    for (let i = 0; i < colored.length; i += 2) rows.push(colored.slice(i, i + 2));
+    const width = r => r.reduce((s, a) => s + a.length, 0) + r.length - 1;
+    if (jokers) {
+      if (rows.length < ROWS) rows.push([jokers]);
+      else { const r = rows.find(x => width(x) + 1 + jokers.length <= cols); if (r) r.push(jokers); else rows.length = 0; }
+    }
+    if (rows.length && rows.every(r => width(r) <= cols)) {
+      g = rows.map(r => { const row = blank(); let c = 0; r.forEach((a, i) => { if (i) c++; for (const id of a) row[c++] = id; }); return row; });
+    }
+  }
+  if (by === 'col' && !g) {
+    // Otherwise each color together on one row, with a gap between colors, when they fit in 3 rows.
     g = [blank()];
     let col = 0;
     for (const grp of groups) {
@@ -1728,13 +1807,16 @@ const SPACE = -1;   // stands in for the Space tile while working out where it w
 const spaceMark = id => { for (const t of document.querySelectorAll('.tile.spacemark')) t.classList.remove('spacemark'); if (id != null) { const t = document.querySelector(`#board .tile[data-id="${id}"]`); if (t) t.classList.add('spacemark'); } };
 // On the table: the set the Space tile is put into, and the tile in that set it would push along (the space
 // opens before it). Dropped before a set's first tile, after its last, or on empty felt, it does nothing.
-function spaceOnTable(gx, gy) {
+// (cx, cy) is the middle of the Space tile being carried: the dividing line nearest to it is the one used.
+function spaceOnTable(cx, cy) {
   if (!A.W || !$('#board')) return null;
-  const [x, y] = boardPoint(gx, gy), pos = A.W.pos;
+  const [x, y] = boardPoint(cx, cy), pos = A.W.pos, u = A.bu;
+  const midY = u.bh / 2 / u.uy, gap = (u.ux - u.bw) / 2 / u.ux;   // a tile's middle, and half the gap between tiles
   for (const g of groupsOf(pos)) {
     const sx = pos[g[0]][0], sy = pos[g[0]][1];
-    if (Math.abs(sy - y) > 0.5) continue;
-    const k = Math.round(x - sx);
+    if (Math.abs(sy + midY - y) > 0.5) continue;
+    // the line before tile k sits in the gap at sx + k: pick the one nearest the middle
+    const k = Math.round(x - sx + gap);
     if (k > 0 && k < g.length) return g[k];
   }
   return null;
@@ -1776,7 +1858,7 @@ document.addEventListener('pointermove', e => {
   d.gx = e.clientX - d.fx * tw; d.gy = e.clientY - d.fy * th;
   d.el.style.transform = `translate(${d.gx}px, ${d.gy}px)`;
   // the table: mark the tile it would push along
-  const id = overTable ? spaceOnTable(d.gx, d.gy) : null;
+  const id = overTable ? spaceOnTable(d.gx + tw / 2, d.gy + th / 2) : null;
   if (id !== d.mark) { d.mark = id; spaceMark(id); }
   // the rack: the slot it covers most (with a little stickiness), and a preview with the space opened there
   let at = overRack ? slotAt(d.gx + tw / 2, d.gy + th / 2) : null;
@@ -1967,6 +2049,11 @@ $('#camBtn').addEventListener('click', toggleCam);
 $('#micBtn').addEventListener('click', toggleMic);
 $('#bigger').addEventListener('click', () => { A.zoom += 0.1; applyZoom(); });
 $('#smaller').addEventListener('click', () => { A.zoom -= 0.1; applyZoom(); });
+// Dark mode: the felt turns dark grey, nearly black, in every game. Kept on this device.
+const setDark = on => document.documentElement.classList.toggle('dark', on);
+setDark(!!store.get('dark', false));
+$('#darkOn').checked = !!store.get('dark', false);
+$('#darkOn').addEventListener('change', e => { store.set('dark', e.target.checked); setDark(e.target.checked); });
 $('#shapesOn').checked = A.shapes;
 $('#shapesOn').addEventListener('change', e => { A.shapes = e.target.checked; store.set('shapes', A.shapes); renderCenter(); renderRack(); });
 $('#soundOn').checked = A.sound;
@@ -2357,7 +2444,6 @@ document.addEventListener('focusout', e => { if (A.lobbyStale && e.target.matche
 function renderLife() { $('#lifeBody').innerHTML = lifeTable(A.prof || store.get('prof', ''), esc); }
 function showLife(open) { $('#lifeBox').hidden = !open; if (open) { renderLife(); showSettings(false); } }
 $('#lifeBtn').addEventListener('click', () => showLife(true));
-$('#lifeJoinBtn').addEventListener('click', () => showLife(true));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#lifeBox').hidden) showLife(false); });
 
 /* ---------------- this lobby on the start screen ----------------

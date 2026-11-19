@@ -218,7 +218,6 @@ body.rps-ok .seat:not(.me):not(.off):hover .face { box-shadow: 0 0 0 3px var(--g
 .olobby b { font-family: var(--display); font-size: 1.15em; color: var(--gold-hi); }
 .olobby span { flex: 1; min-width: 0; color: var(--muted); font-size: .9em; }
 .olobby .ic { flex: none; color: var(--gold); }
-.lifejoin { align-self: center; margin-top: 10px; }
 
 /* the custom color swatch: a color picker in swatch clothing */
 .swatches.row8 { grid-template-columns: repeat(9, minmax(0, 1fr)); }
