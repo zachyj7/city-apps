@@ -1707,8 +1707,28 @@ document.addEventListener('pointerdown', e => {
   if (!canPick(id)) return;
   // Remember where on the tile it was grabbed, so it is put down exactly where it is shown while dragging.
   const r = t.getBoundingClientRect();
-  press = { id, x: e.clientX, y: e.clientY, drag: false, fx: unit((e.clientX - r.left) / r.width), fy: unit((e.clientY - r.top) / r.height) };
+  press = { id, el: t, x: e.clientX, y: e.clientY, drag: false, fx: unit((e.clientX - r.left) / r.width), fy: unit((e.clientY - r.top) / r.height) };
 });
+
+/* The tile under a finger stays in the page (hidden) until the finger lifts. Redrawing the rack or table would
+   throw it away mid-touch, and iPad Safari then keeps painting it where it was: a copy of the tile stuck on the
+   rack until the whole rack is redrawn. */
+let held = null;
+function holdTouched(el) {
+  letGo();
+  if (!el || !el.isConnected) return;
+  let box = $('#touchHold');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'touchHold';
+    box.setAttribute('aria-hidden', 'true');
+    box.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none';
+    document.body.appendChild(box);
+  }
+  box.appendChild(el);
+  held = el;
+}
+function letGo() { if (held) { held.remove(); held = null; } }
 
 /* The shape of a group being moved: each tile keeps its row (rows top to bottom, in order) and the tiles in
    a row close up next to each other, left to right. off: id -> [column, row], from the group's top-left. */
@@ -1775,6 +1795,7 @@ function placeOnRack(g, ids, off, grab, pr, pc, left) {
 }
 
 function startDrag(id) {
+  if (press && press.el && press.el.closest('#rack, #board')) holdTouched(press.el);
   if (!A.sel.has(id)) { A.sel.clear(); A.sel.add(id); }
   const ids = selOrder([...A.sel]);
   ghost = document.createElement('div');
@@ -1950,6 +1971,7 @@ function drawHand() {
 function endDrag() {
   if (A.W) sendHand(true);
   ghost && ghost.remove(); ghost = null;
+  letGo();
   document.body.classList.remove('dragging', 'moving');
   const d = A.drag; A.drag = null;
   return d;
