@@ -17,6 +17,8 @@ export class Video {
     this.ac = null;             // sound processing (made inside a click so it is allowed to run)
     this.boost = 1;             // how much louder the microphone goes out (Same room: one mic for the whole room)
     this.fx = null;             // the louder microphone: { raw, src, gain, track }
+    this.want = [];             // who we should have a call with (see sync)
+    this.healT = 0;
   }
 
   // Must run inside a click so the silent audio is allowed to start.
@@ -83,6 +85,9 @@ export class Video {
     for (const c of this.calls.values()) try { c.close(); } catch (e) { /* ignore */ }
     this.calls.clear(); this.streams.clear();
     this.peer = peer;
+    // Calls drop now and then (a phone sleeps, Safari gives up on one): check every few seconds and dial again.
+    clearInterval(this.healT);
+    this.healT = setInterval(() => this.sync(this.want), 5000);
     peer.on('call', call => {
       const old = this.calls.get(call.peer);
       if (old) try { old.close(); } catch (e) { /* ignore */ }
@@ -110,12 +115,28 @@ export class Video {
 
   // Keep a call open to every other player at the table. The lower id dials so each pair has one call.
   sync(ids) {
+    this.want = ids;
     if (!this.peer || !this.peer.id || this.peer.destroyed) return;
     const want = new Set(ids);
     for (const [id, c] of this.calls) if (!want.has(id)) this.drop(id, c);
     for (const id of want) {
       if (this.calls.has(id) || id === this.peer.id || !(this.peer.id < id)) continue;
       try { this.watchCall(this.peer.call(id, this.outStream())); } catch (e) { /* try again next time */ }
+    }
+  }
+
+  // Call everyone again with what we send now. Used when the camera or microphone starts or stops: swapping the
+  // picture into a call that started with the blank one leaves it black in Safari, while a fresh call works
+  // everywhere. The other side answers the new call in place of the old one.
+  redial() {
+    if (!this.peer || !this.peer.id || this.peer.destroyed) return this.swapTracks();
+    for (const [id, old] of [...this.calls]) {
+      let call;
+      try { call = this.peer.call(id, this.outStream()); } catch (e) { continue; }
+      if (!call) continue;
+      this.calls.delete(id);
+      try { old.close(); } catch (e) { /* ignore */ }
+      this.watchCall(call);
     }
   }
 
@@ -137,7 +158,7 @@ export class Video {
       this.cam = await firstThatWorks([CAM, { video: true, audio: CAM.audio }, { video: true, audio: true },
         { video: CAM.video }, { video: true }]);   // simpler asks if a camera won't take ours; last, a camera without a microphone
     }
-    this.swapTracks();
+    this.redial();
     return this.cam;
   }
 
@@ -152,7 +173,7 @@ export class Video {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('This browser cannot use a microphone here.');
       this.cam = await firstThatWorks([{ audio: CAM.audio }, { audio: true }]);
     }
-    this.swapTracks();
+    this.redial();
     return this.cam;
   }
 
@@ -160,13 +181,14 @@ export class Video {
     if (this.cam) for (const t of this.cam.getTracks()) t.stop();
     this.cam = null;
     this.dropFx();
-    this.swapTracks();
+    this.redial();
   }
 
   // Hang up every call and turn the camera off.
   stopAll() {
     for (const c of this.calls.values()) try { c.close(); } catch (e) { /* ignore */ }
     this.calls.clear(); this.streams.clear();
+    clearInterval(this.healT); this.want = [];
     this.cameraOff();
     this.peer = null;
   }
