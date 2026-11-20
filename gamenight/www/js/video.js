@@ -14,6 +14,9 @@ export class Video {
     this.cam = null;            // our camera + mic stream
     this.peer = null;
     this.blank = null;
+    this.ac = null;             // sound processing (made inside a click so it is allowed to run)
+    this.boost = 1;             // how much louder the microphone goes out (Same room: one mic for the whole room)
+    this.fx = null;             // the louder microphone: { raw, src, gain, track }
   }
 
   // Must run inside a click so the silent audio is allowed to start.
@@ -26,7 +29,7 @@ export class Video {
     const vt = cv.captureStream ? cv.captureStream(1).getVideoTracks()[0] : null;
     let at = null;
     try {
-      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const ac = this.ac = new (window.AudioContext || window.webkitAudioContext)();
       at = ac.createMediaStreamDestination().stream.getAudioTracks()[0];
     } catch (e) { /* no audio */ }
     this.blank = { video: vt, audio: at };
@@ -34,7 +37,45 @@ export class Video {
 
   track(kind) {
     const real = this.cam && this.cam.getTracks().find(t => t.kind === kind && t.readyState === 'live');
+    if (real && kind === 'audio' && this.boost > 1) return this.boosted(real) || real;
     return real || this.blank[kind];
+  }
+
+  // The microphone made louder for a whole room sharing one device: turned up, then a compressor so close voices
+  // don't blare or crackle while voices across the room come through. Echo cancelling has already happened by now.
+  boosted(raw) {
+    try {
+      if (!this.fx || this.fx.raw !== raw) {
+        this.dropFx();
+        const ac = this.ac = this.ac || new (window.AudioContext || window.webkitAudioContext)();
+        const src = ac.createMediaStreamSource(new MediaStream([raw]));
+        const gain = ac.createGain();
+        const comp = ac.createDynamicsCompressor();
+        comp.threshold.value = -24; comp.knee.value = 12; comp.ratio.value = 6; comp.attack.value = 0.005; comp.release.value = 0.25;
+        const dest = ac.createMediaStreamDestination();
+        src.connect(gain).connect(comp).connect(dest);
+        this.fx = { raw, src, gain, track: dest.stream.getAudioTracks()[0] };
+      }
+      if (this.ac.state === 'suspended') this.ac.resume();
+      this.fx.gain.gain.value = this.boost;
+      this.fx.track.enabled = raw.enabled;
+      return this.fx.track;
+    } catch (e) { return null; }
+  }
+  dropFx() {
+    if (!this.fx) return;
+    try { this.fx.src.disconnect(); this.fx.track.stop(); } catch (e) { /* ignore */ }
+    this.fx = null;
+  }
+
+  // 1: the microphone as it is. More: louder (Same room, on the device carrying the room's sound).
+  setBoost(b) {
+    b = b > 1 ? b : 1;
+    if (b === this.boost) return;
+    const was = this.boost > 1;
+    this.boost = b;
+    if (this.fx) this.fx.gain.gain.value = b;
+    if (was !== (b > 1)) { if (b === 1) this.dropFx(); this.swapTracks(); }
   }
   outStream() { return new MediaStream([this.track('video'), this.track('audio')].filter(Boolean)); }
 
@@ -103,6 +144,7 @@ export class Video {
   cameraOff() {
     if (this.cam) for (const t of this.cam.getTracks()) t.stop();
     this.cam = null;
+    this.dropFx();
     this.swapTracks();
   }
 
@@ -116,6 +158,7 @@ export class Video {
 
   setMic(on) {
     if (this.cam) for (const t of this.cam.getAudioTracks()) t.enabled = on;
+    if (this.fx) this.fx.track.enabled = on;
   }
   hasMic() { return !!(this.cam && this.cam.getAudioTracks().length); }
 }

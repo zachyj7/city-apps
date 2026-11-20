@@ -560,6 +560,8 @@ let micSent = null;
 // Switch my microphone on or off to match the room, and tell everyone if that changed.
 function applyMic(force) {
   if (!A.video) return;
+  const R = myRoom();
+  A.video.setBoost(R && R.isSnd ? A.roomBoost : 1);   // one mic for the whole room: pick up more
   A.video.setMic(micLive());
   const out = micOut();
   if (force || out !== micSent) { micSent = out; send({ t: 'cam', cam: A.camOn, mic: out }); renderStatus(); }
@@ -582,9 +584,20 @@ function renderRoom() {
     ${people.length ? people.map(p => `<label class="setrow roomrow"><span class="vname">${esc(p.name)}</span><input type="checkbox" class="switch" data-room="${esc(p.pid)}" ${R && p.room === R.id ? 'checked' : ''} aria-label="${esc(p.name)} is in the same room as me"></label>`).join('')
       : '<p class="fieldhint">No one else is here yet.</p>'}
     ${R ? `<p class="roomsnd">Room sound: <b>${sndName}</b></p>
+      ${R.isSnd ? `<label class="volrow"><span class="vname">Mic pickup</span><input type="range" min="100" max="400" step="25" value="${Math.round(A.roomBoost * 100)}" data-roomboost aria-label="How much the microphone picks up for the room"><b>${Math.round(A.roomBoost * 100)}%</b></label>
+      <p class="roomhint">This device's microphone is turned up for the whole room. Turn it down if the others hear an echo.</p>` : ''}
       <div class="roombtns">${R.isSnd ? '' : `<button type="button" class="btn" data-roomsnd>${ic('sound')}<span>Use this device for sound</span></button>`}
       <button type="button" class="btn" data-roomleave>${ic('logout')}<span>I'm not in this room</span></button></div>` : ''}`;
 }
+A.roomBoost = Math.min(4, Math.max(1, +store.get('roomboost', 2.5) || 2.5));
+$('#roomBox').addEventListener('input', e => {
+  const r = e.target.closest('[data-roomboost]');
+  if (!r) return;
+  A.roomBoost = r.value / 100;
+  store.set('roomboost', A.roomBoost);
+  r.nextElementSibling.textContent = r.value + '%';
+  applyMic();
+});
 $('#roomBox').addEventListener('change', e => {
   const t = e.target.closest('[data-room]');
   if (t) send({ t: 'sameroom', pid: t.dataset.room, on: t.checked });
@@ -657,7 +670,7 @@ function seatEl(p) {
   if (!el) {
     el = document.createElement('div');
     el.className = 'seat';
-    el.innerHTML = `<div class="face"><div class="avatar"></div><div class="nm"></div><div class="flag">▶ TURN</div><div class="open30"></div><div class="stamp">Cheater</div></div>
+    el.innerHTML = `<div class="face"><div class="avatar"></div><div class="nm"></div><div class="flag">▶ TURN</div><div class="seatwins" hidden></div><div class="open30"></div><div class="stamp">Cheater</div></div>
       <div class="minirack"><div class="backs"></div><div class="mini-edge"><span class="engr"></span></div><b class="mcount" hidden></b></div>
       <div class="tag"></div>`;
     el.dataset.pid = p.pid;
@@ -766,8 +779,10 @@ function renderSeats() {
     const wins = winsFor(p, S.game || 'tiles');
     if (!p.on) tag = '⚠ Lost connection';
     else if (playing && !p.seat) tag = 'Watching';
-    else if (wins) tag = `${ic('trophy')} ${wins}`;
     if (el.querySelector('.tag').innerHTML !== tag) el.querySelector('.tag').innerHTML = tag;
+    // wins: a small trophy in the top corner of the picture, not a row of its own
+    const wb = el.querySelector('.seatwins'), wh = wins && p.on ? `${ic('trophy')}${wins}` : '';
+    if (wb.innerHTML !== wh) { wb.innerHTML = wh; wb.hidden = !wh; }
     const face = el.querySelector('.face');
     const av = face.querySelector('.avatar');
     const avHtml = p.cpu ? `<b class="mono">${ic('bot')}</b><small>${LEVEL_NAMES[p.cpu]}</small>` : `<b class="mono">${esc((p.name || '?').slice(0, 1).toUpperCase())}</b>`;
