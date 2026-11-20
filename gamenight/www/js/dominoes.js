@@ -10,7 +10,7 @@
 // others may play on it) until you play on it again. A double must be covered straight away by the same player;
 // if they can't (after drawing), it stays an open double and everyone must cover it before playing anywhere
 // else. The round ends when someone plays their last tile; everyone scores the pips left in hand. Lowest total
-// after the last round wins. (If nobody can play and the boneyard is empty, the round ends there.)
+// after the last round wins. (If nobody can play and the draw pile is empty, the round ends there.)
 //
 // A tile is a number 0-90; TILES[id] = [a, b] with a <= b. Trains are kept as [{ id, a, b }] where b is the
 // open end. d.trains holds each player's train (by pid) and the community trains ('c0', 'c1', ...).
@@ -134,8 +134,8 @@ function place(room, p, mv) {
   t.played++; d.passes = 0;
   d.last = { pid: p.pid, id: mv.id, train: mv.train, k: s.v + 1 };
   if (isDouble(mv.id)) {
-    t.cover = mv.train; t.drew = false;                   // cover it now (drawing again if need be)
-    s.ann = { pid: p.pid, name: p.name, rc: p.rc, kind: 'dbl', text: `${p.name} played double ${a}: it must be covered`, sub: 'Double!', k: s.v + 1 };
+    t.cover = mv.train; t.drew = false;                   // cover it now (drawing again if need be); only if they
+                                                          // can't is everyone told (see giveUp)
   }
   if (!p.hand.length) {
     // out! (even on a double). Anyone who hasn't had a first turn yet still gets one.
@@ -168,7 +168,12 @@ function draw(room, p) {
 function giveUp(room, p) {
   const s = room.s, d = s.dm, t = d.turn;
   d.trains[p.pid].marker = true;
-  if (t.cover) { d.open = t.cover; room.note(`Open double! Everyone must cover it first`); }
+  if (t.cover) {
+    d.open = t.cover;
+    const n = endOf(d, t.cover);
+    s.ann = { pid: p.pid, name: p.name, rc: p.rc, kind: 'dbl', text: `${p.name} couldn't cover their double ${n}: everyone must cover it first`, sub: 'Open double!', k: s.v + 1 };
+    room.note(`Open double! Everyone must cover it first`);
+  }
   if (!t.played) d.passes++;
   room.note(`${p.name} couldn't play`);
   endTurn(room, p, !!t.played);
@@ -195,8 +200,8 @@ function endRound(room, outP) {
   const got = {};
   for (const q of seats) { got[q.pid] = q.hand.reduce((n, id) => n + pips(id), 0); d.scores[q.pid] = (d.scores[q.pid] || 0) + got[q.pid]; }
   d.roundPts = got; d.roundOut = outP ? outP.pid : null;
-  if (outP) s.ann = { pid: outP.pid, name: outP.name, rc: outP.rc, kind: 'last', text: `${outP.name} played their last tile!`, sub: 'Out!', k: s.v + 1 };
-  room.note(outP ? `${outP.name} went out` : 'Nobody can play: the round is over');
+  if (outP) s.ann = { pid: outP.pid, name: outP.name, rc: outP.rc, kind: 'last', text: `${outP.name} won the round!`, sub: 'Winner!', k: s.v + 1 };
+  room.note(outP ? `${outP.name} won the round` : 'Nobody can play: the round is over');
   d.roundNo++;
   if (d.roundNo >= d.rounds) return finishGame(room);
   d.stage = 'scored'; s.turn = null; s.turnNo++;

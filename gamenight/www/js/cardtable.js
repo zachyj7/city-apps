@@ -271,17 +271,25 @@ export function renderDominoes(box, x) {
   else if (d.turn.cover) info = 'Cover your double!';
   else if (d.open) info = 'Cover the open double first';
   else if (!d.first[pid]) info = 'First turn: start your own train';
-  else info = A.pending ? (cov.length ? 'Now cover your double, then Confirm' : 'Play it there? Confirm or Cancel') : A.dsel != null && where.size > 1 ? 'Tap the end of a train, or drag the tile onto it' : 'Your turn';
+  else {
+    // someone couldn't start their own train (it has a penny and nothing on it): I may start it for them, as my turn
+    const stuck = seats.filter(p => p.pid !== pid && d.trains[p.pid] && d.trains[p.pid].marker && !d.trains[p.pid].tiles.length && mvs.some(m => m.train === p.pid));
+    info = A.pending ? (cov.length ? 'Now cover your double, then Confirm' : 'Play it there? Confirm or Cancel')
+      : A.dsel != null && where.size > 1 ? 'Tap the end of a train, or drag the domino onto it'
+      : stuck.length ? `Your turn · You can start ${stuck.map(p => esc(p.name)).join(' or ')}'s train for them (it uses your turn)`
+      : 'Your turn';
+  }
 
   // the table: as big as the middle of the screen allows, with room for the line above and the scores below
   const main = box.parentElement, cs = getComputedStyle(main);
   const ctl = document.getElementById('controls'), ctlH = ctl && ctl.offsetHeight ? ctl.offsetHeight + 10 : 60;
-  const W = Math.max(280, main.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 6);
-  const H = Math.max(170, main.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - ctlH - 96);
+  // the table size slider (A.dtz) grows or shrinks the whole table; bigger than the screen, it scrolls
+  const TZ = A.dtz || 1;
+  const W = Math.round(Math.max(280, main.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 6) * TZ);
+  const H = Math.round(Math.max(170, main.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - ctlH - 56) * TZ);
   box.innerHTML = `<div class="ct-table mtrain">
-    <div class="mt-head"><span class="bj-info">${info}</span><span class="mt-round">Round ${Math.min(d.roundNo + (d.stage === 'scored' ? 0 : 1), d.rounds)} of ${d.rounds} · Boneyard ${d.bone.length}</span></div>
+    <div class="mt-head"><span class="bj-info">${info}</span><span class="mt-round">Round ${Math.min(d.roundNo + (d.stage === 'scored' ? 0 : 1), d.rounds)} of ${d.rounds} · Draw pile ${d.bone.length}</span></div>
     <div class="mt-hub" style="width:${W}px;height:${H}px"></div>
-    <div class="mt-scores">${seats.slice().sort((a, b) => d.scores[a.pid] - d.scores[b.pid]).map(p => `<span style="${rackStyle(p.rc)}"><i class="dot"></i>${esc(p.name)} <b>${d.scores[p.pid]}</b></span>`).join('')}<small>Lowest wins</small></div>
   </div>`;
   const hub = box.querySelector('.mt-hub'), hr = hub.getBoundingClientRect();
   const faceOf = p => { const el = document.querySelector(`.seat[data-pid="${CSS.escape(p.pid)}"] .face`); const r = el && el.getBoundingClientRect(); return r && r.width ? r : null; };
@@ -330,7 +338,7 @@ export function renderDominoes(box, x) {
     const c = Math.cos(pos.a), sn = Math.sin(pos.a);
     return Math.abs(R * c) + w * Math.abs(sn) <= W / 2 - pad && Math.abs(R * sn) + w * Math.abs(c) <= H / 2 - pad;
   });
-  let dw = Math.round(28 * (A.zoom || 1));
+  let dw = Math.round(28 * (A.zoom || 1) * TZ);
   while (dw > 7 && !fits(dw)) dw--;
   const lays = {};
   for (const k of keys) lays[k] = layout(k, dw);
@@ -342,6 +350,7 @@ export function renderDominoes(box, x) {
   const ew = Math.round(dw * 1.05), sw = ew * 2.12 + 8, sh = ew * 1.12 + 8, sr = Math.min(6, sh / 4);
   const sx = cx - sw / 2, sy = cy - sh / 2;
   const slot = `M${sx + sr},${sy} h${sw - 2 * sr} a${sr},${sr} 0 0 1 ${sr},${sr} v${sh - 2 * sr} a${sr},${sr} 0 0 1 -${sr},${sr} h-${sw - 2 * sr} a${sr},${sr} 0 0 1 -${sr},-${sr} v-${sh - 2 * sr} a${sr},${sr} 0 0 1 ${sr},-${sr} z`;
+  const marks = [];   // the toy trains and pennies, laid on top of the octagon
   const spoke = key => {
     const pos = posOf(key), t = d.trains[key], who = meOf(S, key), isComm = key === 'new' || (t && t.community);
     const color = isComm ? TOY_COLORS[(key === 'new' ? comm.length : t.n) % TOY_COLORS.length] : '#888';
@@ -362,7 +371,11 @@ export function renderDominoes(box, x) {
     // the marker sits on the first piece, by the hub (as on the real table)
     const first = pieces.find(p => !p.gone);
     const mark = isComm ? toyTrain(color) : t && t.marker ? penny(`${esc(who ? who.name : '')} couldn't play: anyone may play here`) : '';
-    if (mark && first) html += at(first, mark, 'mt-mk', true);
+    // at the very start of the train, sitting on the octagon's edge: drawn in a layer above the octagon
+    if (mark && first) {
+      const mx = Math.min(first.x, r0For(pos, dw) - dw * 0.15);
+      marks.push(`<span class="mt-mk2${key === 'new' ? ' ghostmk' : ''}" style="left:${(cx + mx * Math.cos(pos.a)).toFixed(1)}px;top:${(cy + mx * Math.sin(pos.a)).toFixed(1)}px;--dw:${dw}px">${mark}</span>`);
+    }
     if (d.open === key && pieces.length) html += at(pieces[pieces.length - 1], '<b class="mt-opendbl">Cover!</b>', 'mt-flag', true);
     // still lit while a laid double waits for its cover; any other laid tile ends the choosing
     const pend = pieces.some(p => p.kind === 'pend' && !p.gone) && cov.length;
@@ -370,6 +383,7 @@ export function renderDominoes(box, x) {
       style="--dw:${dw}px;transform:translate(${cx}px, ${cy}px) rotate(${deg}deg)">${html}</div>`;
   };
   hub.innerHTML = keys.map(spoke).join('')
+    + `<div class="mt-mks">${marks.join('')}</div>`
     + `<svg class="mt-station" width="${W}" height="${H}" aria-hidden="true"><path fill-rule="evenodd" d="M${oct.replace(/ /g, ' L')} Z ${slot}"/></svg>`
     + `<div class="mt-engine" style="left:${cx}px;top:${cy}px;--dw:${ew}px" title="The engine: double ${d.engine}">${domino(d.engine, d.engine, 'h')}</div>`;
   A.dmSeen = d.last ? d.last.k : 0;
@@ -479,7 +493,7 @@ function trayDrop(A, id, r, c) {
   saveTray(A);
 }
 
-let trayDrag = null, trayNoClick = 0;
+let trayDrag = null, trayNoClick = 0, lastTap = null;
 document.addEventListener('pointerdown', e => {
   const tile = e.target.closest && e.target.closest('#hand.tray .ttile');
   if (!tile || e.button > 0) return;
@@ -510,10 +524,19 @@ document.addEventListener('pointermove', e => {
   // the slot under the middle of the carried tile (what you see), not under the pointer
   const under = document.elementFromPoint(gx + t.w / 2, gy + t.h / 2);
   const slot = under && under.closest('#hand.tray .tslot');
-  // over the table: the train under the pointer, if this tile may be played on it
-  const at = document.elementFromPoint(e.clientX, e.clientY);
-  const sp = !slot && at && at.closest('.mt-spoke');
-  const end = sp && sp.querySelector('.dm-end.on');
+  // over the table: the nearest open end this tile may be played on, measured from the middle of the carried
+  // tile, so it can be dropped near the end's dot rather than right on top of the train
+  let end = null;
+  if (!slot) {
+    const mx = gx + t.w / 2, my = gy + t.h / 2;
+    let best = Infinity;
+    for (const b of document.querySelectorAll('.mt-spoke .dm-end.on')) {
+      const r = b.getBoundingClientRect(), dist = Math.hypot(r.left + r.width / 2 - mx, r.top + r.height / 2 - my);
+      const reach = Math.max(70, t.w * 1.3, r.width * 3);
+      if (dist < reach && dist < best) { best = dist; end = b; }
+    }
+  }
+  const sp = end ? end.closest('.mt-spoke') : null;
   const key = end ? end.dataset.train : null;
   if (t.spoke && t.spoke !== sp) t.spoke.classList.remove('dropok');
   t.spoke = key ? sp : null; t.board = key;
@@ -533,7 +556,18 @@ function endTrayDrag(drop) {
   if (!t) return;
   trayDrag = null;
   document.body.classList.remove('traydragging');
-  if (!t.on) return;   // a tap: the click selects it
+  if (!t.on) {
+    // a tap: the click selects it. Two quick taps on the same tile (a double-click) turn it end for end, and the
+    // second tap doesn't also choose it again or let it go.
+    const now = Date.now();
+    if (lastTap && lastTap.id === t.id && now - lastTap.at < 400 && trayHooks.A) {
+      lastTap = null;
+      trayNoClick = now + 300;
+      flipTile(trayHooks.A, t.id);
+      trayHooks.rerender();
+    } else lastTap = { id: t.id, at: now };
+    return;
+  }
   trayNoClick = Date.now() + 300;
   if (t.ghost) t.ghost.remove();
   const A = trayHooks.A;
@@ -550,14 +584,6 @@ document.addEventListener('pointerup', () => endTrayDrag(true));
 document.addEventListener('pointercancel', () => endTrayDrag(false));
 // the click at the end of a drag doesn't also select the tile
 document.addEventListener('click', e => { if (Date.now() < trayNoClick && e.target.closest && e.target.closest('#hand.tray')) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
-// double-tap a tile to flip it
-document.addEventListener('dblclick', e => {
-  const tile = e.target.closest && e.target.closest('#hand.tray .ttile');
-  if (!tile || !trayHooks.A) return;
-  e.preventDefault();
-  flipTile(trayHooks.A, +tile.dataset.id);
-  trayHooks.rerender();
-});
 
 export function dominoControls(x) {
   const { A, pid, ic } = x, S = A.S, d = S.dm, m = meOf(S, pid);
@@ -565,18 +591,18 @@ export function dominoControls(x) {
   if (!m || !m.seat) return `${waitChip(x)}<span class="poolchip">Watching this game</span>`;
   if (d.stage !== 'play') return `<span class="poolchip">Your score: <b>${d.scores[pid] || 0}</b></span>`;
   const sel = A.dsel != null && m.hand.includes(A.dsel);
-  const flip = sel ? `<button class="btn" data-act="dmflip" title="Turn the chosen tile end for end">${ic('reset')}Flip</button>` : '';
+  const flip = sel ? `<button class="btn" data-act="dmflip" title="Turn the chosen domino end for end">${ic('reset')}Flip</button>` : '';
   if (S.turn !== pid) return `${waitChip(x)}${flip}`;
   const mvs = trainMoves(d, m), t = d.turn;
-  const me = `<span class="turnchip" style="${x.rackStyle(m.rc)}">Your turn</span>`;
-  if (!mvs.length) return `${me}${flip}<button class="btn draw" data-act="g:draw">${ic(d.bone.length && !t.drew ? 'draw' : 'skip')}${d.bone.length && !t.drew ? 'Draw a tile' : 'Pass'}</button>`;
+  const me = '';   // no "Your turn" chip here: the line above the table says so
+  if (!mvs.length) return `${me}${flip}<button class="btn draw" data-act="g:draw">${ic(d.bone.length && !t.drew ? 'draw' : 'skip')}${d.bone.length && !t.drew ? 'Draw a domino' : 'Pass'}</button>`;
   if (A.pending && mvs.some(mv => mv.id === A.pending.id && mv.train === A.pending.train)) {
-    const cover = coverIds(A, d, m).length ? `<span class="poolchip">Lay a tile to cover your double</span>` : '';
+    const cover = coverIds(A, d, m).length ? `<span class="poolchip">Lay a domino to cover your double</span>` : '';
     return `${me}${cover}<button class="btn go" data-act="dmconfirm">${ic('check')}Confirm</button><button class="btn" data-act="dmcancel">${ic('undo')}Cancel</button>`;
   }
   const where = sel ? mvs.filter(mv => mv.id === A.dsel) : [];
   const play = where.length === 1 ? `<button class="btn go" data-act="dmplay">${ic('check')}Play</button>` : '';
-  const hint = !sel ? (t.cover ? 'Now cover your double: choose a tile' : 'Choose a tile') : where.length > 1 ? 'Tap a train end to play it' : where.length ? '' : "That tile doesn't fit anywhere";
+  const hint = !sel ? (t.cover ? 'Now cover your double: choose a domino' : 'Choose a domino') : where.length > 1 ? 'Tap a train end to play it' : where.length ? '' : "That domino doesn't fit anywhere";
   return `${me}${flip}${play}${hint ? `<span class="poolchip">${hint}</span>` : ''}`;
 }
 

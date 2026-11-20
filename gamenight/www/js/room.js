@@ -422,6 +422,14 @@ export class Room {
     if (m.t === 'draw') return this.draw(p);
 
     if (m.t === 'done') {
+      // Done carries the table and rack exactly as they were when it was pressed, so the very last move counts
+      // even if its own update hadn't arrived yet (otherwise a winning last tile could be missed).
+      const pos = m.pos ? cleanPos(m.pos) : null, rack = Array.isArray(m.rack) ? m.rack.map(Number) : null;
+      if (pos && rack) {
+        const want = [...s.table.flat(), ...p.rack].sort((a, b) => a - b).join(',');
+        const got = [...groupsOf(pos).flat(), ...rack].sort((a, b) => a - b).join(',');
+        if (want === got) s.work = { pos, table: groupsOf(pos), rack };
+      }
       const w = s.work || { pos: s.pos, table: s.table, rack: p.rack };
       const why = checkTurn(s.table, p.rack, w.table, w.rack, p.opened);
       if (why) return c.send({ t: 'nope', why });

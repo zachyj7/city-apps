@@ -472,7 +472,7 @@ function done() {
   settleNow();
   const why = checkTurn(A.W.startTable, A.W.startRack, groupsOf(A.W.pos), A.W.rack, me().opened);
   if (why) { toast(why); beep(220, 0.25); return; }
-  send({ t: 'done' });
+  send({ t: 'done', pos: A.W.pos, rack: A.W.rack });
 }
 /* ---------------- drawing the screen ---------------- */
 
@@ -688,7 +688,7 @@ function renderSeats() {
       obHtml = `♥${S.hr.scores[p.pid] || 0}`; obCls += ' show money'; obTitle = 'Score (lowest wins)';
     } else if (show && S.game === 'dominoes' && S.dm) {
       const n = (p.hand || []).length;
-      obHtml = String(n); obCls += ' show' + (n === 1 ? ' last' : ''); obTitle = `${n} tiles in hand · score ${S.dm.scores[p.pid] || 0} (lowest wins)`;
+      obHtml = String(n); obCls += ' show dmcount' + (n === 1 ? ' last' : ''); obTitle = `${n} ${n === 1 ? 'domino' : 'dominoes'} in hand · score ${S.dm.scores[p.pid] || 0} (lowest wins)`;
     } else if (show && S.game === 'uno') {
       const n = (p.hand || []).length;
       obHtml = `${ic('cards')}${n}`; obCls += ' show' + (n === 1 ? ' last' : ''); obTitle = `${n} card${n === 1 ? '' : 's'}`;
@@ -878,8 +878,7 @@ function renderLobby(box) {
   // The host drags people into order: Player 1, 2, 3... In a two-player game the first two play.
   const SIDES = { chess: ['White', 'Black'], checkers: ['Red', 'White'] };
   const role = i => (g && i >= max ? (g.max === 2 ? 'Watches' : 'Watching (full)') : `Player ${i + 1}${g && SIDES[S.game] ? ' · ' + SIDES[S.game][i] : ''}`);
-  const chips = here.map((p, i) => `<div class="pchip ${p.cpu ? 'cpu' : ''} ${host ? 'drag' : ''} ${g && i >= max ? 'bench' : ''}" data-pid="${esc(p.pid)}" style="${rackStyle(p.rc)}">${host ? `<span class="grip" title="Drag to change the order" aria-hidden="true"><i></i><i></i><i></i></span>` : ''}<b class="pnum" title="${role(i)}">${g && i >= max ? ic('users') : i + 1}</b><span class="av">${p.cpu ? `${ic('bot')}<i class="lvl">${LEVEL_NAMES[p.cpu][0]}</i>` : esc((p.name || '?').slice(0, 1).toUpperCase())}${p.pid === S.host ? `<i class="crown" title="Host">${ic('crown')}</i>` : ''}</span>
-      <span class="pn">${esc(p.name)}<span class="pt">${[role(i), p.prof && p.prof !== p.name ? `(${esc(p.prof)})` : '', p.pid === pid ? 'You' : p.cpu ? `Computer · ${LEVEL_NAMES[p.cpu]}` : '', p.pid === S.host ? 'Host' : ''].filter(Boolean).join(' · ')}</span></span>
+  const chips = here.map((p, i) => `<div class="pchip ${p.cpu ? 'cpu' : ''} ${host ? 'drag' : ''} ${g && i >= max ? 'bench' : ''}" data-pid="${esc(p.pid)}" style="${rackStyle(p.rc)}">${host ? `<span class="grip" title="Drag to change the order" aria-hidden="true"><i></i><i></i><i></i></span>` : ''}<b class="pnum" title="${role(i)}">${g && i >= max ? ic('users') : i + 1}</b><span class="pn">${p.pid === S.host ? `<i class="hostcrown" title="Host">${ic('crown')}</i>` : ''}${esc(p.name)}</span>
       ${p.cpu && host ? `<button class="iconbtn rm" data-act="rmcpu" data-pid="${esc(p.pid)}" aria-label="Remove ${esc(p.name)}">${ic('close')}</button>` : ''}
       ${!p.cpu && host && p.pid !== pid ? `<button class="iconbtn rm" data-act="host" data-pid="${esc(p.pid)}" aria-label="Make ${esc(p.name)} the host" title="Make ${esc(p.name)} the host">${ic('crown')}</button>` : ''}</div>`).join('');
   const full = here.length >= 8;
@@ -911,18 +910,18 @@ function renderLobby(box) {
   }
   box.innerHTML = `<div class="card lobby">
     <div class="lcol">
-      <div class="panelhead"><span class="badge">${ic('users')}</span><div class="ph"><h2>Lobby “${esc(A.code)}”</h2><p>${g ? `Up next: ${g.name}` : 'Waiting for everyone to sit down'}</p></div>
+      <div class="panelhead"><span class="badge">${ic('users')}</span><div class="ph"><h2>Lobby “${esc(A.code)}”</h2>${g ? '' : '<p>Waiting for everyone to sit down</p>'}</div>
         <span class="headact"><button class="btn small" data-act="${navigator.share ? 'share' : 'copy'}">${ic(navigator.share ? 'share' : 'link')}Invite</button><button class="btn small" data-act="leave" aria-label="Leave">${ic('logout')}</button></span></div>
       <div class="section invite"><h3>Invite your family</h3>
         <div class="linkrow"><input readonly value="${esc(link)}" aria-label="Lobby link"><button class="btn" data-act="copy">${ic('link')}Copy link</button>${navigator.share ? `<button class="btn" data-act="share">${ic('share')}Share</button>` : ''}</div>
       </div>
       <div class="section"><h3>In the lobby · ${here.length} of 8</h3>
-        ${host && here.length > 1 ? `<p class="fieldhint draghint">Drag people to put them in order.${g && g.max === 2 && here.length > 2 ? ' Players 1 and 2 play; the rest watch.' : ''}</p>` : g && g.max === 2 && here.length > 2 ? '<p class="fieldhint draghint">Players 1 and 2 play; the rest watch.</p>' : ''}
+        ${g && g.max === 2 && here.length > 2 ? '<p class="fieldhint draghint">Players 1 and 2 play; the rest watch.</p>' : ''}
         <div class="players" id="lobbyPlayers">${chips}${empties}</div>
       </div>
       <div class="section"><h3>Your color</h3><div class="swatches row8">${swatches(A.rc, 'setrc', taken)}</div></div>
       ${host ? `<label class="setrow listrow"><span class="setlabel">${ic('users')}Show this lobby on the start screen</span><input type="checkbox" class="switch" data-listed ${S.unlisted ? '' : 'checked'}></label>` : ''}
-      <div class="lobbyfoot"><span class="tip">${ic('cam')}<span>Press <b>Camera</b> so everyone can see you.</span></span><button class="btn small leave" data-act="leave">${ic('logout')}Leave</button></div>
+      <div class="lobbyfoot"><button class="btn small leave" data-act="leave">${ic('logout')}Leave</button></div>
     </div>
     <div class="lcol">${right}</div>
   </div>`;
@@ -1145,7 +1144,7 @@ function renderMe() {
     // Dominoes: the tray's size slider and Fit
     const dmt = S.game === 'dominoes' && m && m.seat;
     $('#dmTools').hidden = !dmt;
-    if (dmt) $('#dmSize').value = A.dz;
+    if (dmt) { $('#dmSize').value = A.dz; $('#dmTable').value = A.dtz; }
     const hand = $('#hand'), draw = { uno: unoHand, idiot: idiotHand, hearts: heartsHand, dominoes: dominoHand }[S.game];
     if (draw && !hand.hidden) { hand.className = 'hand'; draw(hand, viewCtx()); }
     return;
@@ -2333,9 +2332,9 @@ function showDrew(a) {
   if (!el) { el = document.createElement('div'); el.id = 'drewPop'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
   const mine = a.pid === pid, who = mine ? 'You' : esc(a.name);
   el.setAttribute('style', rackStyle(a.rc));
-  const what = tiles() ? 'tile' : 'card', n = a.n || 1;
+  const dom = !!(A.S && A.S.game === 'dominoes'), what = tiles() ? 'tile' : dom ? 'domino' : 'card', n = a.n || 1;
   el.innerHTML = `<div class="dp-card"><span class="dp-tile ${tiles() ? '' : 'card'}">${a.pass ? ic('skip') : '<b>?</b>'}</span>
-    <span class="dp-text">${a.pass ? `${who} passed <small>Nothing left to draw</small>` : n > 1 ? `${who} drew ${n} ${what}s` : `${who} drew a ${what}`}</span></div>`;
+    <span class="dp-text">${a.pass ? `${who} passed <small>Nothing left to draw</small>` : n > 1 ? `${who} drew ${n} ${dom ? 'dominoes' : what + 's'}` : `${who} drew a ${what}`}</span></div>`;
   el.hidden = false;
   el.classList.remove('play'); el.offsetWidth; el.classList.add('play');
   clearTimeout(drewT); drewT = setTimeout(() => { el.hidden = true; el.classList.remove('play'); }, 2200);
@@ -2425,6 +2424,9 @@ setTrayHooks({ A, rerender: () => { renderCenter(); renderMe(); } });
 // the dominoes tray's size (remembered on this device) and Fit (shared with the Number Tiles Fit)
 A.dz = Math.min(1.6, Math.max(0.7, +store.get('dz', 1) || 1));
 $('#dmSize').addEventListener('input', e => { A.dz = +e.target.value; store.set('dz', A.dz); renderMe(); });
+// the size of the Dominoes table (the trains and the octagon)
+A.dtz = Math.min(2, Math.max(0.6, +store.get('dtz', 1) || 1));
+$('#dmTable').addEventListener('input', e => { A.dtz = +e.target.value; store.set('dtz', A.dtz); renderCenter(); });
 const stats = initStats({ A, pid, esc, ic, send });
 stats.unlock(true);   // statistics are open to everyone, from Settings
 const help = initHelp({ A, pid, send, toast, esc, ic });
