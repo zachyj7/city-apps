@@ -76,11 +76,25 @@ export class Room {
 
   push() {
     this.fixHost();
+    this.tidyRooms();
     this.s.v++;
     this.s.at = Date.now();
     const m = { t: 'state', s: this.s };
     this.each(c => c.send(m));
     this.schedule();
+  }
+
+  // A room needs two people still here, and exactly one device carrying its sound (one that is connected).
+  tidyRooms() {
+    const ps = this.s.players;
+    for (const id of new Set(ps.map(x => x.room).filter(Boolean))) {
+      const mates = ps.filter(x => x.room === id);
+      if (mates.length < 2) { for (const x of mates) { x.room = null; x.snd = false; } continue; }
+      const live = mates.filter(x => x.on);
+      let snd = mates.find(x => x.snd && x.on) || live[0] || mates.find(x => x.snd) || mates[0];
+      for (const x of mates) x.snd = x === snd;
+    }
+    for (const x of ps) if (!x.room) x.snd = false;
   }
 
   // ---- computer players ----
@@ -188,6 +202,26 @@ export class Room {
     }
 
     if (m.t === 'cam') { p.cam = !!m.cam; p.mic = !!m.mic; return this.push(); }
+    // Same room: people sitting together say so, and one of their devices carries the sound for all of them.
+    // { pid, on }: put that person in my room, or take them out of it (my own pid with on false: I leave).
+    if (m.t === 'sameroom') {
+      const q = this.player(m.pid);
+      if (!q || q.cpu) return;
+      if (q === p) { if (!m.on) { p.room = null; p.snd = false; } return this.push(); }
+      if (m.on) {
+        const id = p.room || q.room || 'r' + Math.random().toString(36).slice(2, 8);
+        const old = [p.room, q.room].filter(x => x && x !== id);
+        for (const x of s.players) if (x === p || x === q || (x.room && old.includes(x.room))) x.room = id;
+        if (!s.players.some(x => x.room === id && x.snd)) p.snd = true;   // whoever set it up carries the sound
+      } else if (p.room && q.room === p.room) { q.room = null; q.snd = false; }
+      return this.push();
+    }
+    // Use my device for my room's sound.
+    if (m.t === 'roomsnd') {
+      if (!p.room) return;
+      for (const x of s.players) if (x.room === p.room) x.snd = x === p;
+      return this.push();
+    }
     if (m.t === 'rc') {
       const want = cleanColor(m.rc);
       if (this.freeColor(want, p.pid) === want) p.rc = want;   // otherwise someone else has it

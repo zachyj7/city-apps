@@ -192,7 +192,7 @@ function snapshot() { return A.S || loadSnap(); }
 
 function hello() {
   const snap = snapshot();
-  A.net.send({ t: 'hello', pid, name: A.name, prof: A.prof, rc: A.rc, snap: snap && snap.round ? snap : null, peer: A.net.peer && A.net.peer.id, cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
+  A.net.send({ t: 'hello', pid, name: A.name, prof: A.prof, rc: A.rc, snap: snap && snap.round ? snap : null, peer: A.net.peer && A.net.peer.id, cam: A.camOn, mic: (micSent = micOut()) });
 }
 function send(m) { A.net && A.net.send(m); }
 
@@ -223,6 +223,8 @@ function setState(S) {
   if (S.phase !== 'play' || !S.id || S.id.stage !== 'swap') A.iswap = null;
   rpsState();
   updateNotice();
+  applyMic();
+  renderRoom();
   // the host can list or unlist the lobby from Settings at any time, games included
   $('#listedRow').hidden = !isHost();
   $('#listedOn').checked = !S.unlisted;
@@ -527,9 +529,70 @@ function renderStatus() {
   cam.setAttribute('aria-pressed', A.camOn);
   const mic = $('#micBtn');
   mic.hidden = !A.camOn || !A.video || !A.video.hasMic();
-  mic.innerHTML = A.micOn ? `${ic('mic')}<span>Mute</span>` : `${ic('micoff')}<span>Unmute</span>`;
-  mic.classList.toggle('muted', !A.micOn);
+  const R = A.S && myRoom();
+  if (R && !R.isSnd) {
+    // in a room, on a device that isn't the room's sound: the microphone stays off
+    mic.innerHTML = `${ic('micoff')}<span>Room</span>`;
+    mic.title = `Same room: the sound goes through ${R.snd ? R.snd.name + "'s device" : 'another device'}`;
+    mic.classList.add('muted');
+  } else {
+    mic.innerHTML = A.micOn ? `${ic('mic')}<span>Mute</span>` : `${ic('micoff')}<span>Unmute</span>`;
+    mic.title = A.micOn ? 'Mute' : 'Unmute';
+    mic.classList.toggle('muted', !A.micOn);
+  }
 }
+
+/* Same room: people sitting together hear each other in person, so their devices never play each other, and only
+   one device in the room (the "room sound") plays everyone else and sends its microphone. Two microphones and two
+   speakers in one room would otherwise echo and double every voice for the people far away. */
+function myRoom() {
+  const m = me();
+  if (!m || !m.room) return null;
+  const mates = A.S.players.filter(q => q.room === m.room);
+  const snd = mates.find(q => q.snd) || null;
+  return { id: m.room, mates, snd, isSnd: !!snd && snd.pid === pid };
+}
+// Do I play this person's voice?
+function heard(p) { const R = myRoom(); return !R || (R.isSnd && p.room !== R.id); }
+const micLive = () => A.micOn && !(myRoom() && !myRoom().isSnd);
+const micOut = () => !!(A.camOn && micLive() && A.video && A.video.hasMic());
+let micSent = null;
+// Switch my microphone on or off to match the room, and tell everyone if that changed.
+function applyMic(force) {
+  if (!A.video) return;
+  A.video.setMic(micLive());
+  const out = micOut();
+  if (force || out !== micSent) { micSent = out; send({ t: 'cam', cam: A.camOn, mic: out }); renderStatus(); }
+}
+
+// The Same room section in Settings: tick whoever is sitting with you.
+let roomKey = '';
+function renderRoom() {
+  const box = $('#roomBox');
+  if (!box || !A.S) return;
+  const m = me();
+  const R = myRoom();
+  const people = A.S.players.filter(p => p.on && !p.cpu && p.pid !== pid);
+  const key = JSON.stringify([people.map(p => [p.pid, p.name, p.room, p.snd]), m && m.room, m && m.snd]);
+  if (key === roomKey) return;
+  roomKey = key;
+  const sndName = R && R.snd ? (R.isSnd ? 'this device' : `${esc(R.snd.name)}'s device`) : '';
+  box.innerHTML = `<span class="setlabel">${ic('users')}Same room</span>
+    <p class="roomhint">Sitting next to someone? Turn them on here. Only one device in the room plays the others and uses its microphone, so there's no echo.</p>
+    ${people.length ? people.map(p => `<label class="setrow roomrow"><span class="vname">${esc(p.name)}</span><input type="checkbox" class="switch" data-room="${esc(p.pid)}" ${R && p.room === R.id ? 'checked' : ''} aria-label="${esc(p.name)} is in the same room as me"></label>`).join('')
+      : '<p class="fieldhint">No one else is here yet.</p>'}
+    ${R ? `<p class="roomsnd">Room sound: <b>${sndName}</b></p>
+      <div class="roombtns">${R.isSnd ? '' : `<button type="button" class="btn" data-roomsnd>${ic('sound')}<span>Use this device for sound</span></button>`}
+      <button type="button" class="btn" data-roomleave>${ic('logout')}<span>I'm not in this room</span></button></div>` : ''}`;
+}
+$('#roomBox').addEventListener('change', e => {
+  const t = e.target.closest('[data-room]');
+  if (t) send({ t: 'sameroom', pid: t.dataset.room, on: t.checked });
+});
+$('#roomBox').addEventListener('click', e => {
+  if (e.target.closest('[data-roomsnd]')) send({ t: 'roomsnd' });
+  else if (e.target.closest('[data-roomleave]')) send({ t: 'sameroom', pid, on: false });
+});
 
 /* Each person's voice has its own volume. Most browsers let a video's volume be set directly; iPhones and
    iPads don't, so there the sound goes through a volume control (Web Audio) and the video itself stays muted. */
@@ -538,8 +601,8 @@ const gains = new Map();
 let vac = null;
 function volumeOf(p) { const v = A.vol[p.pid]; return typeof v === 'number' ? v : 1; }
 function applyVolume(p, v, stream) {
-  const vol = volumeOf(p);
-  if (VOL_DIRECT) { v.muted = false; v.volume = vol; return; }
+  const vol = heard(p) ? volumeOf(p) : 0;
+  if (VOL_DIRECT) { v.muted = vol === 0; v.volume = vol; return; }
   v.muted = true;
   try {
     vac = vac || new (window.AudioContext || window.webkitAudioContext)();
@@ -723,7 +786,9 @@ function renderSeats() {
     // A remote person whose camera is on but whose picture has not arrived yet.
     face.classList.toggle('waiting', !!(!isMe && p.cam && p.on && !stream));
     // Their own sound: unmuted for others. Show who is muted.
-    el.classList.toggle('mic-off', !!p.cam && !p.mic);
+    const roomed = !!(p.room && !p.snd);
+    el.classList.toggle('roomed', roomed);
+    el.classList.toggle('mic-off', !!p.cam && !p.mic && !roomed);
     return el;
   };
 
@@ -2031,15 +2096,15 @@ async function toggleCam() {
       return;
     }
   }
-  send({ t: 'cam', cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
+  applyMic(true);
   renderStatus(); renderSeats();
 }
 
 function toggleMic() {
+  const R = myRoom();
+  if (R && !R.isSnd) { toast(`You're in the same room as ${R.mates.filter(q => q.pid !== pid).map(q => q.name).join(' and ')}. The sound goes through ${R.snd ? R.snd.name + "'s device" : 'another device'}. To change that, open Settings.`, 6000); return; }
   A.micOn = !A.micOn;
-  A.video.setMic(A.micOn);
-  send({ t: 'cam', cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
-  renderStatus();
+  applyMic(true);
 }
 
 function applyZoom() {
