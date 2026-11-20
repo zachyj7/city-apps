@@ -232,6 +232,7 @@ header { padding-right: 10px; }
 .hright { display: flex; gap: 8px; justify-content: flex-end; width: 200px; flex: none; }
 .hright .hbtn { min-width: 0; justify-content: center; }
 .hright #camBtn { flex: 1 1 auto; overflow: hidden; }
+.hright #camBtn.on { flex: none; padding-left: .7em; padding-right: .7em; }
 .hright #camBtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hright #setBtn, .hright #micBtn { flex: none; padding-left: .7em; padding-right: .7em; }
 .hright #setBtn .hlabel, .hright #micBtn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -462,6 +463,8 @@ main:not(.mat) #center { min-height: 100%; display: grid; align-items: center; }
 /* tiles put down this turn */
 /* tiles played this turn: a thick, bright gold ring with a soft glow, easy to spot */
 .tile.placed { box-shadow: inset 0 0 0 2px #ffd21f, inset 0 1px 0 3px rgba(255,255,255,.6), 0 0 0 6px #ffd21f, 0 0 0 8px #6b4600, 0 0 18px 7px rgba(255, 210, 31, .6), 0 4px 0 var(--tile-side-dark), 0 7px 10px rgba(0,0,0,.35); }
+/* played this turn but not in a legal set yet: the same thick glowing ring, in red */
+.board .tile.placed.seg-bad { box-shadow: inset 0 0 0 2px var(--bad), inset 0 1px 0 3px rgba(255,255,255,.6), 0 0 0 6px var(--bad), 0 0 0 8px var(--bad-deep), 0 0 18px 7px rgba(255, 77, 64, .6), 0 4px 0 var(--tile-side-dark), 0 7px 10px rgba(0,0,0,.35); }
 .tile.fresh { animation: fresh .9s ease-in-out 2; }
 /* the one oversized red 4: drawn a little bigger, taking up the same slot as any other tile */
 .tile.big { scale: 1.12; z-index: 1; }

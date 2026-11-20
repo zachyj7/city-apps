@@ -519,7 +519,10 @@ function renderStatus() {
   el.title = labels[A.status] || A.status;
   el.querySelector('span').textContent = labels[A.status] || A.status;
   const cam = $('#camBtn');
-  cam.innerHTML = A.camOn ? `${ic('cam')}<span>Camera on</span>` : `${ic('camoff')}<span>Camera</span>`;
+  // on: just the camera icon (the words got cut off); a tap turns it off
+  cam.innerHTML = A.camOn ? ic('cam') : `${ic('camoff')}<span>Camera</span>`;
+  cam.setAttribute('aria-label', A.camOn ? 'Turn camera off' : 'Turn camera on');
+  cam.title = A.camOn ? 'Turn camera off' : 'Turn camera on';
   cam.classList.toggle('on', A.camOn);
   cam.setAttribute('aria-pressed', A.camOn);
   const mic = $('#micBtn');
@@ -1086,7 +1089,8 @@ function renderBoard(box) {
   const lifted = new Set(A.drag ? A.drag.ids : []);
   let lowest = 0;
   for (const id in pos) lowest = Math.max(lowest, pos[id][1]);
-  const u = measureBoard(box, Math.ceil(lowest + 1 + (live ? 1 : 0)));
+  // (with Fit on, the spare row is counted on everyone's turn, so the table is the same fitted size whoever is playing)
+  const u = measureBoard(box, Math.ceil(lowest + 2));
   let html = '', names = '', maxX = BOARD_W, maxY = 0;
   for (const g of groupsOf(pos)) {
     const ok = analyze(g).ok;
@@ -1116,7 +1120,7 @@ function renderBoard(box) {
   // The table fills the space it has and doesn't scroll. Only once a set sits on the bottom row that fits
   // does it grow, by one more row at most (during your turn, so there is somewhere to put a new set).
   const lastRow = Math.max(0, Math.floor((room - BOARD_PAD - u.bh) / u.uy));
-  const extra = html && live && maxY >= lastRow - 0.01 ? 1 : 0;
+  const extra = html && (live || A.fit) && maxY >= lastRow - 0.01 ? 1 : 0;
   const need = html ? (maxY + extra) * u.uy + BOARD_PAD + u.bh + 4 : 0;
   const h = Math.max(need, room);
   box.innerHTML = `<div id="board" class="board ${live ? 'live' : ''}" style="--tw:${u.bw}px;--th:${u.bh}px;width:${wpx}px;height:${Math.floor(h)}px">${html}</div>`;
@@ -1739,7 +1743,9 @@ document.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'mouse' || e.button !== 0 || press || !A.S || A.S.phase !== 'play') return;
   const t = e.target;
   if (!t.closest || t.closest('.tile[data-id], button, input, a, .ghost, #spaceTile')) return;
-  if (!t.closest('main, #rack') || !tiles()) return;
+  // on bigger screens, the open space in the webcam columns beside the table works too (not on a webcam itself)
+  const side = window.innerWidth >= 1100 && t.closest('#seatsL, #seatsR') && !t.closest('.seat');
+  if (!(t.closest('main, #rack') || side) || !tiles()) return;
   band = { x: e.clientX, y: e.clientY, on: false, base: e.shiftKey || e.ctrlKey || e.metaKey ? new Set(A.sel) : new Set(), el: null };
 });
 document.addEventListener('pointermove', e => {
