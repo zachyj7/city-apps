@@ -141,6 +141,21 @@ export class Video {
     return this.cam;
   }
 
+  // A room mic: the microphone only, no camera. (fake: a quiet test tone, for trying it out on one computer)
+  async micOnly(fake) {
+    if (fake) {
+      const ac = this.ac = this.ac || new (window.AudioContext || window.webkitAudioContext)();
+      const o = ac.createOscillator(), g = ac.createGain(), d = ac.createMediaStreamDestination();
+      g.gain.value = 0.05; o.connect(g).connect(d); o.start();
+      this.cam = d.stream;
+    } else {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('This browser cannot use a microphone here.');
+      this.cam = await navigator.mediaDevices.getUserMedia({ audio: CAM.audio });
+    }
+    this.swapTracks();
+    return this.cam;
+  }
+
   cameraOff() {
     if (this.cam) for (const t of this.cam.getTracks()) t.stop();
     this.cam = null;

@@ -32,6 +32,10 @@ export class Room {
   constructor(snapshot) {
     this.s = snapshot ? JSON.parse(JSON.stringify(snapshot)) : emptyState();
     for (const p of this.s.players) p.on = !!p.cpu;        // people have to say hello again; computers are always here
+    // Room mics: extra devices (a phone in the middle of the table) that only carry sound for a Same room. They are
+    // never players, so nothing in the games sees them.
+    this.s.mics = (this.s.mics || []).filter(x => x && x.pid);
+    for (const x of this.s.mics) x.on = false;
     this.cpuT = null;
     fixState(this.s);
     this.conns = new Set();
@@ -41,6 +45,8 @@ export class Room {
   close() { clearInterval(this.ping); clearTimeout(this.cpuT); this.cpuT = null; clearTimeout(this.gT); this.gT = null; clearTimeout(this.pickT); this.pickT = null; this.closed = true; }
   each(f) { for (const c of this.conns) f(c); }
   player(pid) { return this.s.players.find(p => p.pid === pid); }
+  micOf(pid) { return (this.s.mics || []).find(x => x.pid === pid); }
+  everyone() { return [...this.s.players, ...(this.s.mics || [])]; }
   seated() { return this.s.players.filter(p => p.seat); }
   note(text) { this.s.log.push(text); if (this.s.log.length > 6) this.s.log.shift(); }
 
@@ -50,8 +56,9 @@ export class Room {
     const s = this.s;
     if (!snap || !Array.isArray(snap.players) || !(snap.at > Date.now() - 6 * 3600e3)) return;
     if (!(snap.round > s.round || (snap.round === s.round && snap.v > s.v))) return;
-    const here = s.players.filter(p => p.on);
+    const here = s.players.filter(p => p.on), mics = s.mics || [];
     this.s = JSON.parse(JSON.stringify(snap));
+    this.s.mics = mics;
     const online = new Set([...this.conns].map(c => c.pid));
     for (const p of this.s.players) p.on = !!p.cpu || online.has(p.pid);
     for (const p of here) if (!this.player(p.pid)) this.s.players.push({ ...p, seat: false, rack: [], opened: false });
@@ -84,14 +91,38 @@ export class Room {
     this.schedule();
   }
 
+  // Same room: people sitting together say so, and one device carries the sound for all of them (a room mic,
+  // if the room has one). { t: 'sameroom', pid, on }: put that person (or room mic) in my room, or take them out
+  // (my own pid with on false: I leave). { t: 'roomsnd' }: use my device for my room's sound.
+  roomMsg(p, m) {
+    const all = this.everyone();
+    if (m.t === 'roomsnd') {
+      if (p.room) for (const x of all) if (x.room === p.room) x.snd = x === p;
+      return this.push();
+    }
+    const q = all.find(x => x.pid === m.pid);
+    if (!q || q.cpu) return;
+    if (q === p) { if (!m.on) { p.room = null; p.snd = false; } return this.push(); }
+    if (m.on) {
+      const id = p.room || q.room || 'r' + Math.random().toString(36).slice(2, 8);
+      const old = [p.room, q.room].filter(x => x && x !== id);
+      for (const x of all) if (x === p || x === q || (x.room && old.includes(x.room))) x.room = id;
+      const mates = all.filter(x => x.room === id);
+      // a room mic always carries the sound when it joins; otherwise whoever set the room up
+      const snd = mates.find(x => x.micdev && x.on && (x === p || x === q)) || mates.find(x => x.snd) || p;
+      for (const x of mates) x.snd = x === snd;
+    } else if (p.room && q.room === p.room) { q.room = null; q.snd = false; }
+    return this.push();
+  }
+
   // A room needs two people still here, and exactly one device carrying its sound (one that is connected).
   tidyRooms() {
-    const ps = this.s.players;
+    const ps = this.everyone();
     for (const id of new Set(ps.map(x => x.room).filter(Boolean))) {
       const mates = ps.filter(x => x.room === id);
       if (mates.length < 2) { for (const x of mates) { x.room = null; x.snd = false; } continue; }
       const live = mates.filter(x => x.on);
-      let snd = mates.find(x => x.snd && x.on) || live[0] || mates.find(x => x.snd) || mates[0];
+      const snd = mates.find(x => x.snd && x.on) || live.find(x => x.micdev) || live[0] || mates.find(x => x.snd) || mates[0];
       for (const x of mates) x.snd = x === snd;
     }
     for (const x of ps) if (!x.room) x.snd = false;
@@ -165,6 +196,12 @@ export class Room {
     c.onmsg = m => { try { this.msg(c, m); } catch (e) { console.error(e); } };
     c.onclose = () => {
       this.conns.delete(c);
+      const mic = c.pid && this.micOf(c.pid);
+      if (mic && ![...this.conns].some(o => o.pid === mic.pid)) {
+        mic.on = false;
+        if (this.s.phase === 'lobby') this.s.mics = this.s.mics.filter(x => x !== mic);
+        return this.push();
+      }
       const p = c.pid && this.player(c.pid);
       if (p && ![...this.conns].some(o => o.pid === p.pid)) {
         p.on = false; p.share = false;
@@ -177,6 +214,21 @@ export class Room {
 
   msg(c, m) {
     const s = this.s;
+    if (m.t === 'hello' && m.micdev) {
+      c.pid = m.pid;
+      s.mics = s.mics || [];
+      let x = this.micOf(m.pid);
+      if (!x) {
+        const used = new Set(s.mics.filter(q => q.on).map(q => q.name));
+        let name = 'Room mic', n = 1;
+        while (used.has(name)) name = 'Room mic ' + ++n;
+        x = { pid: m.pid, name, micdev: true, room: null, snd: false };
+        s.mics.push(x);
+      }
+      x.peer = m.peer; x.mic = !!m.mic; x.on = true;
+      if (x.room) for (const q of this.everyone()) if (q.room === x.room) q.snd = q === x;   // back again: it carries the room's sound
+      return this.push();
+    }
     if (m.t === 'hello') {
       c.pid = m.pid;
       if (m.snap) this.adopt(m.snap);
@@ -190,6 +242,12 @@ export class Room {
       p.name = clean(m.name); p.prof = STAT_PROFILES.includes(m.prof) ? m.prof : null; p.rc = this.freeColor(cleanColor(m.rc), p.pid); p.peer = m.peer; p.cam = !!m.cam; p.mic = !!m.mic; p.on = true; p.share = false;
       return this.push();
     }
+    const mic = c.pid && this.micOf(c.pid);
+    if (mic) {
+      if (m.t === 'cam') { mic.mic = !!m.mic; return this.push(); }
+      if (m.t === 'sameroom' || m.t === 'roomsnd') return this.roomMsg(mic, m);
+      return;
+    }
     const p = c.pid && this.player(c.pid);
     if (!p) return;
 
@@ -202,26 +260,7 @@ export class Room {
     }
 
     if (m.t === 'cam') { p.cam = !!m.cam; p.mic = !!m.mic; return this.push(); }
-    // Same room: people sitting together say so, and one of their devices carries the sound for all of them.
-    // { pid, on }: put that person in my room, or take them out of it (my own pid with on false: I leave).
-    if (m.t === 'sameroom') {
-      const q = this.player(m.pid);
-      if (!q || q.cpu) return;
-      if (q === p) { if (!m.on) { p.room = null; p.snd = false; } return this.push(); }
-      if (m.on) {
-        const id = p.room || q.room || 'r' + Math.random().toString(36).slice(2, 8);
-        const old = [p.room, q.room].filter(x => x && x !== id);
-        for (const x of s.players) if (x === p || x === q || (x.room && old.includes(x.room))) x.room = id;
-        if (!s.players.some(x => x.room === id && x.snd)) p.snd = true;   // whoever set it up carries the sound
-      } else if (p.room && q.room === p.room) { q.room = null; q.snd = false; }
-      return this.push();
-    }
-    // Use my device for my room's sound.
-    if (m.t === 'roomsnd') {
-      if (!p.room) return;
-      for (const x of s.players) if (x.room === p.room) x.snd = x === p;
-      return this.push();
-    }
+    if (m.t === 'sameroom' || m.t === 'roomsnd') return this.roomMsg(p, m);
     if (m.t === 'rc') {
       const want = cleanColor(m.rc);
       if (this.freeColor(want, p.pid) === want) p.rc = want;   // otherwise someone else has it

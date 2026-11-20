@@ -114,7 +114,7 @@ b, strong { font-weight: 700; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 
 /* felt: a soft pool of light in the middle, darker edges, fine cloth grain */
-#join, #game {
+#join, #game, #micdev {
   background:
     var(--noise),
     radial-gradient(ellipse 85% 75% at 50% 40%, var(--felt) 0%, var(--felt-mid) 55%, var(--felt-dark) 100%);
@@ -175,6 +175,21 @@ b, strong { font-weight: 700; }
 #join { height: 100%; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 24px 16px; gap: 16px; }
 /* centred whatever is shown; spacers (not auto margins) so a hidden footer cannot pull the card down */
 #join::before, #join::after { content: ''; flex: 1 0 0; }
+.micjoin { margin-top: 8px; justify-content: center; }
+/* a room mic: a phone in the middle of the table carrying the sound for everyone in that room */
+#micdev { height: 100%; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 24px 16px; }
+#micdev::before, #micdev::after { content: ''; flex: 1 0 0; }
+#micdev > * { flex: none; }
+.micbox { width: min(480px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 26px 24px; }
+.micbox .title { margin: 0; }
+.micstate { text-align: center; color: var(--muted); margin: 0; }
+.micstate.good { color: var(--green-hi, #7ee2a0); }
+.micmeter { height: 14px; border-radius: 999px; background: rgba(0,0,0,.35); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+.micmeter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--green, #2fa35a), var(--gold, #f2c230)); transition: width .08s linear; }
+.micmute { min-height: 64px; font-size: 1.25em; justify-content: center; }
+.micmute.muted { --b-top: #ff6b5e; --b-bot: var(--bad); --b-edge: #8a1a12; --b-ink: #fff; }
+.micbox h2 { font-family: var(--display); font-size: 1.05em; margin: 10px 0 0; }
+.micbox .roomhint { margin: 0; }
 #join > * { flex: none; }
 .joinbox { width: min(480px, 100%); display: flex; flex-direction: column; gap: 6px; padding: 30px 30px 28px; }
 .logo { display: flex; justify-content: center; gap: 6px; margin: -2px 0 8px; --tw: 62px; --th: 83px; }
@@ -1263,3 +1278,5 @@ html.dark .sortbtn:not(.on):not(.undo) {
 }
 html.dark .rack .rackmsg, html.dark #rackInfo, html.dark .sortbtn:not(.on):not(.undo), html.dark #rackSizeBox { color: #f2f2f2; }
 html.dark #rackSizeBox input { accent-color: #f2f2f2; }
+.micicon { display: grid; place-items: center; }
+.micicon .ic { width: 56px; height: 56px; color: var(--gold); }

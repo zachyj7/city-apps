@@ -79,8 +79,13 @@
     <div id="rcPick" class="swatches row8"></div>
     <p id="joinErr" class="err" role="alert"></p>
     <button class="btn go huge" type="submit">Join the lobby <svg class="ic"><use href="#i-arrow"/></svg></button>
+    <button class="btn micjoin" type="button" id="micJoin"><svg class="ic"><use href="#i-mic"/></svg><span>Join as a room mic</span></button>
+    <p class="fieldhint">Two of you playing in one room? Join on a third device, like a phone in the middle of the table, to be the room's speaker and microphone.</p>
   </form>
 </section>
+
+<section id="micdev" hidden></section>
+<div id="roomAudio" hidden></div>
 
 <section id="game" hidden>
   <header>
