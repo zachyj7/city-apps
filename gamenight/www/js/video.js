@@ -2,7 +2,7 @@
 // at small sizes). Calls start with a blank picture and silent sound; turning the camera on swaps the real
 // tracks into every call, so nobody has to redial.
 const CAM = {
-  video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 20 } },
+  video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15 } },   // all 'ideal': a hard limit makes some cameras (MacBooks in Safari) refuse to start
   audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
 };
 
@@ -134,8 +134,8 @@ export class Video {
     if (fake) this.cam = fakeCamera();
     else {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('This browser cannot use a camera here.');
-      try { this.cam = await navigator.mediaDevices.getUserMedia(CAM); }
-      catch (e) { this.cam = await navigator.mediaDevices.getUserMedia({ video: CAM.video }); }   // camera without a microphone
+      this.cam = await firstThatWorks([CAM, { video: true, audio: CAM.audio }, { video: true, audio: true },
+        { video: CAM.video }, { video: true }]);   // simpler asks if a camera won't take ours; last, a camera without a microphone
     }
     this.swapTracks();
     return this.cam;
@@ -150,7 +150,7 @@ export class Video {
       this.cam = d.stream;
     } else {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('This browser cannot use a microphone here.');
-      this.cam = await navigator.mediaDevices.getUserMedia({ audio: CAM.audio });
+      this.cam = await firstThatWorks([{ audio: CAM.audio }, { audio: true }]);
     }
     this.swapTracks();
     return this.cam;
@@ -176,6 +176,16 @@ export class Video {
     if (this.fx) this.fx.track.enabled = on;
   }
   hasMic() { return !!(this.cam && this.cam.getAudioTracks().length); }
+}
+
+// Ask for each in turn until one works. Blocked permission or no device: stop at once, the rest would fail too.
+async function firstThatWorks(asks) {
+  let err;
+  for (const a of asks) {
+    try { return await navigator.mediaDevices.getUserMedia(a); }
+    catch (e) { err = e; if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) throw e; }
+  }
+  throw err;
 }
 
 // A moving test picture instead of a real camera (add ?fakecam to the address), for trying it out on one computer.
