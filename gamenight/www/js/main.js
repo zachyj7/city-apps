@@ -39,7 +39,7 @@ const rackStyle = rc => { const r = rackOf(rc); return `--rk-hi:${r.hi};--rk:${r
 // taken: color -> the name of whoever has it (those can't be picked)
 const swatches = (cur, act, taken = {}) => COLORS.map(k => {
   const r = RACKS[k], who = taken[k];
-  return `<button type="button" class="swatch ${k === cur ? 'on' : ''} ${who ? 'taken' : ''}" data-${act}="${k}" style="${rackStyle(k)}" aria-pressed="${k === cur}" ${who ? `disabled title="${esc(who)} has this color"` : ''} aria-label="${r.label}${who ? ` (${esc(who)})` : ''}"><span class="sw-top">${who ? esc(who.slice(0, 1).toUpperCase()) : ''}</span><span class="sw-edge">${r.label}</span></button>`;
+  return `<button type="button" class="swatch ${k === cur ? 'on' : ''} ${who ? 'taken' : ''}" data-${act}="${k}" style="${rackStyle(k)}" aria-pressed="${k === cur}" ${who ? `disabled title="${esc(who)} has this color"` : ''} aria-label="${r.label}${who ? ` (${esc(who)})` : ''}"><span class="sw-top">${who ? esc(who.slice(0, 1).toUpperCase()) : ''}</span><span class="sw-edge"></span></button>`;
 }).join('')
   // the last one opens a color picker for any color at all
   + `<label class="swatch custom ${isHex(cur) ? 'on' : ''}" style="${rackStyle(isHex(cur) ? cur : '#8a8f98')}" title="Pick any color"><input type="color" data-custom="${act}" value="${isHex(cur) ? cur : '#3fc1c9'}" aria-label="Pick your own color"><span class="sw-top">${isHex(cur) ? '' : '+'}</span><span class="sw-edge">Custom</span></label>`;
