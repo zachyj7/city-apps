@@ -4,7 +4,8 @@
 // Records have their own id, so a game is never counted twice.
 import { GAMES, GAME_IDS, PROFILES, GUEST, RPS_ID, cleanRec } from './games.js';
 
-const KEY = 'jg-ledger';
+const KEY = 'jg-ledger2';
+try { localStorage.removeItem('jg-ledger'); } catch (e) { /* private */ }   // the old records, from before the clean slate
 let recs = new Map();
 try { for (const r of JSON.parse(localStorage.getItem(KEY)) || []) { const c = cleanRec(r); if (c) recs.set(c.id, c); } } catch (e) { /* none yet */ }
 

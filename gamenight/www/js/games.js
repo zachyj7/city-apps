@@ -95,11 +95,14 @@ export const GUEST = 'Guest';
 export const STAT_PROFILES = [...PROFILES, GUEST];
 // Lifetime records also cover rock paper scissors.
 export const RPS_ID = 'rps';
+// Lifetime stats were wiped clean on 2026-11-19 (5 PM Pacific). Records from before then are thrown away, even if
+// a device that still has them passes them along.
+export const STATS_FROM = 1795136300000;
 
 // A lifetime record is one finished game: { id, at, g (game), ps (profiles who played), cpu (computers that
 // played), win (a profile, 'cpu' or null), net (Blackjack: money up or down per profile) }.
 export function cleanRec(r) {
-  if (!r || typeof r !== 'object' || typeof r.id !== 'string' || r.id.length > 24 || !Number.isFinite(r.at)) return null;
+  if (!r || typeof r !== 'object' || typeof r.id !== 'string' || r.id.length > 24 || !Number.isFinite(r.at) || r.at < STATS_FROM) return null;
   if (!GAMES[r.g] && r.g !== RPS_ID) return null;
   const ps = Array.isArray(r.ps) ? [...new Set(r.ps.filter(x => STAT_PROFILES.includes(x)))] : [];
   if (!ps.length) return null;
