@@ -114,7 +114,7 @@ b, strong { font-weight: 700; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 
 /* felt: a soft pool of light in the middle, darker edges, fine cloth grain */
-#join, #game, #micdev {
+#join, #game {
   background:
     var(--noise),
     radial-gradient(ellipse 85% 75% at 50% 40%, var(--felt) 0%, var(--felt-mid) 55%, var(--felt-dark) 100%);
@@ -175,21 +175,6 @@ b, strong { font-weight: 700; }
 #join { height: 100%; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 24px 16px; gap: 16px; }
 /* centred whatever is shown; spacers (not auto margins) so a hidden footer cannot pull the card down */
 #join::before, #join::after { content: ''; flex: 1 0 0; }
-.micjoin { margin-top: 8px; justify-content: center; }
-/* a room mic: a phone in the middle of the table carrying the sound for everyone in that room */
-#micdev { height: 100%; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 24px 16px; }
-#micdev::before, #micdev::after { content: ''; flex: 1 0 0; }
-#micdev > * { flex: none; }
-.micbox { width: min(480px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 26px 24px; }
-.micbox .title { margin: 0; }
-.micstate { text-align: center; color: var(--muted); margin: 0; }
-.micstate.good { color: var(--green-hi, #7ee2a0); }
-.micmeter { height: 14px; border-radius: 999px; background: rgba(0,0,0,.35); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
-.micmeter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--green, #2fa35a), var(--gold, #f2c230)); transition: width .08s linear; }
-.micmute { min-height: 64px; font-size: 1.25em; justify-content: center; }
-.micmute.muted { --b-top: #ff6b5e; --b-bot: var(--bad); --b-edge: #8a1a12; --b-ink: #fff; }
-.micbox h2 { font-family: var(--display); font-size: 1.05em; margin: 10px 0 0; }
-.micbox .roomhint { margin: 0; }
 #join > * { flex: none; }
 .joinbox { width: min(480px, 100%); display: flex; flex-direction: column; gap: 6px; padding: 30px 30px 28px; }
 .logo { display: flex; justify-content: center; gap: 6px; margin: -2px 0 8px; --tw: 62px; --th: 83px; }
@@ -342,14 +327,6 @@ main:not(.mat) #center { min-height: 100%; display: grid; align-items: center; }
   background: var(--bad) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'%3E%3Crect x='9' y='3' width='6' height='11' rx='3'/%3E%3Cpath d='M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M3 3l18 18'/%3E%3C/svg%3E") center / 15px no-repeat;
   box-shadow: var(--shadow-1);
 }
-.seat.roomed .face::before {
-  content: 'Same room'; position: absolute; bottom: 6px; right: 6px; z-index: 2; padding: 2px 8px; border-radius: 999px;
-  background: rgba(0,0,0,.65); color: #fff; font-family: var(--display); font-weight: 600; font-size: .7em; letter-spacing: .04em;
-}
-.roomrow { min-height: 44px; }
-.roomsnd { margin: 8px 0 6px; }
-.roomhint { margin: 4px 0 4px; color: var(--soft); font-size: .85em; }
-.roombtns { display: flex; flex-wrap: wrap; gap: 8px; }
 .tag { font-family: var(--display); font-weight: 600; font-size: .8em; text-align: center; color: var(--muted); min-height: 1.2em; }
 .seats .seat .tag:empty { display: none; }
 .tag .ic { width: 1em; height: 1em; vertical-align: -.12em; color: var(--gold); }
@@ -1278,5 +1255,44 @@ html.dark .sortbtn:not(.on):not(.undo) {
 }
 html.dark .rack .rackmsg, html.dark #rackInfo, html.dark .sortbtn:not(.on):not(.undo), html.dark #rackSizeBox { color: #f2f2f2; }
 html.dark #rackSizeBox input { accent-color: #f2f2f2; }
-.micicon { display: grid; place-items: center; }
-.micicon .ic { width: 56px; height: 56px; color: var(--gold); }
+
+/* Settings scroll when they're taller than the screen */
+#settings { max-height: calc(100vh - 74px); max-height: calc(100dvh - 74px); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+@media (max-width: 1099px) { #settings { max-height: calc(100vh - 62px); max-height: calc(100dvh - 62px); } }
+
+/* Settings: which microphone, and its test */
+.micsel { width: 100%; margin-top: 8px; font: inherit; font-size: .95em; padding: .45em .6em; border-radius: var(--r-sm); border: 2px solid transparent; background: #fff; color: #111; min-height: 40px; }
+.micsel:focus { outline: none; border-color: var(--gold); }
+.mictest { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; margin-top: 8px; }
+.mictest .btn { min-height: 38px; font-size: .9em; padding: 0 .9em; }
+.micmeter { height: 12px; border-radius: 999px; background: rgba(0,0,0,.35); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+.micmsg { margin: 6px 0 0; color: var(--soft); font-size: .85em; }
+.micmeter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #2fa35a, var(--gold)); transition: width .06s linear; }
+
+/* Big Z's list: view a screen, mute or unmute */
+.helprows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.helprow { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.helprow .btn { min-height: 38px; font-size: .9em; padding: 0 .9em; }
+.helprow .btn[data-view] { justify-content: flex-start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.helprow .hmic { min-width: 7.5em; justify-content: center; }
+
+/* Nina: her own tiles face down on her screen */
+#rack.hidetiles .grooves .tile > *, .hand.hidetiles .ttile .dm > * { visibility: hidden; }
+#rack.hidetiles .grooves .tile { background: repeating-linear-gradient(45deg, var(--tile-mid) 0 6px, var(--tile-low) 6px 12px); }
+.hand.hidetiles .ttile .dm { background: repeating-linear-gradient(45deg, #eee6d2 0 6px, #d9cfb6 6px 12px); }
+
+/* Audrey's quick peek */
+.peekbox { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.45); }
+.peekbox[hidden] { display: none; }
+.peekcard { max-width: min(96vw, 900px); max-height: 90vh; overflow: auto; padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 10px; --tw: 40px; --dw: 24px; }
+.peekhead { display: flex; align-items: center; gap: .5em; font-family: var(--display); font-size: 1.15em; }
+.peekhead .ic { width: 1.2em; height: 1.2em; color: var(--gold); }
+.peekgrid { display: grid; gap: 5px; justify-content: center; }
+.peekgrid .tile { cursor: default; }
+.peekdm { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.peekrow { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.peekgap { width: calc(var(--dw) * 2.2); }
+.peekbar { height: 5px; border-radius: 999px; background: rgba(0,0,0,.2); overflow: hidden; }
+.peekbar i { display: block; height: 100%; background: var(--gold); animation: peekdown var(--peekms, 5000ms) linear forwards; }
+@keyframes peekdown { from { width: 100%; } to { width: 0; } }
+@media (max-width: 640px) { .peekcard { --tw: 28px; --dw: 16px; } }

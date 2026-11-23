@@ -9,18 +9,14 @@ const copy = m => JSON.parse(JSON.stringify(m));
 
 export class Net {
   // h: onStatus(s), onOpen(), onMsg(m), onLost(), onPeer(peer), snapshot()
-  // joinOnly: never host, only join a lobby someone already has open (a room mic: a phone that may go to sleep)
-  constructor(code, h, joinOnly) {
-    this.joinOnly = !!joinOnly;
+  constructor(code, h) {
     this.hostId = 'gamenight-v1-' + code;
     this.h = h;
     this.gen = 0; this.room = null; this.loop = null; this.conn = null; this.peer = null;
     this.state = 'connecting'; this.lastRx = Date.now(); this.retryAt = 0;
   }
 
-  // find the table: host it if nobody has, or join it
-  next() { if (this.joinOnly) this.join(); else this.tryHost(); }
-  start() { this.next(); this.timer = setInterval(() => this.watch(), 2000); }
+  start() { this.tryHost(); this.timer = setInterval(() => this.watch(), 2000); }
 
   // Leave the table: drop the connection (and the referee, if we were hosting). Someone else takes over hosting.
   stop() {
@@ -106,8 +102,7 @@ export class Net {
     const giveUp = () => {
       if (gen !== this.gen || this.conn) return;
       try { peer.destroy(); } catch (e) { /* ignore */ }
-      if (this.joinOnly) { this.peer = null; this.status('waiting'); this.retryAt = Date.now() + 4000; }   // nobody has it open yet
-      else this.tryHost();
+      this.tryHost();
     };
     const to = setTimeout(giveUp, 15000);   // a relayed (cellular) connection can take several seconds
     peer.on('error', e => {
@@ -137,12 +132,12 @@ export class Net {
     this.h.onLost();
     this.status('reconnecting');
     this.gen++;
-    setTimeout(() => this.next(), 300 + Math.random() * 1500);
+    setTimeout(() => this.tryHost(), 300 + Math.random() * 1500);
   }
 
   watch() {
     const n = Date.now();
     if (this.state === 'client' && n - this.lastRx > 10000) this.lost();
-    else if ((this.state === 'offline' || this.state === 'waiting') && n > this.retryAt) this.next();
+    else if (this.state === 'offline' && n > this.retryAt) this.tryHost();
   }
 }

@@ -11,7 +11,13 @@
 // plain text is not in this file. It keeps casual visitors out; it is not strong security.
 // (The salt keeps the game's old name on purpose: changing it would stop the existing sign-in working.)
 const SALT = 'familytiles-helper-v1', ROUNDS = 200000;
-const KEYS = { helper: 'ed5ea437a688e4ea739c93fd156211d6e1b537c4ca62320fa177fa8faeb98969' };
+const KEYS = {
+  helper: 'ed5ea437a688e4ea739c93fd156211d6e1b537c4ca62320fa177fa8faeb98969',   // bigz
+  audrey: '29303579c0590945af16498dfeac97aba6a8b80efbf769ef44266679b4ff1083',   // a quick peek at Gabe's tiles
+  nina: '373df60bd0af11848da28e28ad17e3b403340f46d897bf4b8139e0b55772e099',     // a switch that hides her own tiles
+};
+const ROLE_NAMES = { helper: 'Big Z', audrey: 'Audrey', nina: 'Nina' };
+const SIGNIN_KEY = 'jg-signin';   // the sign-in, kept for this tab so a reload doesn't sign you out
 const CHUNK = 12000;        // one message stays well under what a data channel will carry
 const FRAME_MS = 600;       // at most this often
 const KEEP_MS = 6000;       // the helper says "still here" this often
@@ -20,7 +26,7 @@ const DROP_MS = 20000;      // and is forgotten after this long without it
 // closing the table. (During a game, the middle of the screen is blocked too: see allowed().)
 const BLOCKED = '#rack, #hand, #board, #pickBoard, #controls, .tile, .pc, .cc, .dm, #rpsBox, #wBox, #wNote, #seatMenu, .seat, #helpBanner, #viewer, #closeAllBtn, #endBtn, #leaveBtn, [data-act=leave], #helpBox';
 
-// Which login this is ('helper'), or null. (The referee uses it too, for the coach switch.)
+// Which login this is ('helper', 'audrey', 'nina'), or null. (The referee uses it too, for the coach switch.)
 export async function check(u, p) {
   try {
     const enc = new TextEncoder();
@@ -37,7 +43,7 @@ function device(ua) {
   return `${os} · ${br}`;
 }
 
-export function initHelp({ A, pid, send, toast, esc, ic }) {
+export function initHelp({ A, pid, send, toast, esc, ic, hooks = {} }) {
   const $ = s => document.querySelector(s);
   const box = $('#helpBox');
   const relay = (to, m) => send({ t: 'relay', to, m });
@@ -56,11 +62,11 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     const people = cred && A.S ? A.S.players.filter(p => p.on && !p.cpu && p.pid !== pid) : [];
     const statsOn = !(A.S && A.S.statsOff);
     const sharing = sharingAll;
-    const key = cred ? cred.role + '|' + statsOn + '|' + sharing + '|' + people.map(p => p.pid + p.name).join('|') : 'out';
+    const key = cred ? cred.role + '|' + statsOn + '|' + sharing + '|' + people.map(p => [p.pid, p.name, p.cam, p.mic].join(',')).join('|') : 'out';
     if (key === boxKey) return;
     boxKey = key;
     if (!cred) {
-      box.innerHTML = `<details class="helpin"><summary>${ic('lock')}Helper sign-in</summary>
+      box.innerHTML = `<details class="helpin"><summary>${ic('lock')}Sign in</summary>
         <form id="helpForm" autocomplete="off">
           <input id="helpUser" aria-label="Username" placeholder="Username" autocapitalize="none" spellcheck="false" maxlength="40">
           <input id="helpPass" type="password" aria-label="Password" placeholder="Password" maxlength="60">
@@ -68,9 +74,16 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
         </form></details>`;
       return;
     }
-    box.innerHTML = `<span class="setlabel">${ic('users')}Helper: view a screen<button type="button" class="linkbtn" data-help="out">Sign out</button></span>
-      <div class="helplist">${people.length
-        ? people.map(p => `<button type="button" class="btn" data-view="${esc(p.pid)}">${esc(p.name)}</button>`).join('')
+    if (cred.role !== 'helper') {
+      box.innerHTML = `<span class="setlabel">${ic('lock')}Signed in as ${esc(ROLE_NAMES[cred.role] || cred.role)}<button type="button" class="linkbtn" data-help="out">Sign out</button></span>`;
+      return;
+    }
+    // each person: view their screen, and mute or unmute their microphone
+    const micBtn = p => !p.cam ? `<button type="button" class="btn hmic" disabled title="Their camera is off">${ic('micoff')}<span>Camera off</span></button>`
+      : `<button type="button" class="btn hmic ${p.mic ? '' : 'muted'}" data-hush="${esc(p.pid)}" data-on="${p.mic ? 1 : 0}" aria-label="${p.mic ? 'Mute' : 'Unmute'} ${esc(p.name)}">${p.mic ? `${ic('mic')}<span>Mute</span>` : `${ic('micoff')}<span>Unmute</span>`}</button>`;
+    box.innerHTML = `<span class="setlabel">${ic('users')}Helper: view a screen, mute someone<button type="button" class="linkbtn" data-help="out">Sign out</button></span>
+      <div class="helprows">${people.length
+        ? people.map(p => `<div class="helprow"><button type="button" class="btn" data-view="${esc(p.pid)}">${esc(p.name)}</button>${micBtn(p)}</div>`).join('')
         : '<span class="helpnone">Nobody else is at the table yet.</span>'}</div>
       <div class="helpshare"><button type="button" class="btn ${sharing ? 'on' : ''}" data-help="share">${ic(sharing ? 'stop' : 'users')}${sharing ? 'Stop sharing my game' : 'Share my game with everyone'}</button></div>
       <label class="setrow helpstats"><span class="setlabel">${ic('trophy')}Statistics and coach for everyone</span>
@@ -93,15 +106,55 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     const role = await check(u, p);
     btn.disabled = false;
     if (!role) { $('#helpPass').value = ''; return toast('That username or password is not right.'); }
-    cred = { u, p, role };
-    renderBox();
+    signedIn({ u, p, role });
   });
+  function signedIn(c) {
+    cred = c;
+    try { if (c) sessionStorage.setItem(SIGNIN_KEY, JSON.stringify({ u: c.u, p: c.p })); else sessionStorage.removeItem(SIGNIN_KEY); } catch (e) { /* private window */ }
+    boxKey = null; renderBox();
+    if (hooks.onRole) hooks.onRole(c ? c.role : null);
+  }
+  // signed in earlier in this tab: check it again and carry on
+  (async () => {
+    let c = null;
+    try { c = JSON.parse(sessionStorage.getItem(SIGNIN_KEY)); } catch (e) { /* none */ }
+    if (!c || !c.u) return;
+    const role = await check(c.u, c.p);
+    if (role && !cred) signedIn({ u: c.u, p: c.p, role });
+  })();
   box.addEventListener('click', e => {
     const v = e.target.closest('[data-view]');
     if (v) return view(v.dataset.view);
     if (e.target.closest('[data-help=share]')) return void (sharingAll ? stopShare() : startShare());
-    if (e.target.closest('[data-help=out]')) { closeViewer(); stopShare(); cred = null; renderBox(); }
+    const h = e.target.closest('[data-hush]');
+    if (h && cred && cred.role === 'helper') {
+      const on = h.dataset.on === '1';   // their microphone is on now: mute it
+      relay(h.dataset.hush, { k: 'hush', mute: on, u: cred.u, p: cred.p });
+      h.disabled = true;   // until their device answers (the list redraws when their microphone changes)
+      setTimeout(() => { h.disabled = false; }, 4000);
+      return;
+    }
+    if (e.target.closest('[data-help=out]')) { closeViewer(); stopShare(); signedIn(null); }
   });
+
+  /* ---------------- Big Z muting someone; Audrey's peek ----------------
+     Both are asked of the other person's own browser, which checks the sign-in itself before doing anything. */
+  async function onHush(from, m) {
+    if ((await check(m.u, m.p)) !== 'helper') return;
+    if (hooks.setMic) hooks.setMic(!m.mute, nameOf(from));
+  }
+  let peekAsk = null;   // { pid, at } while waiting for a peek to come back
+  function peek(to) {
+    if (!cred || cred.role !== 'audrey') return false;
+    peekAsk = { pid: to, at: Date.now() };
+    relay(to, { k: 'peek', u: cred.u, p: cred.p });
+    return true;
+  }
+  async function onPeek(from, m) {
+    if ((await check(m.u, m.p)) !== 'audrey') return;
+    const hand = hooks.myHand ? hooks.myHand() : null;
+    relay(from, { k: 'peekans', ...(hand || { none: 1 }) });
+  }
 
   /* ---------------- the helper sharing their game with everyone ----------------
      Not the real screen: the same copy of this page the helper view uses, so only the game is shown, as the
@@ -544,6 +597,14 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
       if (m.k === 'ctlask') { const w = watchers.get(from); if (w && !w.ctl) { w.ask = true; sync(); } return; }
       if (m.k === 'ctlend') { const w = watchers.get(from); if (w) { w.ctl = false; w.ask = false; sync(); } return; }
       if (m.k === 'do') return onDo(from, m);
+      if (m.k === 'hush') return void onHush(from, m);
+      if (m.k === 'peek') return void onPeek(from, m);
+      if (m.k === 'peekans') {
+        if (!peekAsk || peekAsk.pid !== from || Date.now() - peekAsk.at > 15000) return;
+        peekAsk = null;
+        if (hooks.showPeek) hooks.showPeek(from, m);
+        return;
+      }
       // the helper's game, shared with everyone
       if (m.k === 'shareme') { if (sharingAll && Date.now() - lastSent > 1000) sendFrame(true); return; }
       if (from === shareFrom && m.k === 'sp') return onSharePtr(m);
@@ -582,5 +643,7 @@ export function initHelp({ A, pid, send, toast, esc, ic }) {
     },
     leave() { closeViewer(true); watchers.clear(); sync(); stopShare(); renderShare(); },
     render: renderBox,
+    role: () => (cred ? cred.role : null),
+    peek,
   };
 }

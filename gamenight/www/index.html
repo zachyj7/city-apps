@@ -50,6 +50,8 @@
     <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3.5"/><path d="M12 4v4M9 13.5v.5M15 13.5v.5M9.5 17h5M2 13v3M22 13v3"/><circle cx="12" cy="3" r="1.2"/></symbol>
     <symbol id="i-space" viewBox="0 0 24 24"><path d="M4 5v14M20 5v14M8 12h8M10.5 9.5L8 12l2.5 2.5M13.5 9.5L16 12l-2.5 2.5"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-eyeoff" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7c2 0 3.7.7 5.1 1.6M22 12s-3.6 7-10 7c-2 0-3.7-.7-5.1-1.6M3 3l18 18"/></symbol>
     <symbol id="i-fit" viewBox="0 0 24 24"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5M8 8l3 3M16 8l-3 3M8 16l3-3M16 16l-3-3"/></symbol>
     <symbol id="i-skip" viewBox="0 0 24 24"><path d="M5 5l9 7-9 7zM18 5v14"/></symbol>
     <symbol id="i-crown" viewBox="0 0 24 24"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></symbol>
@@ -79,12 +81,8 @@
     <div id="rcPick" class="swatches row8"></div>
     <p id="joinErr" class="err" role="alert"></p>
     <button class="btn go huge" type="submit">Join the lobby <svg class="ic"><use href="#i-arrow"/></svg></button>
-    <button class="btn micjoin" type="button" id="micJoin"><svg class="ic"><use href="#i-mic"/></svg><span>Join as a room mic</span></button>
   </form>
 </section>
-
-<section id="micdev" hidden></section>
-<div id="roomAudio" hidden></div>
 
 <section id="game" hidden>
   <header>
@@ -111,7 +109,15 @@
     <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-moon"/></svg>Dark mode</span><input type="checkbox" class="switch" id="darkOn"></label>
     <label class="setrow"><span class="setlabel"><svg class="ic"><use href="#i-sound"/></svg>Game sounds</span><input type="checkbox" class="switch" id="soundOn"></label>
     <label class="setrow" id="listedRow" hidden><span class="setlabel"><svg class="ic"><use href="#i-users"/></svg>Show this lobby on the start screen</span><input type="checkbox" class="switch" id="listedOn" data-listed></label>
-    <div class="setgroup" id="roomBox"></div>
+    <div class="setgroup" id="micBox">
+      <span class="setlabel"><svg class="ic"><use href="#i-mic"/></svg>Microphone</span>
+      <select id="micSel" class="micsel" aria-label="Which microphone to use"><option value="">Default microphone</option></select>
+      <div class="mictest">
+        <button type="button" class="btn" id="micTest"><svg class="ic"><use href="#i-mic"/></svg><span>Test microphone</span></button>
+        <div class="micmeter" aria-hidden="true"><i></i></div>
+      </div>
+      <p class="micmsg" id="micMsg" role="status">Say something for 4 seconds. It plays back so you can hear yourself.</p>
+    </div>
     <div class="setgroup">
       <span class="setlabel"><svg class="ic"><use href="#i-users"/></svg>Volume of each person</span>
       <div id="volList"></div>
@@ -144,6 +150,7 @@
       </div>
       <div id="dmTools" class="dmtools" hidden>
         <label title="Size of the table"><svg class="ic"><use href="#i-fit"/></svg><span class="dmlbl">Table</span><input type="range" id="dmTable" min="0.6" max="2" step="0.05" value="1" aria-label="Size of the table"></label>
+        <span id="dmExtra" class="dmextra"></span>
         <label title="Size of your dominoes"><svg class="ic"><use href="#i-shapes"/></svg><span class="dmlbl">Your dominoes</span><input type="range" id="dmSize" min="0.7" max="1.6" step="0.05" value="1" aria-label="Size of your dominoes"></label>
       </div>
       <div id="hand" class="hand" hidden></div>

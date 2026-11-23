@@ -14,10 +14,8 @@ export class Video {
     this.cam = null;            // our camera + mic stream
     this.peer = null;
     this.blank = null;
-    this.ac = null;             // sound processing (made inside a click so it is allowed to run)
-    this.boost = 1;             // how much louder the microphone goes out (Same room: one mic for the whole room)
-    this.fx = null;             // the louder microphone: { raw, src, gain, track }
     this.want = [];             // who we should have a call with (see sync)
+    this.micId = '';            // the microphone chosen in Settings ('' = the device's default)
     this.healT = 0;
   }
 
@@ -31,7 +29,7 @@ export class Video {
     const vt = cv.captureStream ? cv.captureStream(1).getVideoTracks()[0] : null;
     let at = null;
     try {
-      const ac = this.ac = new (window.AudioContext || window.webkitAudioContext)();
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
       at = ac.createMediaStreamDestination().stream.getAudioTracks()[0];
     } catch (e) { /* no audio */ }
     this.blank = { video: vt, audio: at };
@@ -39,45 +37,7 @@ export class Video {
 
   track(kind) {
     const real = this.cam && this.cam.getTracks().find(t => t.kind === kind && t.readyState === 'live');
-    if (real && kind === 'audio' && this.boost > 1) return this.boosted(real) || real;
     return real || this.blank[kind];
-  }
-
-  // The microphone made louder for a whole room sharing one device: turned up, then a compressor so close voices
-  // don't blare or crackle while voices across the room come through. Echo cancelling has already happened by now.
-  boosted(raw) {
-    try {
-      if (!this.fx || this.fx.raw !== raw) {
-        this.dropFx();
-        const ac = this.ac = this.ac || new (window.AudioContext || window.webkitAudioContext)();
-        const src = ac.createMediaStreamSource(new MediaStream([raw]));
-        const gain = ac.createGain();
-        const comp = ac.createDynamicsCompressor();
-        comp.threshold.value = -24; comp.knee.value = 12; comp.ratio.value = 6; comp.attack.value = 0.005; comp.release.value = 0.25;
-        const dest = ac.createMediaStreamDestination();
-        src.connect(gain).connect(comp).connect(dest);
-        this.fx = { raw, src, gain, track: dest.stream.getAudioTracks()[0] };
-      }
-      if (this.ac.state === 'suspended') this.ac.resume();
-      this.fx.gain.gain.value = this.boost;
-      this.fx.track.enabled = raw.enabled;
-      return this.fx.track;
-    } catch (e) { return null; }
-  }
-  dropFx() {
-    if (!this.fx) return;
-    try { this.fx.src.disconnect(); this.fx.track.stop(); } catch (e) { /* ignore */ }
-    this.fx = null;
-  }
-
-  // 1: the microphone as it is. More: louder (Same room, on the device carrying the room's sound).
-  setBoost(b) {
-    b = b > 1 ? b : 1;
-    if (b === this.boost) return;
-    const was = this.boost > 1;
-    this.boost = b;
-    if (this.fx) this.fx.gain.gain.value = b;
-    if (was !== (b > 1)) { if (b === 1) this.dropFx(); this.swapTracks(); }
   }
   outStream() { return new MediaStream([this.track('video'), this.track('audio')].filter(Boolean)); }
 
@@ -155,32 +115,41 @@ export class Video {
     if (fake) this.cam = fakeCamera();
     else {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('This browser cannot use a camera here.');
-      this.cam = await firstThatWorks([CAM, { video: true, audio: CAM.audio }, { video: true, audio: true },
+      const chosen = this.micAsk();
+      this.cam = await firstThatWorks([
+        ...(this.micId ? [{ video: CAM.video, audio: chosen }, { video: true, audio: chosen }] : []),   // the chosen microphone; if it's gone, the default
+        CAM, { video: true, audio: CAM.audio }, { video: true, audio: true },
         { video: CAM.video }, { video: true }]);   // simpler asks if a camera won't take ours; last, a camera without a microphone
     }
     this.redial();
     return this.cam;
   }
 
-  // A room mic: the microphone only, no camera. (fake: a quiet test tone, for trying it out on one computer)
-  async micOnly(fake) {
-    if (fake) {
-      const ac = this.ac = this.ac || new (window.AudioContext || window.webkitAudioContext)();
-      const o = ac.createOscillator(), g = ac.createGain(), d = ac.createMediaStreamDestination();
-      g.gain.value = 0.05; o.connect(g).connect(d); o.start();
-      this.cam = d.stream;
-    } else {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('This browser cannot use a microphone here.');
-      this.cam = await firstThatWorks([{ audio: CAM.audio }, { audio: true }]);
-    }
+  // What to ask the browser for: the chosen microphone, with echo cancelling and the rest.
+  micAsk() { return this.micId ? { ...CAM.audio, deviceId: { exact: this.micId } } : CAM.audio; }
+  // The microphone in use right now (its device id), if the camera is on.
+  micInUse() {
+    const t = this.cam && this.cam.getAudioTracks()[0];
+    return t && t.getSettings ? t.getSettings().deviceId || '' : '';
+  }
+
+  // Switch to another microphone. With the camera on, the new one goes into every call at once.
+  async useMic(id, on) {
+    this.micId = id || '';
+    if (!this.cam) return;   // used the next time the camera goes on
+    const fresh = await navigator.mediaDevices.getUserMedia({ audio: this.micAsk() });
+    const t = fresh.getAudioTracks()[0];
+    if (!t) return;
+    t.enabled = on;
+    for (const old of this.cam.getAudioTracks()) old.stop();
+    this.cam = new MediaStream([...this.cam.getVideoTracks(), t]);
     this.redial();
-    return this.cam;
+    if (this.onChange) this.onChange();
   }
 
   cameraOff() {
     if (this.cam) for (const t of this.cam.getTracks()) t.stop();
     this.cam = null;
-    this.dropFx();
     this.redial();
   }
 
@@ -195,7 +164,6 @@ export class Video {
 
   setMic(on) {
     if (this.cam) for (const t of this.cam.getAudioTracks()) t.enabled = on;
-    if (this.fx) this.fx.track.enabled = on;
   }
   hasMic() { return !!(this.cam && this.cam.getAudioTracks().length); }
 }

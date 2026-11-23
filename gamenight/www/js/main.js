@@ -10,6 +10,7 @@ import { allRecs, mergeRecs, lifeWins, lifeTable } from './lifetime.js';
 import { watchLobbies, lobbyNotice } from './lobbies.js';
 import { renderChess, renderCheckers, renderMancala, boardControls, boardTap, chessGlyph } from './boardview.js';
 import { renderIdiot, idiotHand, idiotControls, renderHearts, heartsHand, heartsControls, renderDominoes, dominoHand, dominoControls, tableTap, TABLE_ACTS, HAND_GAMES, domino, setTrayHooks } from './cardtable.js';
+import { TILES as DM_TILES } from './dominoes.js';
 import { renderBJ, bjControls, renderUno, unoHand, unoControls, pcard, ccard, money, isWild } from './cardview.js';
 
 // Rack colors to pick from. hi/base/lo/deep shade the plastic, ink is the pressed-in name, text is printing on it.
@@ -103,12 +104,6 @@ function setupJoin() {
   nameMode();
   $('#name').value = tabNick || '';
   $('#code').value = cleanCode(qs.get('room')) || store.get('code', '') || 'family';
-  $('#micJoin').addEventListener('click', () => {
-    const code = cleanCode($('#code').value);
-    if (!code) { $('#code').focus(); $('#joinErr').textContent = 'Please type the lobby name, like family.'; return; }
-    store.set('code', code);
-    startMic(code);
-  });
   $('#joinForm').addEventListener('submit', e => {
     e.preventDefault();
     const prof = sel.value;
@@ -130,8 +125,7 @@ function setupJoin() {
   pick.addEventListener('click', e => { const b = e.target.closest('[data-rc]'); if (b) { A.rc = b.dataset.rc; saveRc(); paint(); } });
   pick.addEventListener('change', e => { if (e.target.matches('[data-custom]') && isHex(e.target.value.toLowerCase())) { A.rc = e.target.value.toLowerCase(); saveRc(); paint(); } });
   showLobbies();
-  if (qs.has('auto') && qs.has('roommic') && cleanCode($('#code').value)) $('#micJoin').click();
-  else if (qs.has('auto') && STAT_PROFILES.includes(sel.value) && (sel.value !== GUEST || $('#name').value.trim())) $('#joinForm').requestSubmit();
+  if (qs.has('auto') && STAT_PROFILES.includes(sel.value) && (sel.value !== GUEST || $('#name').value.trim())) $('#joinForm').requestSubmit();
 }
 
 // The open lobbies, listed on the start screen. Tapping one fills in its name (and joins, once you have
@@ -161,7 +155,7 @@ function start(name, code) {
   $('#tableName').textContent = code;
   applyZoom();
   A.grid = loadGrid();
-  newVideo();
+  if (!A.video) { A.video = new Video(() => renderSeats()); A.video.init(); A.video.micId = store.get('micdev', '') || ''; }
   A.net = new Net(code, {
     onStatus: s => { A.status = s; renderStatus(); },
     onOpen: () => { laySent = ''; hello(); send({ t: 'ledger', recs: allRecs() }); },
@@ -191,147 +185,6 @@ function start(name, code) {
   if (qs.has('fakecam')) toggleCam();
 }
 
-/* ---------------- room mic ----------------
-   A third device (a phone in the middle of the table) that joins a lobby only to be a Same room's speaker and
-   microphone. It is never a player: it has no seat, can't host, and the games never see it. It joins a lobby that
-   is already open, and plays and sends sound only once it's in a room. */
-let wakeLock = null, meterT = 0, micDevKey = '';
-async function startMic(code) {
-  A.micdev = true; A.name = 'Room mic'; A.code = code; A.micOn = true;
-  hideLobbies();
-  const u = new URL(location.href); u.searchParams.set('room', code); u.searchParams.delete('auto'); history.replaceState(null, '', u);
-  $('#join').hidden = true; $('#micdev').hidden = false;
-  newVideo();
-  A.status = 'connecting';
-  micDevState();
-  try { await A.video.micOnly(qs.has('fakecam')); A.camOn = true; }
-  catch (e) {
-    A.micdev = false; micDevKey = '';
-    $('#micdev').hidden = true; $('#join').hidden = false; showLobbies();
-    toast(e && e.name === 'NotAllowedError'
-      ? 'The microphone is blocked. Allow the microphone for this page in your browser settings, then try again.'
-      : 'Could not start the microphone. ' + (e && e.message ? e.message : ''), 7000);
-    return;
-  }
-  keepAwake();
-  startMeter();
-  A.net = new Net(code, {
-    onStatus: s => { A.status = s; micDevState(); },
-    onOpen: () => hello(),
-    onMsg: m => {
-      if (m.t === 'state') setState(m.s);
-      else if (m.t === 'closed') leaveTable(`${m.by} closed the table.`);
-    },
-    onLost: () => {},
-    onPeer: peer => A.video.setPeer(peer),
-    snapshot: () => null,
-  }, true);
-  A.net.start();
-}
-
-// The screen stays on, or the phone would go to sleep and the room would lose its sound.
-async function keepAwake() {
-  try { if (navigator.wakeLock && A.micdev && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { /* not allowed */ }
-}
-document.addEventListener('visibilitychange', () => { if (A.micdev && document.visibilityState === 'visible') keepAwake(); });
-
-// How loud the microphone hears the room, so you can see it's working.
-function startMeter() {
-  clearInterval(meterT);
-  try {
-    const t = A.video.cam && A.video.cam.getAudioTracks()[0];
-    if (!t) return;
-    const ac = A.video.ac || new (window.AudioContext || window.webkitAudioContext)();
-    const an = ac.createAnalyser();
-    an.fftSize = 512;
-    ac.createMediaStreamSource(new MediaStream([t])).connect(an);
-    const buf = new Float32Array(an.fftSize);
-    meterT = setInterval(() => {
-      const bar = $('#micdev .micmeter i');
-      if (!bar) return;
-      an.getFloatTimeDomainData(buf);
-      let sum = 0;
-      for (const x of buf) sum += x * x;
-      const on = t.enabled && micLive();
-      bar.style.width = on ? Math.min(100, Math.round(Math.sqrt(sum / buf.length) * 400 * A.roomBoost)) + '%' : '0%';
-    }, 100);
-  } catch (e) { /* no meter */ }
-}
-
-// Everything a room mic does when the lobby changes: calls, sound in and out, and its screen.
-function micDevState() {
-  if (!A.micdev) return;
-  const S = A.S;
-  if (S && A.video) A.video.sync([...S.players, ...(S.mics || [])].filter(p => p.on && p.peer && p.pid !== pid && !p.cpu).map(p => p.peer));
-  if (S) applyMic();
-  playRoomAudio(S ? [...S.players.filter(p => p.on && !p.cpu), ...(S.mics || []).filter(x => x.on && x.pid !== pid)] : []);
-  renderMicDev();
-}
-
-function renderMicDev() {
-  const box = $('#micdev');
-  const S = A.S, R = S && myRoom();
-  const people = S ? S.players.filter(p => p.on && !p.cpu) : [];
-  const good = A.status === 'client';
-  const key = JSON.stringify([A.status, A.code, A.micOn, people.map(p => [p.pid, p.name, p.room, p.snd]), R && R.id, R && R.snd && R.snd.pid]);
-  if (key === micDevKey) return;
-  micDevKey = key;
-  const status = A.status === 'waiting' ? `Waiting for someone to open the lobby “${esc(A.code)}”…`
-    : good ? (R ? (R.isSnd ? 'Connected. This device is the room\'s speaker and microphone.' : `Connected. The room's sound is going through ${esc(R.snd ? R.snd.name : 'another device')}.`)
-      : 'Connected. Turn on who is in this room to start.')
-    : 'Connecting…';
-  box.innerHTML = `<div class="card micbox">
-    <div class="micicon" aria-hidden="true">${ic('mic')}</div>
-    <h1 class="title">Room mic</h1>
-    <p class="micstate ${good && R && R.isSnd ? 'good' : ''}">${status}</p>
-    <div class="micmeter" aria-hidden="true"><i></i></div>
-    ${R && R.isSnd ? `<button type="button" class="btn huge micmute ${A.micOn ? '' : 'muted'}" data-micmute>${A.micOn ? `${ic('mic')}<span>Mute the room</span>` : `${ic('micoff')}<span>Unmute the room</span>`}</button>` : ''}
-    <h2>Who is in this room?</h2>
-    <p class="roomhint">Turn on everyone sitting near this device. Their own devices go quiet, and this one plays the others and uses its microphone.</p>
-    ${people.length ? people.map(p => `<label class="setrow roomrow"><span class="vname">${esc(p.name)}</span><input type="checkbox" class="switch" data-room="${esc(p.pid)}" ${R && p.room === R.id ? 'checked' : ''} aria-label="${esc(p.name)} is in this room"></label>`).join('')
-      : `<p class="roomhint">${good ? 'Nobody is in the lobby yet.' : ''}</p>`}
-    ${R && !R.isSnd ? `<button type="button" class="btn" data-roomsnd>${ic('sound')}<span>Use this device for the room's sound</span></button>` : ''}
-    ${R && R.isSnd ? `<label class="volrow"><span class="vname">Mic pickup</span><input type="range" min="100" max="400" step="25" value="${Math.round(A.roomBoost * 100)}" data-roomboost aria-label="How much the microphone picks up"><b>${Math.round(A.roomBoost * 100)}%</b></label>
-      <p class="roomhint">Turn it down if the others hear an echo. Use this device's own buttons for the speaker volume.</p>` : ''}
-    <button type="button" class="btn" data-micleave>${ic('logout')}<span>Stop being the room mic</span></button>
-  </div>`;
-}
-$('#micdev').addEventListener('change', e => {
-  const t = e.target.closest('[data-room]');
-  if (t) send({ t: 'sameroom', pid: t.dataset.room, on: t.checked });
-});
-$('#micdev').addEventListener('input', e => {
-  const r = e.target.closest('[data-roomboost]');
-  if (!r) return;
-  A.roomBoost = r.value / 100;
-  store.set('roomboost', A.roomBoost);
-  r.nextElementSibling.textContent = r.value + '%';
-  applyMic();
-});
-$('#micdev').addEventListener('click', e => {
-  if (e.target.closest('[data-micmute]')) { A.micOn = !A.micOn; applyMic(true); micDevState(); }
-  else if (e.target.closest('[data-roomsnd]')) send({ t: 'roomsnd' });
-  else if (e.target.closest('[data-micleave]')) leaveTable('This device stopped being the room mic.');
-});
-
-// Sound with no picture: the room mics (for players), or everyone (on a room mic). Each plays only if it should
-// be heard here (see heard()), at that person's volume.
-const audioEls = new Map();
-function playRoomAudio(list) {
-  const box = $('#roomAudio');
-  const keep = new Set();
-  for (const p of list) {
-    const stream = p.peer && A.video && A.video.streams.get(p.peer);
-    if (!stream) continue;
-    keep.add(p.pid);
-    let a = audioEls.get(p.pid);
-    if (!a) { a = document.createElement('audio'); a.autoplay = true; audioEls.set(p.pid, a); box.appendChild(a); }
-    if (a.srcObject !== stream) { a.srcObject = stream; a.play().catch(() => {}); }
-    applyVolume(p, a, stream);
-  }
-  for (const [k, a] of audioEls) if (!keep.has(k)) { a.srcObject = null; a.remove(); audioEls.delete(k); }
-}
-
 // The last game we saw, kept across a reload so the game survives anyone (even the host) refreshing.
 const snapKey = () => 'jg-snap-' + A.code;
 function saveSnap(S) { try { sessionStorage.setItem(snapKey(), JSON.stringify(S)); } catch (e) { /* full or private */ } }
@@ -339,12 +192,8 @@ function loadSnap() { try { return JSON.parse(sessionStorage.getItem(snapKey()))
 function snapshot() { return A.S || loadSnap(); }
 
 function hello() {
-  const snap = A.micdev ? null : snapshot();
-  A.net.send({ t: 'hello', pid, name: A.name, prof: A.prof, rc: A.rc, snap: snap && snap.round ? snap : null, peer: A.net.peer && A.net.peer.id, cam: A.camOn, mic: (micSent = micOut()), micdev: A.micdev || undefined });
-}
-// Made inside a click, so its sound is allowed to start. A room mic has no seats: it only plays sound.
-function newVideo() {
-  if (!A.video) { A.video = new Video(() => A.micdev ? micDevState() : renderSeats()); A.video.init(); }
+  const snap = snapshot();
+  A.net.send({ t: 'hello', pid, name: A.name, prof: A.prof, rc: A.rc, snap: snap && snap.round ? snap : null, peer: A.net.peer && A.net.peer.id, cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
 }
 function send(m) { A.net && A.net.send(m); }
 
@@ -358,7 +207,6 @@ const seated = () => A.S ? A.S.players.filter(p => p.seat) : [];
 const isHost = () => !!(A.S && A.S.host === pid);
 
 function setState(S) {
-  if (A.micdev) { A.S = S; return micDevState(); }
   const was = A.S;
   A.S = S;
   saveSnap(S);
@@ -376,8 +224,6 @@ function setState(S) {
   if (S.phase !== 'play' || !S.id || S.id.stage !== 'swap') A.iswap = null;
   rpsState();
   updateNotice();
-  applyMic();
-  renderRoom();
   // the host can list or unlist the lobby from Settings at any time, games included
   $('#listedRow').hidden = !isHost();
   $('#listedOn').checked = !S.unlisted;
@@ -428,7 +274,7 @@ function setState(S) {
   }
   A.lastPlayed = pk;
   if (A.hand && (A.hand.ending || A.hand.turnNo !== S.turnNo)) A.hand = null;
-  A.video.sync([...S.players, ...(S.mics || [])].filter(p => p.on && p.peer && p.pid !== pid).map(p => p.peer));
+  A.video.sync(S.players.filter(p => p.on && p.peer && p.pid !== pid).map(p => p.peer));
   flip(null, renderAll);
   help.state();
   // Statistics and coach are for Number Tiles only.
@@ -682,88 +528,9 @@ function renderStatus() {
   cam.setAttribute('aria-pressed', A.camOn);
   const mic = $('#micBtn');
   mic.hidden = !A.camOn || !A.video || !A.video.hasMic();
-  const R = A.S && myRoom();
-  if (R && !R.isSnd) {
-    // in a room, on a device that isn't the room's sound: the microphone stays off
-    mic.innerHTML = `${ic('micoff')}<span>Room</span>`;
-    mic.title = `Same room: the sound goes through ${sndLabel(R)}`;
-    mic.classList.add('muted');
-  } else {
-    mic.innerHTML = A.micOn ? `${ic('mic')}<span>Mute</span>` : `${ic('micoff')}<span>Unmute</span>`;
-    mic.title = A.micOn ? 'Mute' : 'Unmute';
-    mic.classList.toggle('muted', !A.micOn);
-  }
+  mic.innerHTML = A.micOn ? `${ic('mic')}<span>Mute</span>` : `${ic('micoff')}<span>Unmute</span>`;
+  mic.classList.toggle('muted', !A.micOn);
 }
-
-/* Same room: people sitting together hear each other in person, so their devices never play each other, and only
-   one device in the room (the "room sound") plays everyone else and sends its microphone. Two microphones and two
-   speakers in one room would otherwise echo and double every voice for the people far away. */
-const sndLabel = R => !R.snd ? 'another device' : R.snd.micdev ? R.snd.name : R.snd.name + "'s device";
-const roomMics = () => (A.S && A.S.mics) || [];
-// me in the lobby: a player, or (on a room mic) the room mic
-const meAny = () => me() || roomMics().find(x => x.pid === pid);
-function myRoom() {
-  const m = A.S && meAny();
-  if (!m || !m.room) return null;
-  const mates = [...A.S.players, ...roomMics()].filter(q => q.room === m.room);
-  const snd = mates.find(q => q.snd) || null;
-  return { id: m.room, mates, snd, isSnd: !!snd && snd.pid === pid };
-}
-// Do I play this person's voice?
-// (a room mic that isn't in a room yet stays silent both ways)
-function heard(p) { const R = myRoom(); if (A.micdev && !R) return false; return !R || (R.isSnd && p.room !== R.id); }
-const micLive = () => A.micOn && (A.micdev ? !!(myRoom() && myRoom().isSnd) : !(myRoom() && !myRoom().isSnd));
-const micOut = () => !!(A.camOn && micLive() && A.video && A.video.hasMic());
-let micSent = null;
-// Switch my microphone on or off to match the room, and tell everyone if that changed.
-function applyMic(force) {
-  if (!A.video) return;
-  const R = myRoom();
-  A.video.setBoost(R && R.isSnd ? A.roomBoost : 1);   // one mic for the whole room: pick up more
-  A.video.setMic(micLive());
-  const out = micOut();
-  if (force || out !== micSent) { micSent = out; send({ t: 'cam', cam: A.camOn, mic: out }); renderStatus(); }
-}
-
-// The Same room section in Settings: tick whoever is sitting with you.
-let roomKey = '';
-function renderRoom() {
-  const box = $('#roomBox');
-  if (!box || !A.S) return;
-  const m = me();
-  const R = myRoom();
-  const people = [...A.S.players.filter(p => p.on && !p.cpu && p.pid !== pid), ...roomMics().filter(x => x.on)];
-  const key = JSON.stringify([people.map(p => [p.pid, p.name, p.room, p.snd]), m && m.room, m && m.snd]);
-  if (key === roomKey) return;
-  roomKey = key;
-  const sndName = R && R.snd ? (R.isSnd ? 'this device' : R.snd.micdev ? esc(R.snd.name) : `${esc(R.snd.name)}'s device`) : '';
-  box.innerHTML = `<span class="setlabel">${ic('users')}Same room</span>
-    <p class="roomhint">Sitting next to someone? Turn them on here. Only one device in the room plays the others and uses its microphone, so there's no echo.</p>
-    ${people.length ? people.map(p => `<label class="setrow roomrow"><span class="vname">${p.micdev ? ic('mic') : ''}${esc(p.name)}</span><input type="checkbox" class="switch" data-room="${esc(p.pid)}" ${R && p.room === R.id ? 'checked' : ''} aria-label="${esc(p.name)} is in the same room as me"></label>`).join('')
-      : '<p class="fieldhint">No one else is here yet.</p>'}
-    ${R ? `<p class="roomsnd">Room sound: <b>${sndName}</b></p>
-      ${R.isSnd ? `<label class="volrow"><span class="vname">Mic pickup</span><input type="range" min="100" max="400" step="25" value="${Math.round(A.roomBoost * 100)}" data-roomboost aria-label="How much the microphone picks up for the room"><b>${Math.round(A.roomBoost * 100)}%</b></label>
-      <p class="roomhint">This device's microphone is turned up for the whole room. Turn it down if the others hear an echo.</p>` : ''}
-      <div class="roombtns">${R.isSnd ? '' : `<button type="button" class="btn" data-roomsnd>${ic('sound')}<span>Use this device for sound</span></button>`}
-      <button type="button" class="btn" data-roomleave>${ic('logout')}<span>I'm not in this room</span></button></div>` : ''}`;
-}
-A.roomBoost = Math.min(4, Math.max(1, +store.get('roomboost', 2.5) || 2.5));
-$('#roomBox').addEventListener('input', e => {
-  const r = e.target.closest('[data-roomboost]');
-  if (!r) return;
-  A.roomBoost = r.value / 100;
-  store.set('roomboost', A.roomBoost);
-  r.nextElementSibling.textContent = r.value + '%';
-  applyMic();
-});
-$('#roomBox').addEventListener('change', e => {
-  const t = e.target.closest('[data-room]');
-  if (t) send({ t: 'sameroom', pid: t.dataset.room, on: t.checked });
-});
-$('#roomBox').addEventListener('click', e => {
-  if (e.target.closest('[data-roomsnd]')) send({ t: 'roomsnd' });
-  else if (e.target.closest('[data-roomleave]')) send({ t: 'sameroom', pid, on: false });
-});
 
 /* Each person's voice has its own volume. Most browsers let a video's volume be set directly; iPhones and
    iPads don't, so there the sound goes through a volume control (Web Audio) and the video itself stays muted. */
@@ -772,8 +539,8 @@ const gains = new Map();
 let vac = null;
 function volumeOf(p) { const v = A.vol[p.pid]; return typeof v === 'number' ? v : 1; }
 function applyVolume(p, v, stream) {
-  const vol = heard(p) ? volumeOf(p) : 0;
-  if (VOL_DIRECT) { v.muted = vol === 0; v.volume = vol; return; }
+  const vol = volumeOf(p);
+  if (VOL_DIRECT) { v.muted = false; v.volume = vol; return; }
   v.muted = true;
   try {
     vac = vac || new (window.AudioContext || window.webkitAudioContext)();
@@ -796,7 +563,7 @@ let volKey = '';
 function renderVolumes(force) {
   const box = $('#volList');
   if (!box) return;
-  const people = A.S ? [...A.S.players.filter(p => p.on && !p.cpu && p.pid !== pid), ...roomMics().filter(x => x.on)] : [];
+  const people = A.S ? A.S.players.filter(p => p.on && !p.cpu && p.pid !== pid) : [];
   const key = people.map(p => p.pid + p.name).join('|');
   if (!force && key === volKey) return;
   volKey = key;
@@ -959,9 +726,7 @@ function renderSeats() {
     // A remote person whose camera is on but whose picture has not arrived yet.
     face.classList.toggle('waiting', !!(!isMe && p.cam && p.on && !stream));
     // Their own sound: unmuted for others. Show who is muted.
-    const roomed = !!(p.room && !p.snd);
-    el.classList.toggle('roomed', roomed);
-    el.classList.toggle('mic-off', !!p.cam && !p.mic && !roomed);
+    el.classList.toggle('mic-off', !!p.cam && !p.mic);
     return el;
   };
 
@@ -987,7 +752,6 @@ function renderSeats() {
   left.dataset.n = left.children.length;
   right.dataset.n = right.children.length;
   for (const [k, el] of seatEls) if (!list.some(p => p.pid === k)) { el.remove(); seatEls.delete(k); }
-  playRoomAudio(roomMics().filter(x => x.on));
   renderVolumes();
 }
 
@@ -1371,6 +1135,99 @@ function openBadge(opened, extra = '') {
   return `<span class="open30 show ${opened ? 'yes' : ''} ${extra}" title="${opened ? 'Has made their first 30' : 'Has not made their first 30 yet'}">${ic(opened ? 'check' : 'lock')}30</span>`;
 }
 
+/* ---------------- sign-in extras, beside Fit ----------------
+   Audrey: a quick peek at Gabe's tiles, once a minute, only while Gabe is in the lobby.
+   Nina: a switch that turns her own tiles face down on her screen. */
+const PEEK_COOL = 60000, PEEK_SHOW = 5000;
+A.peekAt = 0;
+const gabe = () => A.S && A.S.players.find(p => p.prof === 'Gabe' && p.on && !p.cpu && p.pid !== pid);
+const peekLeft = () => Math.max(0, Math.ceil((A.peekAt + PEEK_COOL - Date.now()) / 1000));
+function peekBtn() {
+  const left = peekLeft();
+  return left ? `<button class="sortbtn peekbtn" data-act="peek" disabled title="Ready again in ${left} seconds" aria-label="Peek ready again in ${left} seconds">${ic('eye')}<span class="long">${left}s</span></button>`
+    : `<button class="sortbtn peekbtn" data-act="peek" title="Sneak a peek at Gabe's tiles" aria-label="Peek at Gabe's tiles">${ic('eye')}<span class="long">Peek</span></button>`;
+}
+function secretTools() {
+  let h = '';
+  if (A.role === 'audrey' && gabe()) h += peekBtn();
+  if (A.role === 'nina') h += `<button class="sortbtn ${A.hideTiles ? 'on' : ''}" data-act="hidetiles" aria-pressed="${!!A.hideTiles}" title="${A.hideTiles ? 'Show my tiles' : 'Hide my tiles'}" aria-label="Hide my tiles">${ic(A.hideTiles ? 'eyeoff' : 'eye')}<span class="long">${A.hideTiles ? 'Hidden' : 'Hide'}</span></button>`;
+  return h;
+}
+// the countdown on the Peek button, without redrawing the rack
+setInterval(() => {
+  if (!A.peekAt) return;
+  for (const b of document.querySelectorAll('.peekbtn')) b.outerHTML = peekBtn();
+  if (!peekLeft()) A.peekAt = 0;
+}, 1000);
+let peekWait = 0;
+function peekGabe() {
+  const g = gabe();
+  if (!g || peekLeft() || !help.peek(g.pid)) return;
+  A.peekAt = Date.now();
+  renderMe();
+  clearTimeout(peekWait);
+  peekWait = setTimeout(() => toast(`${g.name}'s device didn't answer. Try again in a minute.`), 8000);
+}
+// Gabe's side: my tiles as they lie in my rack (or dominoes tray)
+function myHand() {
+  const S = A.S, m = me();
+  if (!S || !m || !m.seat || S.phase !== 'play') return null;
+  if (S.game === 'tiles') {
+    const ids = rackIds() || [], own = new Set(ids);
+    const rows = A.grid && A.grid.length ? A.grid.map(r => r.map(x => (x != null && own.has(x) ? x : null))) : [ids.slice()];
+    return { g: 'tiles', rows };
+  }
+  if (S.game === 'dominoes' && Array.isArray(m.hand)) {
+    const own = new Set(m.hand), t = A.tray;
+    const rows = t && t.rows ? t.rows.map(r => r.map(x => (x != null && own.has(x) ? x : null))) : [m.hand.slice()];
+    return { g: 'dominoes', rows, flip: (t && t.flip) || {} };
+  }
+  return null;
+}
+// Audrey's side: show what came back for a few seconds
+let peekT = 0;
+function closePeek() { clearTimeout(peekT); const b = $('#peekBox'); if (b) b.hidden = true; }
+function showPeek(from, m) {
+  clearTimeout(peekWait);
+  const p = A.S && A.S.players.find(q => q.pid === from);
+  const name = p ? p.name : 'Gabe';
+  const num = x => Number.isInteger(x) && x >= 0 && x < 1000;
+  const rows = (Array.isArray(m.rows) ? m.rows : []).slice(0, 12).filter(Array.isArray).map(r => r.slice(0, 30).map(x => (num(x) ? x : null)));
+  while (rows.length && rows[rows.length - 1].every(x => x == null)) rows.pop();
+  if (m.none || !rows.length) return toast(`${name} has no tiles right now.`);
+  let body = '';
+  try {
+    if (m.g === 'dominoes') {
+      const flip = m.flip && typeof m.flip === 'object' ? m.flip : {};
+      body = `<div class="peekdm">${rows.map(r => `<div class="peekrow">${r.map(id => {
+        if (id == null || !DM_TILES[id]) return '<span class="peekgap"></span>';
+        const [a, b] = DM_TILES[id];
+        return flip[id] ? domino(b, a, 'h') : domino(a, b, 'h');
+      }).join('')}</div>`).join('')}</div>`;
+    } else {
+      const cols = Math.max(...rows.map(r => r.length));
+      body = `<div class="peekgrid" style="grid-template-columns:repeat(${cols}, var(--tw))">${rows.map(r => {
+        const cells = r.map(id => (id == null ? '<span></span>' : tileHTML(id).replace(/ sel /, ' ').replace(/ data-id="\d+"/, '').replace(' role="button"', '')));
+        while (cells.length < cols) cells.push('<span></span>');
+        return cells.join('');
+      }).join('')}</div>`;
+    }
+  } catch (e) { return toast(`Couldn't show ${name}'s tiles.`); }
+  let box = $('#peekBox');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'peekBox'; box.className = 'peekbox'; box.setAttribute('role', 'dialog');
+    box.addEventListener('pointerdown', e => { e.stopPropagation(); closePeek(); });
+    document.body.appendChild(box);
+  }
+  box.style.setProperty('--peekms', PEEK_SHOW + 'ms');
+  box.setAttribute('aria-label', `${name}'s tiles`);
+  box.innerHTML = `<div class="card peekcard"><div class="peekhead">${ic('eye')}<b>${esc(name)}'s tiles</b></div>${body}<div class="peekbar"><i></i></div></div>`;
+  box.hidden = false;
+  clearTimeout(peekT);
+  peekT = setTimeout(closePeek, PEEK_SHOW);
+}
+
 function renderMe() {
   const S = A.S, m = me();
   const c = $('#controls');
@@ -1388,8 +1245,9 @@ function renderMe() {
     const dmt = S.game === 'dominoes' && m && m.seat;
     $('#dmTools').hidden = !dmt;
     if (dmt) { $('#dmSize').value = A.dz; $('#dmTable').value = A.dtz; }
+    $('#dmExtra').innerHTML = dmt ? secretTools() : '';
     const hand = $('#hand'), draw = { uno: unoHand, idiot: idiotHand, hearts: heartsHand, dominoes: dominoHand }[S.game];
-    if (draw && !hand.hidden) { hand.className = 'hand'; draw(hand, viewCtx()); }
+    if (draw && !hand.hidden) { hand.className = 'hand'; draw(hand, viewCtx()); hand.classList.toggle('hidetiles', !!(A.hideTiles && S.game === 'dominoes')); }
     return;
   }
   $('#dmTools').hidden = true;
@@ -1401,6 +1259,7 @@ function renderMe() {
     tools += `<button class="sortbtn" data-act="undo" aria-label="Undo" title="Undo" ${A.hist.length ? '' : 'disabled'}>${ic('undo')}<span class="long">Undo</span></button>`;
     tools += `<button class="sortbtn" data-act="reset" aria-label="Reset" title="Reset" ${placed || (A.W && A.hist.length) ? '' : 'disabled'}>${ic('reset')}<span class="long">Reset</span></button>`;
   }
+  tools += secretTools();
   tools += `<button class="sortbtn ${A.fit ? 'on' : ''}" data-act="fit" aria-pressed="${A.fit}" aria-label="Fit the whole table on screen" title="Fit the whole table on screen">${ic('fit')}<span class="long">Fit</span></button>`;
   $('#rackTools').innerHTML = tools;
   let html = '';
@@ -1534,6 +1393,7 @@ function renderRack() {
   const rack = $('#rack');
   for (const kv of rackStyle(A.rc).split(';')) { const [k, v] = kv.split(':'); rack.style.setProperty(k, v); }
   rack.classList.toggle('picking', A.sel.size > 0);
+  rack.classList.toggle('hidetiles', !!A.hideTiles);
   const g = rack.querySelector('.grooves');
   if (S && S.game !== 'tiles' && S.phase === 'play') { spaceTile().hidden = true; return; }
   if (!S || !m || !m.seat || S.phase === 'lobby') {
@@ -2258,6 +2118,8 @@ document.addEventListener('click', e => {
   else if (act === 'reset') resetTurn();
   else if (act === 'torack') flip(null, () => moveSelected('rack'));
   else if (act === 'space') addSpace();
+  else if (act === 'peek') peekGabe();
+  else if (act === 'hidetiles') { A.hideTiles = !A.hideTiles; renderMe(); }
   else if (act === 'fit') { A.fit = !A.fit; try { localStorage.setItem('jg-fit', A.fit ? '1' : ''); } catch (e) { /* private */ } renderAll(); }
   else if (act === 'sortnum') sortRack('num');
   else if (act === 'sortcol') sortRack('col');
@@ -2292,15 +2154,15 @@ async function toggleCam() {
       return;
     }
   }
-  applyMic(true);
+  send({ t: 'cam', cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
   renderStatus(); renderSeats();
 }
 
 function toggleMic() {
-  const R = myRoom();
-  if (R && !R.isSnd) { toast(`You're in the same room as ${R.mates.filter(q => q.pid !== pid && !q.micdev).map(q => q.name).join(' and ') || 'the room mic'}. The sound goes through ${sndLabel(R)}. To change that, open Settings.`, 6000); return; }
   A.micOn = !A.micOn;
-  applyMic(true);
+  A.video.setMic(A.micOn);
+  send({ t: 'cam', cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
+  renderStatus();
 }
 
 function applyZoom() {
@@ -2333,11 +2195,96 @@ $('#volList').addEventListener('input', e => {
   renderSeats();
 });
 function showSettings(open) {
-  if (open) { renderVolumes(true); help.render(); }
+  if (open) { renderVolumes(true); help.render(); listMics(); }
   $('#settings').hidden = !open;
   $('#setBtn').setAttribute('aria-expanded', open);
   $('#setBtn').classList.toggle('on', open);
 }
+/* ---------------- Settings: which microphone, and a test ----------------
+   The test records a few seconds and plays it back, with a level bar, so you can hear whether it works. */
+async function listMics() {
+  const sel = $('#micSel');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) { $('#micBox').hidden = true; return; }
+  let devs = [];
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications'); } catch (e) { /* none */ }
+  const want = store.get('micdev', '') || '';
+  const opts = '<option value="">Default microphone</option>' + devs.map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || `Microphone ${i + 1}`)}</option>`).join('');
+  if (sel.innerHTML !== opts) sel.innerHTML = opts;
+  sel.value = devs.some(d => d.deviceId === want) ? want : '';
+  if (!micTesting && devs.length && !devs.some(d => d.label)) $('#micMsg').textContent = 'Tap Test microphone (or turn on your camera) to see the names of your microphones.';
+}
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', () => { if (!$('#settings').hidden) listMics(); });
+$('#micSel').addEventListener('change', async e => {
+  const id = e.target.value;
+  store.set('micdev', id);
+  if (!A.video) return;
+  if (!A.camOn) { A.video.micId = id; $('#micMsg').textContent = 'This microphone will be used when your camera is on.'; return; }
+  try {
+    await A.video.useMic(id, A.micOn);
+    send({ t: 'cam', cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
+    renderStatus();
+    $('#micMsg').textContent = 'Switched. Everyone hears this microphone now.';
+  } catch (er) { $('#micMsg').textContent = micError(er); }
+});
+const micError = e => e && e.name === 'NotAllowedError' ? 'The microphone is blocked. Allow the microphone for this page (the icon by the address bar, or your browser settings), then try again.'
+  : e && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') ? "That microphone wasn't found. Is it plugged in? Pick another one above."
+  : e && e.name === 'NotReadableError' ? 'Another app is using the microphone. Close it (a video call, say) and try again.'
+  : 'Could not start the microphone. ' + (e && e.message ? e.message : '');
+const MIC_TEST_MS = 4000;
+let micTesting = false;
+async function micTest() {
+  if (micTesting) return;
+  const btn = $('#micTest'), msg = $('#micMsg'), bar = $('#micBox .micmeter i');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { msg.textContent = 'This browser cannot use a microphone here.'; return; }
+  micTesting = true; btn.disabled = true;
+  let stream = null, ac = null, meter = 0;
+  const done = () => { clearInterval(meter); bar.style.width = '0%'; if (stream) for (const t of stream.getTracks()) t.stop(); if (ac) ac.close().catch(() => {}); micTesting = false; btn.disabled = false; };
+  try {
+    const want = store.get('micdev', '') || '';
+    const ask = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: want ? { ...ask, deviceId: { exact: want } } : ask }); }
+    catch (e) { if (want && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError')) stream = await navigator.mediaDevices.getUserMedia({ audio: ask }); else throw e; }
+  } catch (e) { msg.textContent = micError(e); done(); return; }
+  listMics();   // the names show once the microphone is allowed
+  const track = stream.getAudioTracks()[0];
+  msg.textContent = `Listening on ${track.label || 'your microphone'}… say something!`;
+  let peak = 0;
+  try {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    if (ac.state === 'suspended') await ac.resume();
+    const an = ac.createAnalyser();
+    an.fftSize = 1024;
+    ac.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    meter = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (const x of buf) sum += x * x;
+      const rms = Math.sqrt(sum / buf.length);
+      peak = Math.max(peak, rms);
+      bar.style.width = Math.min(100, Math.round(rms * 400)) + '%';
+    }, 60);
+  } catch (e) { /* no meter */ }
+  let rec = null;
+  const chunks = [];
+  try { if (window.MediaRecorder) { rec = new MediaRecorder(stream); rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); }; rec.start(); } } catch (e) { rec = null; }
+  await new Promise(r => setTimeout(r, MIC_TEST_MS));
+  if (rec && rec.state !== 'inactive') { await new Promise(r => { rec.onstop = r; rec.stop(); }); }
+  done();
+  const quiet = peak < 0.01;
+  const camNote = A.camOn && A.video && !A.video.hasMic() ? ' Your camera started without a microphone: turn the camera off and on again.' : '';
+  const muteNote = A.camOn && !A.micOn ? ' (You are muted in the game right now.)' : '';
+  if (quiet) msg.textContent = "We didn't hear anything. Pick another microphone above, and check it isn't muted (some headsets have a mute switch)." + camNote;
+  if (!chunks.length) { if (!quiet) msg.textContent = 'Your microphone is working.' + muteNote + camNote; return; }
+  const url = URL.createObjectURL(new Blob(chunks, { type: chunks[0].type || 'audio/webm' }));
+  const au = new Audio(url);
+  if (!quiet) msg.textContent = 'Playing it back…';
+  const end = () => { URL.revokeObjectURL(url); if (!quiet) msg.textContent = 'Did you hear yourself? Then your microphone works.' + muteNote + camNote + ' If not, pick another one above.'; };
+  au.onended = end;
+  au.play().catch(end);
+}
+$('#micTest').addEventListener('click', micTest);
+
 $('#setBtn').addEventListener('click', e => { e.stopPropagation(); showSettings($('#settings').hidden); });
 $('#setClose').addEventListener('click', () => showSettings(false));
 document.addEventListener('pointerdown', e => { if (!$('#settings').hidden && !(e.target.closest && e.target.closest('#settings, #setBtn'))) showSettings(false); });
@@ -2362,9 +2309,6 @@ function leaveTable(msg) {
   showSettings(false);
   help.leave();
   stats.leave();
-  playRoomAudio([]);
-  if (A.micdev) { A.micdev = false; micDevKey = ''; clearInterval(meterT); if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; } }
-  $('#micdev').hidden = true;
   $('#game').hidden = true; $('#join').hidden = false;
   document.title = 'Game Night';
   const u = new URL(location.href); u.searchParams.delete('auto'); history.replaceState(null, '', u);
@@ -2699,7 +2643,20 @@ A.dtz = Math.min(2, Math.max(0.6, +store.get('dtz', 1) || 1));
 $('#dmTable').addEventListener('input', e => { A.dtz = +e.target.value; store.set('dtz', A.dtz); renderCenter(); });
 const stats = initStats({ A, pid, esc, ic, send });
 stats.unlock(true);   // statistics are open to everyone, from Settings
-const help = initHelp({ A, pid, send, toast, esc, ic });
+const help = initHelp({ A, pid, send, toast, esc, ic, hooks: {
+  onRole: role => { A.role = role; if (role !== 'nina') A.hideTiles = false; if (A.S) renderMe(); },
+  // Big Z turned my microphone off or on
+  setMic: (on, by) => {
+    if (!A.camOn || !A.video || A.micOn === on) return;
+    A.micOn = on;
+    A.video.setMic(on);
+    send({ t: 'cam', cam: A.camOn, mic: A.camOn && A.micOn && A.video.hasMic() });
+    renderStatus();
+    toast(on ? `${by} turned your microphone back on.` : `${by} muted your microphone. Tap Unmute to talk again.`, 5000);
+  },
+  myHand,
+  showPeek,
+} });
 $('#statsBtn').addEventListener('click', () => stats.open());
 // the lobby's custom color, and the host's "show on the start screen" switch
 document.addEventListener('change', e => {
